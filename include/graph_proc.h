@@ -148,6 +148,11 @@ public:
         this->callback = callback;
     }
 
+    void remove_callback()
+    {
+        this->callback = nullptr;
+    }
+
     void send(graph_message_ptr message)
     {
         if (callback)
@@ -189,6 +194,18 @@ public:
         , outputs()
         , inputs()
     {}
+
+    virtual ~graph_node()
+    {
+        std::string input_name;
+        graph_edge_ptr input_edge;
+        for (auto input: inputs)
+        {
+            std::tie(input_name, input_edge) = input;
+            
+            input_edge->remove_callback();
+        }
+    }
 
     void set_input(graph_edge_ptr input)
     {
@@ -254,6 +271,9 @@ public:
     }
 
     virtual void initialize()
+    {}
+
+    virtual void finalize()
     {}
 
     virtual void run()
@@ -472,6 +492,7 @@ enum class GRAPH_PROC_RPC_FUNC: uint32_t
     INITIALIZE = 1,
     RUN = 2,
     STOP = 3,
+    FINALIZE = 4,
 };
 
 class graph_proc_server
@@ -565,6 +586,56 @@ public:
 
             return 0;
         });
+        
+        rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::FINALIZE, [this](uint32_t session, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res) -> uint32_t {
+            spdlog::debug("Finalize graph (session = {0})", session);
+            
+            std::stringstream arg_ss(std::string((const char *)arg.data(), arg.size()));
+            auto node_id = read_uint32(arg_ss);
+
+            auto g_ = graphs_.at(session);
+
+            assert(node_id > 0);
+            auto node = g_->get_node(node_id - 1);
+
+            std::unordered_map<std::string, subscribe_request> output_reqs;
+            {
+                cereal::BinaryInputArchive iarchive(arg_ss);
+                iarchive(output_reqs);
+            }
+            
+            std::string output_name;
+            subscribe_request req;
+            for (auto output_req: output_reqs)
+            {
+                std::tie(output_name, req) = output_req;
+                auto output = node->get_output(output_name);
+                output->request = req;
+            }
+
+            node->finalize();
+
+            std::unordered_map<std::string, subscribe_request> input_reqs;
+            std::string input_name;
+            graph_edge_ptr input_edge;
+            for (auto input: node->get_inputs())
+            {
+                std::tie(input_name, input_edge) = input;
+                auto req = input_edge->request;
+                input_reqs.insert(std::make_pair(input_name, req));
+            }
+            
+            std::stringstream res_ss;
+            {
+                cereal::BinaryOutputArchive oarchive(res_ss);
+                oarchive(input_reqs);
+            }
+
+            std::string res_s = res_ss.str();
+            std::copy(res_s.begin(), res_s.end(), std::back_inserter(res));
+
+            return 0;
+        });
 
         rpc_server_.on_discconect([this](uint32_t session) {
             spdlog::debug("Delete graph (session = {0})", session);
@@ -612,11 +683,12 @@ public:
 
     void stop()
     {
-
         for (auto g: graphs_)
         {
             invoke_stop_graph(g.get());
         }
+
+        finalize();
     }
 
 private:
@@ -678,6 +750,28 @@ private:
         }
     }
 
+    void finalize()
+    {
+        std::vector<graph_node*> nodes;
+        for (auto g: graphs_)
+        {
+            for (uint32_t i = 0; i < g->get_node_count(); i++)
+            {
+                auto node = g->get_node(i);
+                nodes.push_back(node.get());
+            }
+        }
+
+        topological_sort(nodes);
+
+        for (auto node: nodes)
+        {
+            auto g = node->get_parent();
+            auto node_idx = node->get_parent()->get_node_id(node);
+            invoke_finalize_node(g, node_idx);
+        }
+    }
+
     void invoke_deploy(rpc_client& rpc, subgraph& g)
     {
         std::vector<uint8_t> arg, res;
@@ -723,6 +817,58 @@ private:
 
         auto rpc = rpcs_.at(g);
         rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::INITIALIZE, arg, res);
+        {
+            std::stringstream input(std::string((const char *)res.data(), res.size()));
+            
+            std::unordered_map<std::string, subscribe_request> input_reqs;
+            {
+                cereal::BinaryInputArchive iarchive(input);
+                iarchive(input_reqs);
+            }
+
+            assert(node_id > 0);
+            auto node = g->get_node(node_id - 1);
+            std::string input_name;
+            subscribe_request req;
+            for (auto input_req: input_reqs)
+            {
+                std::tie(input_name, req) = input_req;
+                auto input_edge = node->get_input(input_name);
+                input_edge->request = req;
+            }
+        }
+    }
+
+    void invoke_finalize_node(subgraph* g, uint32_t node_id)
+    {
+        std::vector<uint8_t> arg, res;
+
+        {
+            std::stringstream output;
+            write_uint32(output, node_id);
+
+            std::unordered_map<std::string, subscribe_request> output_req;
+            assert(node_id > 0);
+            auto node = g->get_node(node_id - 1);
+            std::string output_name;
+            graph_edge_ptr output_edge;
+            for (auto output: node->get_outputs())
+            {
+                std::tie(output_name, output_edge) = output;
+                auto req = output_edge->request;
+                output_req.insert(std::make_pair(output_name, req));
+            }
+            {
+                cereal::BinaryOutputArchive oarchive(output);
+                oarchive(output_req);
+            }
+
+            std::string str = output.str();
+            std::copy(str.begin(), str.end(), std::back_inserter(arg));
+        }
+
+        auto rpc = rpcs_.at(g);
+        rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::FINALIZE, arg, res);
         {
             std::stringstream input(std::string((const char *)res.data(), res.size()));
             
@@ -878,6 +1024,20 @@ public:
         , running(false)
     {
         set_output(output);
+    }
+
+    virtual ~p2p_talker_node()
+    {
+        finalize();
+    }
+
+    virtual void finalize() override
+    {
+        if (transmitter)
+        {
+            transmitter->close();
+            transmitter.reset();
+        }
     }
 
     virtual void initialize() override
