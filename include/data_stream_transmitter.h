@@ -13,15 +13,13 @@ namespace asio = boost::asio;
 using asio::ip::tcp;
 using asio::ip::udp;
 
-static const size_t PACKET_PAYLOAD_SIZE = 1472;
-
 class data_stream_transmitter
 {
     udp::socket socket_;
     udp::endpoint remote_endpoint_;
     uint16_t counter_;
     std::mutex mtx_;
-    boost::array<char, 65536> buffer_;
+    boost::array<char, PACKET_PAYLOAD_SIZE> buffer_;
 
 public:
 

@@ -6,6 +6,7 @@
 #include <boost/array.hpp>
 #include <iostream>
 #include <mutex>
+#include <queue>
 
 #include "data_stream_common.h"
 
@@ -15,7 +16,7 @@ using asio::ip::udp;
 
 struct packet_data
 {
-    boost::array<char, 65536> recv_buf;
+    boost::array<char, PACKET_PAYLOAD_SIZE> recv_buf;
     double timestamp = 0;
     source_identifier id = {};
     uint16_t counter = 0;
@@ -34,6 +35,7 @@ class reordering_packet_buffer
     packet_data *ordered_packets;
     double timeout;
     double last_packet_timestamp;
+    std::mutex free_packets_mtx;
 
 public:
     uint16_t next_counter;
@@ -49,6 +51,8 @@ public:
 
     packet_data *obtain_packet()
     {
+        std::lock_guard<std::mutex> lock(free_packets_mtx);
+
         if (free_packets == nullptr)
         {
             auto new_packet = std::make_shared<packet_data>();
@@ -162,6 +166,8 @@ public:
 
     void free_packet(packet_data *packet)
     {
+        std::lock_guard<std::mutex> lock(free_packets_mtx);
+
         assert(packet->next == nullptr);
         packet->next = free_packets;
         free_packets = packet;
@@ -189,11 +195,14 @@ class data_stream_receiver
     std::map<source_identifier, std::shared_ptr<session>> sessions;
     on_receive_func on_receive;
     std::atomic_bool started;
-    std::shared_ptr<std::thread> on_receive_thread;
+    std::shared_ptr<std::thread> handling_thread;
+    std::shared_ptr<std::thread> io_thread;
+    std::queue<packet_data*> packet_queue;
+    std::mutex mtx;
 
 public:
     data_stream_receiver(udp::endpoint endpoint)
-        : io_service(), socket_(io_service, endpoint), started(false)
+        : io_service(), socket_(io_service, endpoint), started(false), mtx()
     {
     }
 
@@ -214,16 +223,24 @@ public:
 
         start_receive();
 
-        on_receive_thread.reset(new std::thread([&]() {
+        io_thread.reset(new std::thread([&]() {
             io_service.run();
+        }));
+
+        handling_thread.reset(new std::thread([&]() {
+            while (started.load())
+            {
+                handle_receive();
+            }
         }));
     }
 
     void stop()
     {
         io_service.stop();
-        on_receive_thread->join();
+        io_thread->join();
         this->started = false;
+        handling_thread->join();
     }
 
     void start_receive()
@@ -237,20 +254,38 @@ public:
                 if (!ec)
                 {
                     start_receive();
-                    handle_receive(packet, length);
+                    packet->size = length;
+                    {
+                        std::lock_guard<std::mutex> lock(mtx);
+                        packet_queue.push(packet);
+                    }
                 }
             });
     }
 
-    void handle_receive(packet_data *packet, size_t receive_size)
+    void handle_receive()
     {
+        packet_data* packet;
+
+        if (packet_queue.empty())
+        {
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+
+            packet = packet_queue.front();
+            packet_queue.pop();
+        }
+
+        size_t receive_size = packet->size;
+        
         std::stringstream ss(std::string(packet->recv_buf.data(), receive_size));
         ss.read((char *)&packet->flags, sizeof(packet->flags));
         ss.read((char *)&packet->counter, sizeof(packet->counter));
         ss.read((char *)&packet->timestamp, sizeof(packet->timestamp));
         ss.read((char *)&packet->id.stream_unique_id, sizeof(packet->id.stream_unique_id));
         ss.read((char *)&packet->id.data_id, sizeof(packet->id.data_id));
-        packet->size = receive_size;
 
         reordering.commit_packet(packet);
 
@@ -261,6 +296,7 @@ public:
             {
                 continue;
             }
+
             const size_t header_size = 24;
             const size_t payload_size = packet->size - header_size;
 

@@ -16,3 +16,5 @@ static int operator<(const source_identifier &lhs, const source_identifier &rhs)
     }
     return lhs.stream_unique_id < rhs.stream_unique_id;
 }
+
+static const size_t PACKET_PAYLOAD_SIZE = 1472;
