@@ -12,9 +12,14 @@
 class image_viz_node: public graph_node
 {
     std::string image_name;
+    std::shared_ptr<image_message> image_msg;
+    std::shared_ptr<std::thread> th;
+    std::atomic_bool running;
 public:
     image_viz_node()
         : graph_node()
+        , th()
+        , running(false)
     {
     }
 
@@ -41,18 +46,40 @@ public:
 
     virtual void run() override
     {
-        cv::namedWindow(image_name, cv::WINDOW_NORMAL);
-        cv::setWindowProperty(image_name, cv::WINDOW_NORMAL, cv::WINDOW_NORMAL);
+        running = true;
+        th.reset(new std::thread([&]() {
+            cv::namedWindow(image_name, cv::WINDOW_NORMAL);
+            cv::setWindowProperty(image_name, cv::WINDOW_NORMAL, cv::WINDOW_NORMAL);
+
+            while (running.load() && cv::waitKey(1))
+            {
+                if (image_msg)
+                {
+                    const auto& image = image_msg->get_image();
+                    cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3);
+                    frame.data = (uchar*)image.get_data();
+                    cv::imshow(image_name, frame);
+                }
+            }
+
+            cv::destroyWindow(image_name);
+        }));
+    }
+
+    virtual void stop() override
+    {
+        if (running.load())
+        {
+            running.store(false);
+            th->join();
+        }
     }
 
     virtual void process(std::string input_name, graph_message_ptr message) override
     {
         if (auto image_msg = std::dynamic_pointer_cast<image_message>(message))
         {
-            const auto& image = image_msg->get_image();
-            cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3);
-            frame.data = (uchar*)image.get_data();
-            cv::imshow(image_name, frame);
+            this->image_msg = image_msg;
         }
     }
 };
