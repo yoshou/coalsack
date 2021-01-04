@@ -185,6 +185,9 @@ public:
     virtual std::string get_proc_name() const = 0;
     
     graph_node()
+        : g(nullptr)
+        , outputs()
+        , inputs()
     {}
 
     void set_input(graph_edge_ptr input)
