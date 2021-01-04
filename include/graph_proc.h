@@ -478,6 +478,7 @@ class graph_proc_server
 {
     rpc_server rpc_server_;
     std::map<uint32_t, std::shared_ptr<subgraph>> graphs_;
+    std::mutex mtx;
 public:
     graph_proc_server(boost::asio::io_service &io_service, std::string address, uint16_t port)
         : rpc_server_(io_service, address, port)
@@ -489,7 +490,10 @@ public:
             std::shared_ptr<subgraph> g_(new subgraph());
             g_->load_from(ss);
 
-            graphs_.insert(std::make_pair(session, g_));
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                graphs_.insert(std::make_pair(session, g_));
+            }
 
             return 0;
         });
@@ -565,11 +569,14 @@ public:
         rpc_server_.on_discconect([this](uint32_t session) {
             spdlog::debug("Delete graph (session = {0})", session);
 
-            auto it = graphs_.find(session);
-            if (it != graphs_.end())
             {
-                it->second->stop();
-                graphs_.erase(it);
+                std::lock_guard<std::mutex> lock(mtx);
+                auto it = graphs_.find(session);
+                if (it != graphs_.end())
+                {
+                    it->second->stop();
+                    graphs_.erase(it);
+                }
             }
         });
     }
