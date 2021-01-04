@@ -156,9 +156,13 @@ public:
         : img()
     {}
 
-    void set_image(image img)
+    void set_image(const image& img)
     {
         this->img = img;
+    }
+    void set_image(image&& img)
+    {
+        this->img = std::move(img);
     }
     const image& get_image() const
     {
