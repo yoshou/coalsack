@@ -1176,11 +1176,6 @@ public:
     {
     }
 
-    void set_output(std::ostream* output)
-    {
-        this->output = output;
-    }
-
     virtual void process(std::string input_name, graph_message_ptr message) override
     {
         if (auto text = std::dynamic_pointer_cast<text_message>(message))
