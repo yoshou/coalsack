@@ -972,6 +972,39 @@ public:
 CEREAL_REGISTER_TYPE(list_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, list_message)
 
+class object_message : public graph_message
+{
+    std::unordered_map<std::string, graph_message_ptr> fields;
+
+public:
+    object_message()
+        : fields()
+    {
+    }
+
+    void add_field(std::string name, graph_message_ptr value)
+    {
+        fields.insert(std::make_pair(name, value));
+    }
+    graph_message_ptr get_field(std::string name)
+    {
+        return fields.at(name);
+    }
+    static std::string get_type()
+    {
+        return "object";
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(fields);
+    }
+};
+
+CEREAL_REGISTER_TYPE(object_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, object_message)
+
 // node implementations
 
 class passthrough_node: public graph_node
