@@ -175,12 +175,12 @@ private:
 
     void video_frame_callback(rs2::video_frame frame)
     {
-        auto msg = std::make_shared<image_message>();
+        auto msg = std::make_shared<frame_message<image>>();
 
         image img(frame.get_width(), frame.get_height(),frame.get_bytes_per_pixel() * 8,
             frame.get_stride_in_bytes(), (const uint8_t*)frame.get_data());
 
-        msg->set_image(std::move(img));
+        msg->set_data(std::move(img));
         output->send(msg);
     }
 

@@ -183,6 +183,70 @@ public:
 CEREAL_REGISTER_TYPE(image_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, image_message)
 
+template<typename T>
+class frame_message : public graph_message
+{
+    using data_type = T;
+    using time_type = double;
+
+    data_type data;
+    time_type timestamp;
+    uint64_t frame_number;
+
+public:
+    frame_message()
+        : data()
+    {
+    }
+
+    void set_data(const T& data)
+    {
+        this->data = data;
+    }
+    void set_data(T&& data)
+    {
+        this->data = std::move(data);
+    }
+    T& get_data()
+    {
+        return data;
+    }
+    const T& get_data() const
+    {
+        return data;
+    }
+    time_type get_timestamp() const
+    {
+        return timestamp;
+    }
+    void set_timestamp(time_type value)
+    {
+        timestamp = value;
+    }
+    uint64_t get_frame_number() const
+    {
+        return frame_number;
+    }
+    void set_frame_number(uint64_t value)
+    {
+        frame_number = value;
+    }
+
+    static std::string get_type()
+    {
+        return std::string(typeid(T).name()) + "_frame";
+    }
+
+    template <typename Archive>
+    void serialize(Archive& archive)
+    {
+        archive(data, timestamp, frame_number);
+    }
+};
+
+CEREAL_REGISTER_TYPE(frame_message<image>)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, frame_message<image>)
+
 class image_heartbeat_node: public heartbeat_node
 {
     image img;
