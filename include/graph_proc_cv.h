@@ -138,6 +138,35 @@ public:
 CEREAL_REGISTER_TYPE(image_write_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, image_write_node)
 
+class cv_window
+{
+public:
+    static std::mutex& get_mutex()
+    {
+        static std::mutex mtx;
+        return mtx;
+    }
+
+    static int wait_key(int delay)
+    {
+        std::lock_guard<std::mutex> lock(cv_window::get_mutex());
+        return cv::waitKey(1);
+    }
+
+    static void create_window(std::string name)
+    {
+        std::lock_guard<std::mutex> lock(cv_window::get_mutex());
+        cv::namedWindow(name, cv::WINDOW_NORMAL);
+        cv::setWindowProperty(name, cv::WINDOW_NORMAL, cv::WINDOW_NORMAL);
+    }
+
+    static void destroy_window(std::string name)
+    {
+        std::lock_guard<std::mutex> lock(cv_window::get_mutex());
+        cv::destroyWindow(name);
+    }
+};
+
 class video_viz_node : public graph_node
 {
     std::string image_name;
@@ -178,10 +207,9 @@ public:
     {
         running = true;
         th.reset(new std::thread([&]() {
-            cv::namedWindow(image_name, cv::WINDOW_NORMAL);
-            cv::setWindowProperty(image_name, cv::WINDOW_NORMAL, cv::WINDOW_NORMAL);
+            cv_window::create_window(image_name);
 
-            while (running.load() && cv::waitKey(1))
+            while (running.load() && cv_window::wait_key(0))
             {
                 if (image_msg)
                 {
@@ -192,7 +220,7 @@ public:
                 }
             }
 
-            cv::destroyWindow(image_name);
+            cv_window::destroy_window(image_name);
         }));
     }
 
