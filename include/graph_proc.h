@@ -990,6 +990,11 @@ public:
     {
         return fields.at(name);
     }
+    const std::unordered_map<std::string, graph_message_ptr>& get_fields() const
+    {
+        return fields;
+    }
+
     static std::string get_type()
     {
         return "object";
