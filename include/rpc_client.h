@@ -28,6 +28,11 @@ public:
     {
         boost::system::error_code error;
         socket.connect(tcp::endpoint(asio::ip::address::from_string(ip), port), error);
+
+        if (error)
+        {
+            throw std::runtime_error("Failed connecting to " + ip + ":" + std::to_string(port) + " (" + error.message() + ")");
+        }
     }
 
     int64_t invoke(uint32_t func, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res)
