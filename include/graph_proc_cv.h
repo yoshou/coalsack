@@ -165,6 +165,11 @@ public:
         std::lock_guard<std::mutex> lock(cv_window::get_mutex());
         cv::destroyWindow(name);
     }
+
+    static void imshow(std::string name, const cv::InputArray& mat)
+    {
+        cv::imshow(name, mat);
+    }
 };
 
 class video_viz_node : public graph_node
@@ -173,6 +178,7 @@ class video_viz_node : public graph_node
     std::shared_ptr<frame_message<image>> image_msg;
     std::shared_ptr<std::thread> th;
     std::atomic_bool running;
+    std::mutex mtx;
 
 public:
     video_viz_node()
@@ -211,12 +217,12 @@ public:
 
             while (running.load() && cv_window::wait_key(0))
             {
+                std::lock_guard<std::mutex> lock(mtx);
                 if (image_msg)
                 {
                     const auto& image = image_msg->get_data();
-                    cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3);
-                    frame.data = (uchar*)image.get_data();
-                    cv::imshow(image_name, frame);
+                    cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data());
+                    cv_window::imshow(image_name, frame);
                 }
             }
 
@@ -237,6 +243,7 @@ public:
     {
         if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
         {
+            std::lock_guard<std::mutex> lock(mtx);
             this->image_msg = image_msg;
         }
     }
