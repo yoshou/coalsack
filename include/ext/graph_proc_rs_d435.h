@@ -118,8 +118,6 @@ stream_type convert_stream_type(rs2_stream type)
 
 class rs_d435_node: public graph_node
 {
-    graph_edge_ptr output;
-    
     std::string serial_number;
     std::vector<std::tuple<stream_index_pair, rs2_option, float>> request_options;
     std::vector<stream_profile_request> request_profiles;
@@ -129,14 +127,33 @@ class rs_d435_node: public graph_node
     std::map<stream_index_pair, rs2::sensor> sensors;
     std::shared_ptr<std::thread> th;
     std::atomic_bool running;
+
+    static int64_t get_stream_profile_request_id(stream_profile_request profile)
+    {
+        assert(profile.index >= 0);
+
+        return profile.stream * pow(10, 12) + profile.format * pow(10, 10) + profile.fps * pow(10, 8) +
+            profile.width * pow(10, 4) + profile.height + (uint32_t)profile.index;
+    }
+
+    static int64_t get_stream_profile_id(rs2::stream_profile profile)
+    {
+        assert(profile.stream_index() >= 0);
+
+        int64_t key = profile.stream_type() * pow(10, 12) + profile.format() * pow(10, 10) + profile.fps() * pow(10, 8) + profile.stream_index();
+        if (profile.is<rs2::video_stream_profile>())
+        {
+            rs2::video_stream_profile video_profile = profile.as<rs2::video_stream_profile>();
+            key += video_profile.width() * pow(10, 4) + video_profile.height();
+        }
+        return key;
+    }
+
 public:
     rs_d435_node()
         : graph_node()
-        , output(std::make_shared<graph_edge>(this))
-    {
-        set_output(output);
-    }
-    
+    {}
+
     virtual std::string get_proc_name() const override
     {
         return "rs_d435";
@@ -151,19 +168,37 @@ public:
     {
         return serial_number;
     }
-    
-    void enable_stream(stream_index_pair stream, int width, int height, rs2_format format = RS2_FORMAT_ANY, int fps = 0)
+
+    graph_edge_ptr get_output(stream_index_pair stream, int width, int height, rs2_format format = RS2_FORMAT_ANY, int fps = 0)
     {
         rs2_stream stream_type;
         int stream_index;
         std::tie(stream_type, stream_index) = stream;
         stream_profile_request profile(format, stream_type, stream_index, width, height, fps);
-        request_profiles.push_back(profile);
+        std::string output_name = "stream" + std::to_string(get_stream_profile_request_id(profile));
+        
+        return graph_node::get_output(output_name);
     }
 
-    void enable_stream(stream_index_pair stream)
+    graph_edge_ptr add_output(stream_index_pair stream, int width = 0, int height = 0, rs2_format format = RS2_FORMAT_ANY, int fps = 0)
     {
-        enable_stream(stream, 0, 0, RS2_FORMAT_ANY, 0);
+        rs2_stream stream_type;
+        int stream_index;
+        std::tie(stream_type, stream_index) = stream;
+        stream_profile_request profile(format, stream_type, stream_index, width, height, fps);
+        std::string output_name = "stream" + std::to_string(get_stream_profile_request_id(profile));
+
+        auto outputs = get_outputs();
+        auto it = outputs.find(output_name);
+        if (it == outputs.end())
+        {
+            request_profiles.push_back(profile);
+
+            auto output = std::make_shared<graph_edge>(this);
+            set_output(output, output_name);
+            return output;
+        }
+        return it->second;
     }
 
     virtual void run() override
@@ -206,13 +241,35 @@ public:
     }
 
     template<typename Archive>
-    void serialize(Archive& archive)
+    void save(Archive& archive) const
     {
+        std::vector<std::string> output_names;
+        auto outputs = get_outputs();
+        for (auto output : outputs)
+        {
+            output_names.push_back(output.first);
+        }
+        archive(output_names);
         archive(serial_number);
         archive(request_options);
         archive(request_profiles);
     }
-    
+
+    template<typename Archive>
+    void load(Archive& archive)
+    {
+        std::vector<std::string> output_names;
+        archive(output_names);
+        for (auto output_name : output_names)
+        {
+            set_output(std::make_shared<graph_edge>(this), output_name);
+        }
+
+        archive(serial_number);
+        archive(request_options);
+        archive(request_profiles);
+    }
+
 private:
 
     void video_frame_callback(rs2::video_frame frame)
@@ -234,8 +291,13 @@ private:
         ));
         msg->set_timestamp(frame.get_timestamp());
         msg->set_frame_number(frame.get_frame_number());
-        
-        output->send(msg);
+
+        if (auto video_profile = profile.as<rs2::video_stream_profile>())
+        {
+            stream_index_pair sip = {profile.stream_type(), profile.stream_index()};
+            auto output = get_output(sip, video_profile.width(), video_profile.height(), profile.format(), profile.fps());
+            output->send(msg);
+        }
     }
 
     void frame_callback(rs2::frame frame)
