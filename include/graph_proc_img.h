@@ -393,3 +393,111 @@ public:
 
 CEREAL_REGISTER_TYPE(image_heartbeat_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(heartbeat_node, image_heartbeat_node)
+
+#include "syncer.h"
+
+struct approximate_time_sync_config
+{
+    using sync_info = approximate_time;
+    double interval;
+
+    approximate_time_sync_config()
+        : interval(0)
+    {}
+
+    explicit approximate_time_sync_config(double interval)
+        : interval(interval)
+    {}
+
+    template<typename T>
+    approximate_time create_sync_info(std::shared_ptr<frame_message<T>> message)
+    {
+        return approximate_time(message->get_timestamp(), interval);
+    }
+
+    template<typename Archive>
+    void serialize(Archive&archive)
+    {
+        archive(interval);
+    }
+
+    void set_interval(double interval)
+    {
+        this->interval = interval;
+    }
+    double get_interval() const
+    {
+        return interval;
+    }
+};
+
+template <typename T, typename Config = approximate_time_sync_config>
+class sync_node : public graph_node
+{
+    using sync_config = Config;
+    using sync_info = typename sync_config::sync_info;
+    using syncer_type = stream_syncer<graph_message_ptr, std::string, sync_info>;
+
+    syncer_type syncer;
+    graph_edge_ptr output;
+    sync_config config;
+
+public:
+    sync_node()
+        : graph_node()
+        , syncer()
+        , output(std::make_shared<graph_edge>(this))
+        , config()
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "sync_node";
+    }
+
+    void set_config(sync_config config)
+    {
+        this->config = config;
+    }
+    const sync_config& get_config() const
+    {
+        return config;
+    }
+    sync_config& get_config()
+    {
+        return config;
+    }
+
+    template<typename Archive>
+    void serialize(Archive& archive)
+    {
+        archive(config);
+    }
+
+    virtual void run() override
+    {
+        syncer.start(std::make_shared<typename syncer_type::callback_type>([this](const std::map<std::string, graph_message_ptr>& frames) {
+            auto msg = std::make_shared<object_message>();
+            for (auto frame : frames)
+            {
+                msg->add_field(frame.first, frame.second);
+            }
+            output->send(msg);
+        }));
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto frame_msg = std::dynamic_pointer_cast<frame_message<T>>(message))
+        {
+            syncer.sync(input_name, frame_msg, config.create_sync_info(frame_msg));
+        }
+    }
+};
+
+using approximate_time_sync_node = sync_node<image, approximate_time_sync_config>;
+
+CEREAL_REGISTER_TYPE(approximate_time_sync_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, approximate_time_sync_node)
