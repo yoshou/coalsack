@@ -101,7 +101,7 @@ public:
             throw std::logic_error("Invalid type size");
         }
 
-        auto ptr = reinterpret_cast<T*>(data.data());
+        auto ptr = reinterpret_cast<T*>(data.data() + metadata_offset);
         *ptr = value;
     }
 
@@ -116,7 +116,7 @@ public:
             throw std::logic_error("Invalid type size");
         }
 
-        auto ptr = reinterpret_cast<const T*>(data.data());
+        auto ptr = reinterpret_cast<const T*>(data.data() + metadata_offset);
         return *ptr;
     }
 
@@ -131,7 +131,7 @@ public:
             throw std::logic_error("Invalid type size");
         }
 
-        auto ptr = reinterpret_cast<T*>(data.data());
+        auto ptr = reinterpret_cast<T*>(data.data() + metadata_offset);
         return *ptr;
     }
 
