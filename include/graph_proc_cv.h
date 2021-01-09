@@ -221,7 +221,39 @@ public:
                 if (image_msg)
                 {
                     const auto& image = image_msg->get_data();
-                    cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data());
+
+                    int type = -1;
+                    if (image_msg->get_profile())
+                    {
+                        auto format = image_msg->get_profile()->get_format();
+                        switch (format)
+                        {
+                        case stream_format::Y8:
+                            type = CV_8UC1;
+                            break;
+                        case stream_format::RGB8:
+                            type = CV_8UC3;
+                            break;
+                        case stream_format::RGBA8:
+                            type = CV_8UC4;
+                            break;
+                        case stream_format::BGR8:
+                            type = CV_8UC3;
+                            break;
+                        case stream_format::BGRA8:
+                            type = CV_8UC4;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+
+                    if (type < 0)
+                    {
+                        throw std::logic_error("Unknown image format");
+                    }
+
+                    cv::Mat frame(image.get_height(), image.get_width(), type, (uchar *)image.get_data());
                     cv_window::imshow(image_name, frame);
                 }
             }

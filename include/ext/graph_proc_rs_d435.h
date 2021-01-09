@@ -74,6 +74,48 @@ static inline bool operator<(const stream_profile_request &lhs,
     return lhs.stream < rhs.stream;
 }
 
+stream_format convert_stream_format(rs2_format format)
+{
+    switch (format)
+    {
+    case RS2_FORMAT_Z16:
+        return stream_format::Z16;
+    case RS2_FORMAT_RGB8:
+        return stream_format::RGB8;
+    case RS2_FORMAT_BGR8:
+        return stream_format::BGR8;
+    case RS2_FORMAT_RGBA8:
+        return stream_format::RGBA8;
+    case RS2_FORMAT_BGRA8:
+        return stream_format::BGRA8;
+    case RS2_FORMAT_Y8:
+        return stream_format::Y8;
+    case RS2_FORMAT_Y16:
+        return stream_format::Y16;
+    case RS2_FORMAT_YUYV:
+        return stream_format::YUYV;
+    case RS2_FORMAT_UYVY:
+        return stream_format::UYVY;
+    default:
+        return stream_format::ANY;
+    }
+}
+
+stream_type convert_stream_type(rs2_stream type)
+{
+    switch (type)
+    {
+    case RS2_STREAM_DEPTH:
+        return stream_type::DEPTH;
+    case RS2_STREAM_COLOR:
+        return stream_type::COLOR;
+    case RS2_STREAM_INFRARED:
+        return stream_type::INFRERED;
+    default:
+        return stream_type::ANY;
+    }
+}
+
 class rs_d435_node: public graph_node
 {
     graph_edge_ptr output;
@@ -175,12 +217,21 @@ private:
 
     void video_frame_callback(rs2::video_frame frame)
     {
+        auto profile = frame.get_profile();
+
         auto msg = std::make_shared<frame_message<image>>();
 
         image img(frame.get_width(), frame.get_height(),frame.get_bytes_per_pixel() * 8,
             frame.get_stride_in_bytes(), (const uint8_t*)frame.get_data());
 
         msg->set_data(std::move(img));
+        msg->set_profile(std::make_shared<stream_profile>(
+            convert_stream_type(profile.stream_type()),
+            profile.stream_index(),
+            convert_stream_format(profile.format()),
+            profile.fps(),
+            profile.unique_id()
+        ));
         output->send(msg);
     }
 
