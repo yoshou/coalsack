@@ -184,6 +184,97 @@ public:
 CEREAL_REGISTER_TYPE(image_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, image_message)
 
+enum class stream_type
+{
+    ANY,
+    DEPTH,
+    COLOR,
+    INFRERED,
+};
+
+enum class stream_format
+{
+    ANY,
+    Z16,
+    RGB8,
+    BGR8,
+    RGBA8,
+    BGRA8,
+    Y8,
+    Y16,
+    YUYV,
+    UYVY,
+};
+
+class stream_profile
+{
+    int index;
+    stream_type type;
+    stream_format format;
+    int fps;
+    int uid;
+public:
+
+    stream_profile(stream_type type = stream_type::ANY, int index = -1, stream_format format = stream_format::ANY, int fps = 0, int uid = 0)
+        : index(index)
+        , type(type)
+        , format(format)
+        , fps(fps)
+        , uid(uid)
+    {}
+
+    int get_index() const
+    {
+        return index;
+    }
+    void set_index(int index)
+    {
+        this->index = index;
+    }
+
+    stream_type get_type() const
+    {
+        return type;
+    }
+    void set_type(stream_type type)
+    {
+        this->type = type;
+    }
+
+    stream_format get_format() const
+    {
+        return format;
+    }
+    void set_format(stream_format format)
+    {
+        this->format = format;
+    }
+
+    int get_fps() const
+    {
+        return fps;
+    }
+    void set_fps(int fps)
+    {
+        this->fps = fps;
+    }
+
+    int get_unique_id() const
+    {
+        return uid;
+    }
+    void set_unique_id(int uid)
+    {
+        this->uid = uid;
+    }
+
+    template<typename Archive>
+    void serialize(Archive& archive)
+    {
+        archive(index, type, format, fps, uid);
+    }
+};
+
 template<typename T>
 class frame_message : public graph_message
 {
@@ -193,6 +284,7 @@ class frame_message : public graph_message
     data_type data;
     time_type timestamp;
     uint64_t frame_number;
+    std::shared_ptr<stream_profile> profile;
 
 public:
     frame_message()
@@ -232,6 +324,14 @@ public:
     {
         frame_number = value;
     }
+    std::shared_ptr<stream_profile> get_profile() const
+    {
+        return profile;
+    }
+    void set_profile(std::shared_ptr<stream_profile> profile)
+    {
+        this->profile = profile;
+    }
 
     static std::string get_type()
     {
@@ -241,7 +341,7 @@ public:
     template <typename Archive>
     void serialize(Archive& archive)
     {
-        archive(data, timestamp, frame_number);
+        archive(data, timestamp, frame_number, profile);
     }
 };
 
