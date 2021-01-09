@@ -166,7 +166,7 @@ public:
         cv::destroyWindow(name);
     }
 
-    static void imshow(std::string name, const cv::InputArray& mat)
+    static void imshow(std::string name, cv::InputArray mat)
     {
         cv::imshow(name, mat);
     }
