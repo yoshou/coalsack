@@ -232,6 +232,9 @@ private:
             profile.fps(),
             profile.unique_id()
         ));
+        msg->set_timestamp(frame.get_timestamp());
+        msg->set_frame_number(frame.get_frame_number());
+        
         output->send(msg);
     }
 
