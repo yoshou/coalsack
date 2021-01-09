@@ -94,9 +94,9 @@ public:
     void set_metadata(T value)
     {
         const size_t metadata_size = sizeof(T);
-        const size_t metadata_offset = stride * height;
+        const size_t metadata_offset = 0;
 
-        if (metadata_size + metadata_offset > data.size())
+        if (metadata_size + metadata_offset > metadata.size())
         {
             throw std::logic_error("Invalid type size");
         }
@@ -109,9 +109,9 @@ public:
     const T& get_metadata() const
     {
         const size_t metadata_size = sizeof(T);
-        const size_t metadata_offset = stride * height;
+        const size_t metadata_offset = 0;
 
-        if (metadata_size + metadata_offset > data.size())
+        if (metadata_size + metadata_offset > metadata.size())
         {
             throw std::logic_error("Invalid type size");
         }
@@ -124,9 +124,9 @@ public:
     T& get_metadata()
     {
         const size_t metadata_size = sizeof(T);
-        const size_t metadata_offset = stride * height;
+        const size_t metadata_offset = 0;
 
-        if (metadata_size + metadata_offset > data.size())
+        if (metadata_size + metadata_offset > metadata.size())
         {
             throw std::logic_error("Invalid type size");
         }
@@ -142,6 +142,7 @@ public:
     }
 private:
     std::vector<uint8_t> data;
+    std::vector<uint8_t> metadata;
     uint32_t width;
     uint32_t height;
     uint32_t bpp;
