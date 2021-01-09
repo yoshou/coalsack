@@ -1010,6 +1010,41 @@ public:
 CEREAL_REGISTER_TYPE(object_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, object_message)
 
+class blob_message: public graph_message
+{
+    std::vector<uint8_t> data;
+public:
+    blob_message()
+        : data()
+    {}
+
+    void set_data(const std::vector<uint8_t>& data)
+    {
+        this->data = data;
+    }
+    void set_data(std::vector<uint8_t>&& data)
+    {
+        this->data = std::move(data);
+    }
+    const std::vector<uint8_t>& get_data() const
+    {
+        return data;
+    }
+    static std::string get_type()
+    {
+        return "blob";
+    }
+
+    template<typename Archive>
+    void serialize(Archive& archive)
+    {
+        archive(data);
+    }
+};
+
+CEREAL_REGISTER_TYPE(blob_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, blob_message)
+
 // node implementations
 
 class passthrough_node: public graph_node

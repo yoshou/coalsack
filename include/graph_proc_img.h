@@ -345,8 +345,16 @@ public:
     }
 };
 
-CEREAL_REGISTER_TYPE(frame_message<image>)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, frame_message<image>)
+using blob = std::vector<uint8_t>;
+using blob_frame_message = frame_message<blob>;
+
+CEREAL_REGISTER_TYPE(blob_frame_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, blob_frame_message)
+
+using image_frame_message = frame_message<image>;
+
+CEREAL_REGISTER_TYPE(image_frame_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, image_frame_message)
 
 class image_heartbeat_node: public heartbeat_node
 {
