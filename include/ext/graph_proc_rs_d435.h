@@ -278,7 +278,7 @@ private:
 
         auto msg = std::make_shared<frame_message<image>>();
 
-        image img(frame.get_width(), frame.get_height(),frame.get_bytes_per_pixel() * 8,
+        image img(frame.get_width(), frame.get_height(), frame.get_bytes_per_pixel(),
             frame.get_stride_in_bytes(), (const uint8_t*)frame.get_data());
 
         msg->set_data(std::move(img));
