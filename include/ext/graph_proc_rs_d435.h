@@ -29,9 +29,9 @@ const std::vector<stream_index_pair> IMAGE_STREAMS = {DEPTH, INFRA0, INFRA1, INF
                                                       FISHEYE,
                                                       FISHEYE1, FISHEYE2};
                                                       
-struct stream_profile
+struct stream_profile_request
 {
-    stream_profile(rs2_format format = RS2_FORMAT_ANY, rs2_stream stream = RS2_STREAM_ANY,
+    stream_profile_request(rs2_format format = RS2_FORMAT_ANY, rs2_stream stream = RS2_STREAM_ANY,
                     int index = 0, uint32_t width = 0, uint32_t height = 0, uint32_t fps = 0)
         : format(format)
         , stream(stream)
@@ -53,8 +53,8 @@ struct stream_profile
     }
 };
 
-static inline bool operator==(const stream_profile &a,
-                            const stream_profile &b)
+static inline bool operator==(const stream_profile_request &a,
+                            const stream_profile_request &b)
 {
     return (a.width == b.width) &&
         (a.height == b.height) &&
@@ -64,8 +64,8 @@ static inline bool operator==(const stream_profile &a,
         (a.stream == b.stream);
 }
 
-static inline bool operator<(const stream_profile &lhs,
-                            const stream_profile &rhs)
+static inline bool operator<(const stream_profile_request &lhs,
+                            const stream_profile_request &rhs)
 {
     if (lhs.format != rhs.format)
         return lhs.format < rhs.format;
@@ -80,7 +80,7 @@ class rs_d435_node: public graph_node
     
     std::string serial_number;
     std::vector<std::tuple<stream_index_pair, rs2_option, float>> request_options;
-    std::vector<stream_profile> request_profiles;
+    std::vector<stream_profile_request> request_profiles;
 
     // Runtime objects
     rs2::device device;
@@ -115,7 +115,7 @@ public:
         rs2_stream stream_type;
         int stream_index;
         std::tie(stream_type, stream_index) = stream;
-        stream_profile profile(format, stream_type, stream_index, width, height, fps);
+        stream_profile_request profile(format, stream_type, stream_index, width, height, fps);
         request_profiles.push_back(profile);
     }
 
