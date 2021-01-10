@@ -57,8 +57,8 @@ class encode_jpeg_node: public graph_node
 public:
     encode_jpeg_node()
         : graph_node()
-        , row_buffer()
         , output(std::make_shared<graph_edge>(this))
+        , row_buffer()
     {
         set_output(output);
         

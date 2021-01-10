@@ -33,16 +33,20 @@ class reordering_packet_buffer
     std::vector<std::shared_ptr<packet_data>> allocated_packets;
     packet_data *free_packets;
     packet_data *ordered_packets;
+    uint16_t next_counter;
     double timeout;
     double last_packet_timestamp;
     std::mutex free_packets_mtx;
 
 public:
-    uint16_t next_counter;
     reordering_packet_buffer(double timeout = 100.0)
-        : free_packets(nullptr), ordered_packets(nullptr), next_counter(0), timeout(timeout), last_packet_timestamp(0)
-    {
-    }
+        : free_packets(nullptr)
+        , ordered_packets(nullptr)
+        , next_counter(0)
+        , timeout(timeout)
+        , last_packet_timestamp(0)
+        , free_packets_mtx()
+    {}
 
     void set_next_counter(uint16_t value)
     {

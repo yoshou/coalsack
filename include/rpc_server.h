@@ -16,13 +16,10 @@ using rpc_disconnect_func = std::function<void(uint32_t)>;
 class session
     : public std::enable_shared_from_this<session>
 {
-    const std::unordered_map<uint32_t, rpc_func> &handlers_;
-    const rpc_disconnect_func disconnect_handler;
-    uint32_t session_id;
-
 public:
     session(tcp::socket socket, uint32_t session_id, const std::unordered_map<uint32_t, rpc_func> &handlers, const rpc_disconnect_func disconnect_handler)
         : socket_(std::move(socket))
+        , receive_buff_()
         , session_id(session_id)
         , handlers_(handlers)
         , disconnect_handler(disconnect_handler)
@@ -123,6 +120,9 @@ private:
 
     tcp::socket socket_;
     boost::asio::streambuf receive_buff_;
+    uint32_t session_id;
+    const std::unordered_map<uint32_t, rpc_func>& handlers_;
+    const rpc_disconnect_func disconnect_handler;
 };
 
 class rpc_server

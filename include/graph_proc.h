@@ -170,8 +170,6 @@ class subgraph;
 
 class graph_node
 {
-    std::unordered_map<std::string, graph_edge_ptr> outputs;
-    std::unordered_map<std::string, graph_edge_ptr> inputs;
 protected:
     subgraph* g;
 
@@ -185,6 +183,10 @@ protected:
         output->set_name(name);
         outputs.insert(std::make_pair(name, output));
     }
+
+private:
+    std::unordered_map<std::string, graph_edge_ptr> outputs;
+    std::unordered_map<std::string, graph_edge_ptr> inputs;
 
 public:
     virtual std::string get_proc_name() const = 0;
