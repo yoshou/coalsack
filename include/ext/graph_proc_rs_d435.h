@@ -101,6 +101,33 @@ stream_format convert_stream_format(rs2_format format)
     }
 }
 
+image_format convert_image_format(rs2_format format)
+{
+    switch (format)
+    {
+    case RS2_FORMAT_Z16:
+        return image_format::Z16_UINT;
+    case RS2_FORMAT_RGB8:
+        return image_format::R8G8B8_UINT;
+    case RS2_FORMAT_BGR8:
+        return image_format::B8G8R8_UINT;
+    case RS2_FORMAT_RGBA8:
+        return image_format::R8G8B8A8_UINT;
+    case RS2_FORMAT_BGRA8:
+        return image_format::B8G8R8A8_UINT;
+    case RS2_FORMAT_Y8:
+        return image_format::Y8_UINT;
+    case RS2_FORMAT_Y16:
+        return image_format::Y16_UINT;
+    case RS2_FORMAT_YUYV:
+        return image_format::YUY2;
+    case RS2_FORMAT_UYVY:
+        return image_format::UYVY;
+    default:
+        return image_format::ANY;
+    }
+}
+
 stream_type convert_stream_type(rs2_stream type)
 {
     switch (type)
@@ -280,6 +307,8 @@ private:
 
         image img(frame.get_width(), frame.get_height(), frame.get_bytes_per_pixel(),
             frame.get_stride_in_bytes(), (const uint8_t*)frame.get_data());
+
+        img.set_format(convert_image_format(profile.format()));
 
         msg->set_data(std::move(img));
         msg->set_profile(std::make_shared<stream_profile>(

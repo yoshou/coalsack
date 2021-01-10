@@ -268,23 +268,35 @@ public:
             uint32_t width = dinfo.image_width;
             uint32_t height = dinfo.image_height;
             int bpp = dinfo.num_components;
-            if (format == stream_format::RGB8 || format == stream_format::BGR8)
+
+            image_format image_format = image_format::ANY;
+            switch (format)
             {
+            case stream_format::RGB8:
+                image_format = image_format::R8G8B8_UINT;
                 dinfo.out_color_space = JCS_RGB;
-            }
-            else if (format == stream_format::YUYV || format == stream_format::UYVY)
-            {
+                break;
+            case stream_format::BGR8:
+                image_format = image_format::B8G8R8_UINT;
+                dinfo.out_color_space = JCS_RGB;
+                break;
+            case stream_format::YUYV:
+                image_format = image_format::YUY2;
                 dinfo.out_color_space = JCS_YCbCr;
-            }
-            else if (format == stream_format::Y8)
-            {
+                break;
+            case stream_format::UYVY:
+                image_format = image_format::UYVY;
+                dinfo.out_color_space = JCS_YCbCr;
+                break;
+            case stream_format::Y8:
+                image_format = image_format::Y8_UINT;
                 dinfo.out_color_space = JCS_GRAYSCALE;
-            }
-            else
-            {
+                break;
+            default:
                 spdlog::error("Unsupported format");
                 return;
             }
+
             res = jpeg_start_decompress(&dinfo);
             if (!res)
             {
@@ -293,6 +305,8 @@ public:
             }
             uint32_t row_stride = width * dinfo.output_components;
             image img(width, height, bpp, row_stride);
+            img.set_format(image_format);
+
             auto dst_buf = img.get_data();
             uint8_t* ptr = dst_buf;
             if (row_stride > row_buffer.size())

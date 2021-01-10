@@ -8,6 +8,20 @@
 
 #include "graph_proc.h"
 
+enum class image_format
+{
+    ANY,
+    Y8_UINT,
+    Y16_UINT,
+    R8G8B8_UINT,
+    R8G8B8A8_UINT,
+    B8G8R8_UINT,
+    B8G8R8A8_UINT,
+    Z16_UINT,
+    YUY2,
+    UYVY,
+};
+
 class image
 {
 public:
@@ -17,6 +31,7 @@ public:
         , height(0)
         , bpp(0)
         , stride(0)
+        , format(image_format::ANY)
     {}
     
     image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, uint32_t metadata_capacity = 0)
@@ -25,6 +40,7 @@ public:
         , height(height)
         , bpp(bpp)
         , stride(stride)
+        , format(image_format::ANY)
     {}
     
     image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, const uint8_t* data, uint32_t metadata_capacity = 0)
@@ -84,6 +100,14 @@ public:
     {
         return data.data();
     }
+    image_format get_format() const
+    {
+        return format;
+    }
+    void set_format(image_format format)
+    {
+        this->format = format;
+    }
 
     bool empty() const
     {
@@ -138,7 +162,7 @@ public:
     template<typename Archive>
     void serialize(Archive& archive)
     {
-        archive(data, width, height, bpp, stride);
+        archive(data, width, height, bpp, stride, format);
     }
 private:
     std::vector<uint8_t> data;
@@ -147,6 +171,7 @@ private:
     uint32_t height;
     uint32_t bpp;
     uint32_t stride;
+    image_format format;
 };
 
 class image_message: public graph_message
