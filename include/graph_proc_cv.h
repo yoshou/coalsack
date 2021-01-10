@@ -508,7 +508,7 @@ public:
         int edge_threshold;
         int first_level;
         int wta_k;
-        int score_type;
+        cv::ORB::ScoreType score_type;
         int patch_size;
         int fast_threshold;
 
@@ -535,7 +535,7 @@ public:
         int edge_threshold = detector->getEdgeThreshold();
         int first_level = detector->getFirstLevel();
         int wta_k = detector->getWTA_K();
-        int score_type = detector->getScoreType();
+        cv::ORB::ScoreType score_type = detector->getScoreType();
         int patch_size = detector->getPatchSize();
         int fast_threshold = detector->getFirstLevel();
 
