@@ -33,7 +33,7 @@ class encode_jpeg_node: public graph_node
 
     static void convert_uyvy_to_yuv(const uint8_t* src_buf, size_t width, uint8_t* dst_buf)
     {
-        for (int i = 0; i < width; i += 2)
+        for (size_t i = 0; i < width; i += 2)
         {
             dst_buf[i * 3] = src_buf[i * 2 + 1];     // Y
             dst_buf[i * 3 + 1] = src_buf[i * 2 + 0]; // U
@@ -44,9 +44,9 @@ class encode_jpeg_node: public graph_node
         }
     }
 
-    static void convert_bgr_to_rgb(const uint8_t*src_buf, size_t width, uint8_t* dst_buf)
+    static void convert_bgr_to_rgb(const uint8_t* src_buf, size_t width, uint8_t* dst_buf)
     {
-        for (int i = 0; i < width * 3; i += 3)
+        for (size_t i = 0; i < width * 3; i += 3)
         {
             dst_buf[i] = src_buf[i + 2];        // R
             dst_buf[i + 1] = src_buf[i + 1];    // G
