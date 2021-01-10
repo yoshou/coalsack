@@ -413,3 +413,234 @@ public:
 
 CEREAL_REGISTER_TYPE(threshold_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(image_transform_node, threshold_node)
+
+#include <opencv2/features2d.hpp>
+
+struct keypoint
+{
+    float pt_x;
+    float pt_y;
+    float size;
+    float angle;
+    float response;
+    int octave;
+    int class_id;
+
+    template<typename Archive>
+    void serialize(Archive& archive)
+    {
+        archive(pt_x, pt_y, size, angle, response, octave, class_id);
+    }
+};
+
+using keypoint_frame_message = frame_message<std::vector<keypoint>>;
+
+CEREAL_REGISTER_TYPE(keypoint_frame_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_message, keypoint_frame_message)
+
+class orb_detector_node : public graph_node
+{
+    graph_edge_ptr output;
+    cv::Ptr<cv::ORB> detector;
+
+public:
+    orb_detector_node()
+        : graph_node()
+        , output(std::make_shared<graph_edge>(this))
+        , detector(cv::ORB::create())
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "orb_detector_node";
+    }
+
+    cv::Ptr<cv::ORB> get_detector() const
+    {
+        return detector;
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
+        {
+            const auto& src_image = image_msg->get_data();
+            int cv_type = convert_to_cv_type(src_image.get_format());
+
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
+
+            std::vector<cv::KeyPoint> kps;
+            detector->detect(src_mat, kps);
+
+            std::vector<keypoint> pts;
+            for (auto& kp: kps)
+            {
+                keypoint pt;
+                pt.pt_x = kp.pt.x;
+                pt.pt_y = kp.pt.y;
+                pt.size = kp.size;
+                pt.angle = kp.angle;
+                pt.response = kp.response;
+                pt.octave = kp.octave;
+                pt.class_id = kp.class_id;
+                pts.push_back(pt);
+            }
+
+            auto msg = std::make_shared<keypoint_frame_message>();
+
+            msg->set_data(std::move(pts));
+            msg->set_profile(image_msg->get_profile());
+            msg->set_timestamp(image_msg->get_timestamp());
+            msg->set_frame_number(image_msg->get_frame_number());
+
+            output->send(msg);
+        }
+    }
+
+    template<typename Archive>
+    void load(Archive& archive)
+    {
+        int max_features;
+        double scale_factor;
+        int n_levels;
+        int edge_threshold;
+        int first_level;
+        int wta_k;
+        int score_type;
+        int patch_size;
+        int fast_threshold;
+
+        archive(max_features, scale_factor, n_levels, edge_threshold,
+            first_level, wta_k, score_type, patch_size, fast_threshold);
+
+        detector->setMaxFeatures(max_features);
+        detector->setScaleFactor(scale_factor);
+        detector->setNLevels(n_levels);
+        detector->setEdgeThreshold(edge_threshold);
+        detector->setFirstLevel(first_level);
+        detector->setWTA_K(wta_k);
+        detector->setScoreType(score_type);
+        detector->setPatchSize(patch_size);
+        detector->setFirstLevel(fast_threshold);
+    }
+
+    template<typename Archive>
+    void save(Archive& archive) const
+    {
+        int max_features = detector->getMaxFeatures();
+        double scale_factor = detector->getScaleFactor();
+        int n_levels = detector->getNLevels();
+        int edge_threshold = detector->getEdgeThreshold();
+        int first_level = detector->getFirstLevel();
+        int wta_k = detector->getWTA_K();
+        int score_type = detector->getScoreType();
+        int patch_size = detector->getPatchSize();
+        int fast_threshold = detector->getFirstLevel();
+
+        archive(max_features, scale_factor, n_levels, edge_threshold,
+            first_level, wta_k, score_type, patch_size, fast_threshold);
+    }
+};
+
+CEREAL_REGISTER_TYPE(orb_detector_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, orb_detector_node)
+
+class simple_blob_detector_node : public graph_node
+{
+    graph_edge_ptr output;
+    cv::SimpleBlobDetector::Params params;
+
+public:
+    simple_blob_detector_node()
+        : graph_node()
+        , output(std::make_shared<graph_edge>(this))
+        , params(cv::SimpleBlobDetector::Params())
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "simple_blob_detector_node";
+    }
+
+    const cv::SimpleBlobDetector::Params& get_parameters() const
+    {
+        return params;
+    }
+    cv::SimpleBlobDetector::Params& get_parameters()
+    {
+        return params;
+    }
+    void set_parameters(const cv::SimpleBlobDetector::Params& params)
+    {
+        this->params = params;
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
+        {
+            const auto& src_image = image_msg->get_data();
+            int cv_type = convert_to_cv_type(src_image.get_format());
+
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
+
+            auto detector = cv::SimpleBlobDetector::create(params);
+            std::vector<cv::KeyPoint> kps;
+            detector->detect(src_mat, kps);
+
+            std::vector<keypoint> pts;
+            for (auto& kp: kps)
+            {
+                keypoint pt;
+                pt.pt_x = kp.pt.x;
+                pt.pt_y = kp.pt.y;
+                pt.size = kp.size;
+                pt.angle = kp.angle;
+                pt.response = kp.response;
+                pt.octave = kp.octave;
+                pt.class_id = kp.class_id;
+                pts.push_back(pt);
+            }
+
+            auto msg = std::make_shared<keypoint_frame_message>();
+
+            msg->set_data(std::move(pts));
+            msg->set_profile(image_msg->get_profile());
+            msg->set_timestamp(image_msg->get_timestamp());
+            msg->set_frame_number(image_msg->get_frame_number());
+
+            output->send(msg);
+        }
+    }
+
+    template<typename Archive>
+    void serialize(Archive& archive)
+    {
+        archive(params.blobColor);
+        archive(params.filterByArea);
+        archive(params.filterByCircularity);
+        archive(params.filterByColor);
+        archive(params.filterByConvexity);
+        archive(params.filterByInertia);
+        archive(params.maxArea);
+        archive(params.maxCircularity);
+        archive(params.maxConvexity);
+        archive(params.maxInertiaRatio);
+        archive(params.maxThreshold);
+        archive(params.minArea);
+        archive(params.minCircularity);
+        archive(params.minConvexity);
+        archive(params.minDistBetweenBlobs);
+        archive(params.minInertiaRatio);
+        archive(params.minRepeatability);
+        archive(params.minThreshold);
+        archive(params.thresholdStep);
+    }
+};
+
+CEREAL_REGISTER_TYPE(simple_blob_detector_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, simple_blob_detector_node)
