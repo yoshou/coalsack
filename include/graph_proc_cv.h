@@ -355,7 +355,7 @@ public:
         : image_transform_node()
         , thresh(0)
         , maxval(255)
-        , thresh_type(CV_THRESH_BINARY)
+        , thresh_type(cv::THRESH_BINARY)
     {}
 
     virtual std::string get_proc_name() const override
