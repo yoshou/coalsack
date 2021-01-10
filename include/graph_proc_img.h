@@ -27,6 +27,7 @@ class image
 public:
     image()
         : data()
+        , metadata()
         , width(0)
         , height(0)
         , bpp(0)
@@ -35,7 +36,8 @@ public:
     {}
     
     image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, uint32_t metadata_capacity = 0)
-        : data(stride * height + metadata_capacity)
+        : data(stride * height)
+        , metadata(metadata_capacity)
         , width(width)
         , height(height)
         , bpp(bpp)
@@ -51,27 +53,45 @@ public:
 
     image(const image& other)
         : data(other.data)
+        , metadata(other.metadata)
         , width(other.width)
         , height(other.height)
         , bpp(other.bpp)
         , stride(other.stride)
+        , format(other.format)
     {}
 
     image(image&& other)
         : data(std::move(other.data))
+        , metadata(std::move(other.metadata))
         , width(other.width)
         , height(other.height)
         , bpp(other.bpp)
         , stride(other.stride)
+        , format(other.format)
     {}
 
     image& operator=(const image& other)
     {
         data = other.data;
+        metadata = other.metadata;
         width = other.width;
         height = other.height;
         bpp = other.bpp;
         stride = other.stride;
+        format = other.format;
+        return *this;
+    }
+
+    image& operator=(image&& other)
+    {
+        data = std::move(other.data);
+        metadata = std::move(other.metadata);
+        width = other.width;
+        height = other.height;
+        bpp = other.bpp;
+        stride = other.stride;
+        format = other.format;
         return *this;
     }
 
@@ -157,6 +177,20 @@ public:
 
         auto ptr = reinterpret_cast<T*>(data.data() + metadata_offset);
         return *ptr;
+    }
+
+    const uint8_t *get_metadata() const
+    {
+        return metadata.data();
+    }
+    uint8_t *get_metadata()
+    {
+        return metadata.data();
+    }
+
+    uint32_t get_metadata_size() const
+    {
+        return metadata.size();
     }
 
     template<typename Archive>
