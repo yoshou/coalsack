@@ -242,9 +242,15 @@ public:
     void stop()
     {
         io_service.stop();
-        io_thread->join();
+        if (io_thread && io_thread->joinable())
+        {
+            io_thread->join();
+        }
         this->started = false;
-        handling_thread->join();
+        if (handling_thread && handling_thread->joinable())
+        {
+            handling_thread->join();
+        }
     }
 
     void start_receive()

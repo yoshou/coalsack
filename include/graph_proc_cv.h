@@ -72,7 +72,10 @@ public:
         if (running.load())
         {
             running.store(false);
-            th->join();
+            if (th && th->joinable())
+            {
+                th->join();
+            }
         }
     }
 
@@ -268,7 +271,10 @@ public:
         if (running.load())
         {
             running.store(false);
-            th->join();
+            if (th && th->joinable())
+            {
+                th->join();
+            }
         }
     }
 
@@ -278,6 +284,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(mtx);
             this->image_msg = image_msg;
+            spdlog::warn(image_name);
         }
     }
 };
