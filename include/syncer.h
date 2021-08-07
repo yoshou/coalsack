@@ -114,13 +114,16 @@ struct synced_frame_callback
 
     func_type func;
 
-    synced_frame_callback(func_type func)
+    explicit synced_frame_callback(func_type func)
         : func(func)
     {}
 
     void operator()(const std::map<stream_id_type, data_type>& frames)
     {
-        func(frames);
+        if (func)
+        {
+            func(frames);
+        }
     }
 };
 
@@ -264,7 +267,11 @@ private:
                 {
                     frames[synced_frame.stream_id] = synced_frame.data;
                 }
-                (*_callback)(frames);
+
+                if (_callback)
+                {
+                    (*_callback)(frames);
+                }
             }
         } while (synced_frames.size() > 0);
     }
