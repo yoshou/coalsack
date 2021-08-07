@@ -303,7 +303,6 @@ public:
         {
             std::lock_guard<std::mutex> lock(mtx);
             this->image_msg = image_msg;
-            spdlog::warn(image_name);
         }
     }
 };
