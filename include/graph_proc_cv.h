@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <map>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -145,6 +146,11 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, image_write_node)
 class cv_window
 {
 public:
+    static std::map<std::string, cv::Mat>& get_window_buf()
+    {
+        static std::map<std::string, cv::Mat> window_buf;
+        return window_buf;
+    }
     static std::mutex& get_mutex()
     {
         static std::mutex mtx;
@@ -154,7 +160,14 @@ public:
     static int wait_key(int delay)
     {
         std::lock_guard<std::mutex> lock(cv_window::get_mutex());
-        return cv::waitKey(1);
+        auto &window_buf = get_window_buf();
+        for (const auto &[name, buf] : window_buf)
+        {
+            cv::imshow(name, buf);
+        }
+        window_buf.clear();
+
+        return cv::waitKey(delay);
     }
 
     static void create_window(std::string name)
@@ -168,11 +181,17 @@ public:
     {
         std::lock_guard<std::mutex> lock(cv_window::get_mutex());
         cv::destroyWindow(name);
+
+        auto &window_buf = get_window_buf();
+        window_buf.erase(name);
     }
 
-    static void imshow(std::string name, cv::InputArray mat)
+    static void imshow(std::string name, cv::Mat mat)
     {
-        cv::imshow(name, mat);
+        std::lock_guard<std::mutex> lock(cv_window::get_mutex());
+
+        auto &window_buf = get_window_buf();
+        window_buf[name] = mat;
     }
 };
 
@@ -219,7 +238,7 @@ public:
         th.reset(new std::thread([&]() {
             cv_window::create_window(image_name);
 
-            while (running.load() && cv_window::wait_key(0))
+            while (running.load())
             {
                 std::lock_guard<std::mutex> lock(mtx);
                 if (image_msg)
