@@ -1169,7 +1169,10 @@ public:
         {
             running.store(false);
             io_service.stop();
-            th->join();
+            if (th && th->joinable())
+            {
+                th->join();
+            }
         }
     }
 };
@@ -1332,7 +1335,10 @@ public:
         if (running.load())
         {
             running.store(false);
-            th->join();
+            if (th && th->joinable())
+            {
+                th->join();
+            }
         }
     }
 
