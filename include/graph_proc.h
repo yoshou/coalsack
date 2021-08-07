@@ -110,13 +110,13 @@ class graph_edge
     graph_node* source;
     std::string name;
     EDGE_TYPE edge_type;
-
     std::shared_ptr<graph_message_callback> callback;
 public:
     graph_edge(graph_node* source, EDGE_TYPE edge_type = EDGE_TYPE::DATAFLOW)
         : source(source)
         , name()
         , edge_type(edge_type)
+        , callback(nullptr)
     {}
 
     void set_name(std::string name)
