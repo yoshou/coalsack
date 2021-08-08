@@ -52,6 +52,8 @@ struct graph_message_callback
     {
         func(message);
     }
+
+    virtual ~graph_message_callback() = default;
 };
 
 class graph_node;
