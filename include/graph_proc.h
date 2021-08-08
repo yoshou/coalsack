@@ -955,9 +955,17 @@ public:
     {
         list.push_back(value);
     }
-    graph_message_ptr get(size_t idx)
+    graph_message_ptr get(size_t idx) const
     {
         return list[idx];
+    }
+    void set(size_t idx, graph_message_ptr value)
+    {
+        list[idx] = value;
+    }
+    std::size_t length() const
+    {
+        return list.size();
     }
     static std::string get_type()
     {
@@ -988,9 +996,13 @@ public:
     {
         fields.insert(std::make_pair(name, value));
     }
-    graph_message_ptr get_field(std::string name)
+    graph_message_ptr get_field(std::string name) const
     {
         return fields.at(name);
+    }
+    void set_field(std::string name, graph_message_ptr value)
+    {
+        fields[name] = value;
     }
     const std::unordered_map<std::string, graph_message_ptr>& get_fields() const
     {
@@ -1463,7 +1475,48 @@ public:
     virtual void process(std::string input_name, graph_message_ptr message) override
     {
         std::lock_guard<std::mutex> lock(mtx);
-        this->message = message;
+
+        if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
+        {
+            if (!this->message)
+            {
+                this->message = message;
+            }
+            else
+            {
+                auto current_obj_msg = std::dynamic_pointer_cast<object_message>(this->message);
+                for (auto &[name, field]: obj_msg->get_fields())
+                {
+                    current_obj_msg->set_field(name, field);
+                }
+            }
+        }
+        else if (auto list_msg = std::dynamic_pointer_cast<list_message>(message))
+        {
+            if (!this->message)
+            {
+                this->message = message;
+            }
+            else
+            {
+                auto current_list_msg = std::dynamic_pointer_cast<list_message>(this->message);
+
+                const auto copy_size = std::min(current_list_msg->length(), list_msg->length());
+                std::size_t i = 0;
+                for (; i < copy_size; i++)
+                {
+                    current_list_msg->set(i, list_msg->get(i));
+                }
+                for (; i < list_msg->length(); i++)
+                {
+                    current_list_msg->add(list_msg->get(i));
+                }
+            }
+        }
+        else
+        {
+            this->message = message;
+        }
     }
 
     virtual void tick() override
