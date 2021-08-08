@@ -228,6 +228,11 @@ public:
         return it->second;
     }
 
+    void set_option(stream_index_pair stream, rs2_option option, float value)
+    {
+        request_options.push_back(std::make_tuple(stream, option, value));
+    }
+
     virtual void run() override
     {
         if (request_profiles.size() == 0)
@@ -236,6 +241,7 @@ public:
         }
         
         open();
+        configure();
         
         rs2::config config;
         for (auto profile: request_profiles)
