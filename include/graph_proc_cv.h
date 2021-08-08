@@ -159,13 +159,17 @@ public:
 
     static int wait_key(int delay)
     {
-        std::lock_guard<std::mutex> lock(cv_window::get_mutex());
-        auto &window_buf = get_window_buf();
-        for (const auto &[name, buf] : window_buf)
+        std::map<std::string, cv::Mat> window_buf_copy;
+        {
+            std::lock_guard<std::mutex> lock(cv_window::get_mutex());
+            auto &window_buf = get_window_buf();
+            window_buf_copy = window_buf;
+            window_buf.clear();
+        }
+        for (const auto &[name, buf] : window_buf_copy)
         {
             cv::imshow(name, buf);
         }
-        window_buf.clear();
 
         return cv::waitKey(delay);
     }
