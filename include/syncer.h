@@ -6,6 +6,8 @@
 #include <memory>
 #include <map>
 #include <vector>
+#include <functional>
+#include <spdlog/spdlog.h>
 
 class approximate_time
 {
@@ -163,7 +165,7 @@ private:
     bool skip_missing_stream(time_type base_time, stream_id_type stream_id)
     {
         auto expect_time = _times[stream_id].get_next_time();
-        return expect_time.is_dropped(base_time);
+        return base_time.is_dropped(expect_time);
     }
 
     void sync(frame_type frame)
@@ -214,12 +216,8 @@ private:
                 break;
             }
 
-            frame_type base_frame;
-            if (arrived_frames.size() > 0)
-            {
-                base_frame = arrived_frames[0];
-                synced_frames.push_back(arrived_frames[0]);
-            }
+            frame_type base_frame = arrived_frames[0];
+            synced_frames.push_back(arrived_frames[0]);
 
             for (size_t i = 1; i < arrived_frames.size(); i++)
             {
@@ -251,7 +249,7 @@ private:
                     }
                     else
                     {
-                        spdlog::warn("Skipped missing streams");
+                        // spdlog::warn("Skipped missing streams");
                     }
                 }
             }
@@ -263,6 +261,7 @@ private:
 
             if (synced_frames.size() > 0)
             {
+                frames.clear();
                 for (auto& synced_frame : synced_frames)
                 {
                     frames[synced_frame.stream_id] = synced_frame.data;
