@@ -249,7 +249,7 @@ private:
                     }
                     else
                     {
-                        // spdlog::warn("Skipped missing streams");
+                        spdlog::warn("Skipped missing streams");
                     }
                 }
             }
