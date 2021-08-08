@@ -479,7 +479,7 @@ struct approximate_time_sync_config
     template<typename T>
     approximate_time create_sync_info(std::shared_ptr<frame_message<T>> message)
     {
-        return approximate_time(message->get_timestamp(), interval);
+        return approximate_time(message->get_timestamp() / 1000.0 / 10.0, interval);
     }
 
     template<typename Archive>
