@@ -7,6 +7,7 @@
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <spdlog/spdlog.h>
 
 #include "data_stream_common.h"
 
@@ -337,6 +338,7 @@ public:
             }
 
             reordering.reset();
+            spdlog::warn("Packet lost");
         }
     }
 };
