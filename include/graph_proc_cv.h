@@ -198,16 +198,10 @@ public:
 class video_viz_node : public graph_node
 {
     std::string image_name;
-    std::shared_ptr<frame_message<image>> image_msg;
-    std::shared_ptr<std::thread> th;
-    std::atomic_bool running;
-    std::mutex mtx;
 
 public:
     video_viz_node()
         : graph_node()
-        , th()
-        , running(false)
     {
     }
 
@@ -234,75 +228,51 @@ public:
 
     virtual void run() override
     {
-        running = true;
-        th.reset(new std::thread([&]() {
-            cv_window::create_window(image_name);
-
-            while (running.load())
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                if (image_msg)
-                {
-                    const auto& image = image_msg->get_data();
-
-                    int type = -1;
-                    if (image_msg->get_profile())
-                    {
-                        auto format = image_msg->get_profile()->get_format();
-                        switch (format)
-                        {
-                        case stream_format::Y8:
-                            type = CV_8UC1;
-                            break;
-                        case stream_format::RGB8:
-                            type = CV_8UC3;
-                            break;
-                        case stream_format::RGBA8:
-                            type = CV_8UC4;
-                            break;
-                        case stream_format::BGR8:
-                            type = CV_8UC3;
-                            break;
-                        case stream_format::BGRA8:
-                            type = CV_8UC4;
-                            break;
-                        default:
-                            break;
-                        }
-                    }
-
-                    if (type < 0)
-                    {
-                        throw std::logic_error("Unknown image format");
-                    }
-
-                    cv::Mat frame(image.get_height(), image.get_width(), type, (uchar *)image.get_data());
-                    cv_window::imshow(image_name, frame);
-                }
-            }
-
-            cv_window::destroy_window(image_name);
-        }));
     }
 
     virtual void stop() override
     {
-        if (running.load())
-        {
-            running.store(false);
-            if (th && th->joinable())
-            {
-                th->join();
-            }
-        }
     }
 
     virtual void process(std::string input_name, graph_message_ptr message) override
     {
         if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            this->image_msg = image_msg;
+            const auto &image = image_msg->get_data();
+
+            int type = -1;
+            if (image_msg->get_profile())
+            {
+                auto format = image_msg->get_profile()->get_format();
+                switch (format)
+                {
+                case stream_format::Y8:
+                    type = CV_8UC1;
+                    break;
+                case stream_format::RGB8:
+                    type = CV_8UC3;
+                    break;
+                case stream_format::RGBA8:
+                    type = CV_8UC4;
+                    break;
+                case stream_format::BGR8:
+                    type = CV_8UC3;
+                    break;
+                case stream_format::BGRA8:
+                    type = CV_8UC4;
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            if (type < 0)
+            {
+                throw std::logic_error("Unknown image format");
+            }
+
+            const auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar *)image.get_data()).clone();
+            cv_window::imshow(image_name, frame);
         }
     }
 };
