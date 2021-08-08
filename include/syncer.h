@@ -28,6 +28,17 @@ public:
         , interval(interval)
     {
     }
+    approximate_time(const approximate_time &src)
+        : timestamp(src.timestamp)
+        , interval(src.interval)
+    {
+    }
+    approximate_time& operator=(const approximate_time &src)
+    {
+        timestamp = src.timestamp;
+        interval = src.interval;
+        return *this;
+    }
 
     bool is_same(const approximate_time& t) const
     {
@@ -47,7 +58,11 @@ public:
 
     bool is_dropped(approximate_time expect_time)
     {
-        if ((get_timestamp() > expect_time.get_timestamp()) && (std::abs(expect_time.get_timestamp() - get_timestamp()) < (10 * interval)))
+        if (get_timestamp() <= expect_time.get_timestamp())
+        {
+            return false;
+        }
+        if (std::abs(expect_time.get_timestamp() - get_timestamp()) < (10 * interval))
         {
             return false;
         }
@@ -196,7 +211,6 @@ private:
         {
             synced_frames.clear();
 
-            auto old_frames = false;
             std::vector<frame_type> arrived_frames;
             std::vector<stream_id_type> missing_stream_ids;
             for (auto& queue : _frames_queue)
@@ -227,30 +241,22 @@ private:
                 }
                 else if (arrived_frames[i].sync_info.is_less_than(base_frame.sync_info))
                 {
-                    old_frames = true;
                     synced_frames.clear();
                     synced_frames.push_back(arrived_frames[i]);
                     base_frame = arrived_frames[i];
                 }
-                else
-                {
-                    old_frames = true;
-                }
             }
 
-            if (!old_frames)
+            for (auto missing_stream_id : missing_stream_ids)
             {
-                for (auto missing_stream_id : missing_stream_ids)
+                if (!skip_missing_stream(synced_frames[0].sync_info, missing_stream_id))
                 {
-                    if (!skip_missing_stream(synced_frames[0].sync_info, missing_stream_id))
-                    {
-                        synced_frames.clear();
-                        break;
-                    }
-                    else
-                    {
-                        spdlog::warn("Skipped missing streams");
-                    }
+                    synced_frames.clear();
+                    break;
+                }
+                else
+                {
+                    spdlog::warn("Skipped missing stream");
                 }
             }
 
