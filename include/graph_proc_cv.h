@@ -199,6 +199,32 @@ public:
     }
 };
 
+static int stream_format_to_cv_type(stream_format format)
+{
+    int type = -1;
+    switch (format)
+    {
+    case stream_format::Y8:
+        type = CV_8UC1;
+        break;
+    case stream_format::RGB8:
+        type = CV_8UC3;
+        break;
+    case stream_format::RGBA8:
+        type = CV_8UC4;
+        break;
+    case stream_format::BGR8:
+        type = CV_8UC3;
+        break;
+    case stream_format::BGRA8:
+        type = CV_8UC4;
+        break;
+    default:
+        break;
+    }
+    return type;
+}
+
 class video_viz_node : public graph_node
 {
     std::string image_name;
@@ -248,26 +274,7 @@ public:
             if (image_msg->get_profile())
             {
                 auto format = image_msg->get_profile()->get_format();
-                switch (format)
-                {
-                case stream_format::Y8:
-                    type = CV_8UC1;
-                    break;
-                case stream_format::RGB8:
-                    type = CV_8UC3;
-                    break;
-                case stream_format::RGBA8:
-                    type = CV_8UC4;
-                    break;
-                case stream_format::BGR8:
-                    type = CV_8UC3;
-                    break;
-                case stream_format::BGRA8:
-                    type = CV_8UC4;
-                    break;
-                default:
-                    break;
-                }
+                type = stream_format_to_cv_type(format);
             }
 
             if (type < 0)
