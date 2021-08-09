@@ -1575,7 +1575,7 @@ public:
         }
         else if (input_name == "clock")
         {
-            output->send(message);
+            output->send(this->message);
         }
     }
 };
