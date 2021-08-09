@@ -2,6 +2,17 @@ string(REPLACE ${PROJECT_SOURCE_DIR}/ "" _rel_path ${CMAKE_CURRENT_LIST_DIR})
 
 include(ExternalProject)
 
+ExternalProject_Add (libjpeg-turbo
+    PREFIX libjpeg-turbo
+    GIT_REPOSITORY "https://github.com/libjpeg-turbo/libjpeg-turbo.git"
+    GIT_TAG "2.1.0"
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/libjpeg-turbo"
+    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/libjpeg-turbo"
+        "-DCMAKE_GENERATOR=${CMAKE_GENERATOR}"
+        "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
+        "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
+)
+
 ExternalProject_Add (cereal
     PREFIX cereal
     GIT_REPOSITORY https://github.com/USCiLab/cereal.git
@@ -21,7 +32,16 @@ ExternalProject_Add (spdlog
     INSTALL_COMMAND ""
 )
 
+ExternalProject_Add(googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG master
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/googletest"
+    BINARY_DIR "${CMAKE_BINARY_DIR}/third-party/googletest-build"
+    INSTALL_COMMAND ""
+)
+
 include_directories(
     ${CMAKE_BINARY_DIR}/third-party/cereal/include
     ${CMAKE_BINARY_DIR}/third-party/spdlog/include
+    ${CMAKE_BINARY_DIR}/third-party/googletest/googletest/include
 )
