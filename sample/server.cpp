@@ -17,7 +17,6 @@
 using namespace coalsack;
 
 static std::vector<std::function<void()>> on_shutdown_handlers;
-static std::atomic<bool> quit(false);
 
 static void shutdown()
 {
