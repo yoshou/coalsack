@@ -674,8 +674,8 @@ public:
         {
             std::vector<const image*> images;
             std::shared_ptr<stream_profile> profile;
-            double timestamp;
-            std::uint64_t frame_number;
+            double timestamp {0.0};
+            std::uint64_t frame_number {0};
             for (const auto &[name, field] : obj_msg->get_fields())
             {
                 if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(field))

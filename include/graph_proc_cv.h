@@ -820,7 +820,7 @@ public:
         {
             img.set_format(image_format::B8G8R8A8_UINT);
         }
-        stream_format stream_fmt;
+        stream_format stream_fmt = stream_format::ANY;
         if (frame.channels() == 1)
         {
             stream_fmt = stream_format::Y8;
