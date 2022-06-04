@@ -348,6 +348,9 @@ class frame_message : public graph_message
 public:
     frame_message()
         : data()
+        , timestamp()
+        , frame_number(0)
+        , profile()
     {
     }
 
