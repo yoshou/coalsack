@@ -420,6 +420,74 @@ public:
 CEREAL_REGISTER_TYPE(threshold_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(image_transform_node, threshold_node)
 
+class resize_node : public image_transform_node
+{
+    std::uint32_t width;
+    std::uint32_t height;
+    int interpolation;
+
+public:
+    resize_node()
+        : width(0), height(0), interpolation(cv::INTER_LINEAR)
+    {
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "resize_node";
+    }
+
+    std::uint32_t get_width() const
+    {
+        return width;
+    }
+    void set_width(std::uint32_t value)
+    {
+        width = value;
+    }
+    std::uint32_t get_height() const
+    {
+        return height;
+    }
+    void set_height(std::uint32_t value)
+    {
+        height = value;
+    }
+    int get_interpolation_type() const
+    {
+        return interpolation;
+    }
+    void set_interpolation_type(int value)
+    {
+        interpolation = value;
+    }
+
+    virtual void transform(const image &src_image, image &dst_image) override
+    {
+        image resized_image(width, height, src_image.get_bpp(), width * src_image.get_bpp(), src_image.get_metadata_size());
+        memcpy(resized_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+        resized_image.set_format(src_image.get_format());
+
+        const auto cv_type = convert_to_cv_type(src_image.get_format());
+
+        cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
+        cv::Mat dst_mat((int)resized_image.get_height(), (int)resized_image.get_width(), cv_type, (void *)resized_image.get_data());
+
+        cv::resize(src_mat, dst_mat, dst_mat.size(), 0, 0, interpolation);
+
+        dst_image = std::move(resized_image);
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(width, height, interpolation);
+    }
+};
+
+CEREAL_REGISTER_TYPE(resize_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(image_transform_node, resize_node)
+
 #include <opencv2/features2d.hpp>
 
 struct keypoint
