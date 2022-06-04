@@ -112,13 +112,13 @@ class graph_edge
     graph_node* source;
     std::string name;
     EDGE_TYPE edge_type;
-    std::shared_ptr<graph_message_callback> callback;
+    std::vector<std::shared_ptr<graph_message_callback>> callbacks;
 public:
     graph_edge(graph_node* source, EDGE_TYPE edge_type = EDGE_TYPE::DATAFLOW)
         : source(source)
         , name()
         , edge_type(edge_type)
-        , callback(nullptr)
+        , callbacks()
     {}
 
     void set_name(std::string name)
@@ -143,23 +143,26 @@ public:
 
     void set_callback(std::shared_ptr<graph_message_callback> callback)
     {
-        if (this->callback)
+        if (std::find(callbacks.begin(), callbacks.end(), callback) != callbacks.end())
         {
             throw std::logic_error("The callback has been already registerd");
         }
-        this->callback = callback;
+        callbacks.push_back(callback);
     }
 
     void remove_callback()
     {
-        this->callback = nullptr;
+        callbacks.clear();
     }
 
     void send(graph_message_ptr message)
     {
-        if (callback)
+        for (const auto &callback : callbacks)
         {
-            (*callback)(message);
+            if (callback)
+            {
+                (*callback)(message);
+            }
         }
     }
 
@@ -1685,3 +1688,102 @@ public:
 
 CEREAL_REGISTER_TYPE(demux_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, demux_node)
+
+class fifo_node : public graph_node
+{
+    graph_edge_ptr output;
+    std::mutex mtx;
+    std::deque<graph_message_ptr> messages;
+    std::shared_ptr<std::thread> th;
+    std::atomic_bool running;
+    std::condition_variable cv;
+    std::uint32_t max_size;
+
+public:
+    fifo_node()
+        : graph_node(), output(std::make_shared<graph_edge>(this)), max_size(10)
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "fifo_node";
+    }
+
+    void set_max_size(std::uint32_t value)
+    {
+        max_size = value;
+    }
+    std::uint32_t get_max_size() const
+    {
+        return max_size;
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(max_size);
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (!running)
+        {
+            return;
+        }
+
+        if (input_name == "default")
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+
+            if (messages.size() >= max_size)
+            {
+                spdlog::error("Fifo overflow");
+            }
+            else
+            {
+                messages.push_back(message);
+                cv.notify_one();
+            }
+        }
+    }
+
+    virtual void run() override
+    {
+        th.reset(new std::thread([this]() {
+            running.store(true);
+            while (running.load())
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                while (messages.empty() && running)
+                {
+                    cv.wait_for(lock, std::chrono::milliseconds(100));
+                }
+
+                if (!messages.empty())
+                {
+                    const auto message = messages.front();
+                    messages.pop_front();
+                    output->send(message);
+                }
+            }
+        }));
+    }
+
+    virtual void stop() override
+    {
+        if (running.load())
+        {
+            running.store(false);
+            cv.notify_one();
+            if (th && th->joinable())
+            {
+                th->join();
+            }
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(fifo_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, fifo_node)
