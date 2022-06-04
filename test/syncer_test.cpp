@@ -2,6 +2,8 @@
 #include <numeric>
 #include "syncer.h"
 
+using namespace coalsack;
+
 TEST(SyncerTest, Test1)
 {
     using syncer_type = stream_syncer<int, int>;

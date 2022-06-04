@@ -2,19 +2,22 @@
 
 #include <cstdint>
 
-struct source_identifier
+namespace coalsack
 {
-    int64_t stream_unique_id;
-    int32_t data_id;
-};
-
-static int operator<(const source_identifier &lhs, const source_identifier &rhs)
-{
-    if (lhs.stream_unique_id == rhs.stream_unique_id)
+    struct source_identifier
     {
-        return lhs.data_id < rhs.data_id;
-    }
-    return lhs.stream_unique_id < rhs.stream_unique_id;
-}
+        int64_t stream_unique_id;
+        int32_t data_id;
+    };
 
-static const size_t PACKET_PAYLOAD_SIZE = 1472;
+    static int operator<(const source_identifier &lhs, const source_identifier &rhs)
+    {
+        if (lhs.stream_unique_id == rhs.stream_unique_id)
+        {
+            return lhs.data_id < rhs.data_id;
+        }
+        return lhs.stream_unique_id < rhs.stream_unique_id;
+    }
+
+    static const size_t PACKET_PAYLOAD_SIZE = 1472;
+}
