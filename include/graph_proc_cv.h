@@ -718,3 +718,157 @@ public:
 
 CEREAL_REGISTER_TYPE(simple_blob_detector_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, simple_blob_detector_node)
+
+class video_capture_node : public graph_node
+{
+    std::shared_ptr<std::thread> th;
+    std::atomic_bool running;
+    graph_edge_ptr output;
+    std::vector<std::tuple<int, double>> request_options;
+    int fps;
+    stream_type stream;
+
+public:
+    video_capture_node()
+        : graph_node(), th(), running(false)
+        , output(std::make_shared<graph_edge>(this))
+        , stream(stream_type::COLOR)
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "video_capture";
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(request_options);
+        archive(stream);
+    }
+
+    virtual void run() override
+    {
+        running = true;
+        th.reset(new std::thread([&]()
+        {
+            cv::VideoCapture capture;
+            capture.open(0);
+            if (stream == stream_type::INFRERED)
+            {
+                capture.set(cv::CAP_PROP_CONVERT_RGB, 0);
+            }
+            for (const auto &[option, value] : request_options)
+            {
+                capture.set(option, value);
+            }
+            cv::Mat frame;
+
+            if (!capture.isOpened())
+            {
+                spdlog::error("Failed to open capture device");
+                running = false;
+            }
+
+            fps = capture.get(cv::CAP_PROP_FPS);
+
+            while (running.load())
+            {
+                capture.read(frame);
+                const auto timestamp = capture.get(cv::CAP_PROP_POS_MSEC);
+
+                if (frame.empty())
+                {
+                    spdlog::error("Failed to grab frame");
+                    running = false;
+                }
+
+                video_frame_callback(frame, timestamp);
+            }
+        }));
+    }
+
+    void video_frame_callback(cv::Mat frame, double timestamp)
+    {
+        if (frame.empty())
+        {
+            return;
+        }
+        if (stream == stream_type::INFRERED)
+        {
+            cv::extractChannel(frame, frame, 0);
+        }
+
+        auto msg = std::make_shared<frame_message<image>>();
+
+        image img(static_cast<std::uint32_t>(frame.size().width),
+                  static_cast<std::uint32_t>(frame.size().height),
+                  static_cast<std::uint32_t>(frame.elemSize()),
+                  static_cast<std::uint32_t>(frame.step), (const uint8_t *)frame.data);
+
+        if (frame.channels() == 1)
+        {
+            img.set_format(image_format::Y8_UINT);
+        }
+        else if(frame.channels() == 3)
+        {
+            img.set_format(image_format::B8G8R8_UINT);
+        }
+        else if (frame.channels() == 4)
+        {
+            img.set_format(image_format::B8G8R8A8_UINT);
+        }
+        stream_format stream_fmt;
+        if (frame.channels() == 1)
+        {
+            stream_fmt = stream_format::Y8;
+        }
+        else if (frame.channels() == 3)
+        {
+            stream_fmt = stream_format::BGR8;
+        }
+        else if (frame.channels() == 4)
+        {
+            stream_fmt = stream_format::BGRA8;
+        }
+
+        msg->set_data(std::move(img));
+        msg->set_profile(std::make_shared<stream_profile>(
+            stream,
+            0,
+            stream_fmt,
+            fps,
+            0));
+        msg->set_timestamp(timestamp);
+        msg->set_frame_number(0);
+
+        output->send(msg);
+    }
+
+    virtual void stop() override
+    {
+        if (running.load())
+        {
+            running.store(false);
+            if (th && th->joinable())
+            {
+                th->join();
+            }
+        }
+    }
+
+    void set_stream(stream_type stream)
+    {
+        this->stream = stream;
+    }
+
+    void set_option(int option, double value)
+    {
+        request_options.push_back(std::make_tuple(option, value));
+    }
+};
+
+CEREAL_REGISTER_TYPE(video_capture_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, video_capture_node)
