@@ -10,7 +10,7 @@ add_dependencies(${PROJECT_NAME}
 )
 
 include_directories(
-    ${GTEST_INCLUDE_DIRS}
+    SYSTEM ${GTEST_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
