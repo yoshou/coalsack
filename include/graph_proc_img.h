@@ -568,3 +568,152 @@ using approximate_time_sync_node = sync_node<image, approximate_time_sync_config
 
 CEREAL_REGISTER_TYPE(approximate_time_sync_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, approximate_time_sync_node)
+
+class tiling_node : public graph_node
+{
+    graph_edge_ptr output;
+    std::uint32_t num_cols;
+    std::uint32_t num_rows;
+    std::set<std::string> names;
+
+public:
+    tiling_node()
+        : graph_node()
+        , output(std::make_shared<graph_edge>(this))
+        , num_cols(0)
+        , num_rows(0)
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "tiling_node";
+    }
+
+    void set_num_rows(std::uint32_t value)
+    {
+        num_rows = value;
+    }
+    void set_num_cols(std::uint32_t value)
+    {
+        num_cols = value;
+    }
+    std::uint32_t get_num_rows() const
+    {
+        return num_rows;
+    }
+    std::uint32_t get_num_cols() const
+    {
+        return num_cols;
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(num_rows);
+        archive(num_cols);
+    }
+
+    void tiling(const std::vector<const image*> &images, image &output)
+    {
+        if (images.size() == 0)
+        {
+            return;
+        }
+        uint32_t tile_width = 0;
+        uint32_t tile_height = 0;
+        uint32_t tile_bpp = 0;
+        uint32_t tile_stride = 0;
+
+        for (const auto image : images)
+        {
+            if (image)
+            {
+                tile_width = image->get_width();
+                tile_height = image->get_height();
+                tile_bpp = image->get_bpp();
+                tile_stride = image->get_stride();
+                break;
+            }
+        }
+
+        const auto output_stride = tile_width * num_cols * tile_bpp;
+        output = image(tile_width * num_cols, tile_height * num_rows, tile_bpp, output_stride);
+
+        for (std::size_t tile_y = 0; tile_y < num_rows; tile_y++)
+        {
+            for (std::size_t tile_x = 0; tile_x < num_cols; tile_x++)
+            {
+                const auto image_idx = tile_y * num_cols + tile_x;
+                if (image_idx >= images.size())
+                {
+                    continue;
+                }
+
+                const auto image = images[image_idx];
+                if (image == nullptr)
+                {
+                    continue;
+                }
+                for (std::size_t y = 0; y < tile_height; y++)
+                {
+                    std::copy_n(image->get_data() + y * tile_stride, tile_width * tile_bpp,
+                                output.get_data() + output_stride * (tile_y * tile_height + y) + tile_x * tile_width * tile_bpp);
+                }
+            }
+        }
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
+        {
+            std::vector<const image*> images;
+            std::shared_ptr<stream_profile> profile;
+            double timestamp;
+            std::uint64_t frame_number;
+            for (const auto &[name, field] : obj_msg->get_fields())
+            {
+                if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(field))
+                {
+                    names.insert(name);
+                }
+            }
+            for (const auto &name : names)
+            {
+                if (const auto iter = obj_msg->get_fields().find(name); iter != obj_msg->get_fields().end())
+                {
+                    const auto &field = iter->second;
+                    if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(field))
+                    {
+                        const auto &img = image_msg->get_data();
+                        images.push_back(&img);
+                        profile = image_msg->get_profile();
+                        timestamp = image_msg->get_timestamp();
+                        frame_number = image_msg->get_frame_number();
+                    }
+                    else
+                    {
+                        images.push_back(nullptr);
+                    }
+                }
+            }
+
+            image img;
+            tiling(images, img);
+
+            auto msg = std::make_shared<frame_message<image>>();
+
+            msg->set_data(std::move(img));
+            msg->set_profile(profile);
+            msg->set_timestamp(timestamp);
+            msg->set_frame_number(frame_number);
+
+            output->send(msg);
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(tiling_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, tiling_node)
