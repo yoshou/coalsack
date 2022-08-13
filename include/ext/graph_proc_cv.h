@@ -78,15 +78,13 @@ namespace coalsack
             if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
             {
                 const auto &src_image = image_msg->get_data();
-                int cv_type = convert_to_cv_type(src_image.get_format());
-
-                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
-
-                const auto width = static_cast<std::size_t>(src_mat.size().width);
-                const auto height = static_cast<std::size_t>(src_mat.size().height);
+                const auto data = src_image.get_data();
+                const auto width = src_image.get_width();
+                const auto height = src_image.get_height();
+                const auto stride = src_image.get_stride();
 
                 std::vector<circle_t> keypoints;
-                blob_detector detector(src_mat.data, width, height);
+                blob_detector detector(data, width, height, stride);
                 detector.min_dist_between_blobs = params.min_dist_between_blobs;
                 detector.min_threshold = params.min_threshold;
                 detector.max_threshold = params.max_threshold;

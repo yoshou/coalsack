@@ -78,31 +78,53 @@ namespace coalsack
         const std::uint8_t *image;
         std::size_t width;
         std::size_t height;
+        std::size_t stride;
 
     public:
-        contours_detector(const std::uint8_t *image, std::size_t width, std::size_t height)
-            : image(image), width(width), height(height)
+        contours_detector(const std::uint8_t *image, std::size_t width, std::size_t height, std::size_t stride)
+            : image(image), width(width), height(height), stride(stride)
         {
         }
 
     private:
-        static std::size_t find_nonzero(const std::uint8_t *__restrict image, std::size_t length)
+        static inline std::size_t find_nonzero(const std::uint8_t *__restrict image, std::size_t length, double threshold)
         {
             std::size_t x = 0;
 #if USE_NEON
+            const uint8x16_t v_threshold = vdupq_n_u8(threshold);
+#if 0
             constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
             for (; x <= length - num_vector_lanes; x += num_vector_lanes)
             {
-                uint8x16_t v_src = vld1q_u8(image + x);
-                if (vmaxvq_u8(v_src) != 0)
+                const uint8x16_t v_src = vld1q_u8(image + x);
+                const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+                if (vmaxvq_u8(v_mask) != 0)
                 {
-                    break;
+		            break;
+                }
+            }
+#elif 1
+            constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
+            for (; x <= length - num_vector_lanes; x += num_vector_lanes)
+            {
+                const uint8x16_t v_src = vld1q_u8(image + x);
+                const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+                const auto low = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 0);
+                if (low != 0)
+                {
+                    return x + (__builtin_ctzll(low) >> 3);
+                }
+                const auto high = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 1);
+                if (high != 0)
+                {
+                    return x + (__builtin_ctzll(high) >> 3) + 8;
                 }
             }
 #endif
+#endif
             for (; x < length; x++)
             {
-                if (image[x] != 0)
+                if (image[x] > threshold)
                 {
                     return x;
                 }
@@ -111,23 +133,44 @@ namespace coalsack
             return length;
         }
 
-        static std::size_t find_zero(const std::uint8_t *image, std::size_t length)
+        static inline std::size_t find_zero(const std::uint8_t *image, std::size_t length, double threshold)
         {
             std::size_t x = 0;
 #if USE_NEON
+            const uint8x16_t v_threshold = vdupq_n_u8(threshold);
+#if 0
             constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
             for (; x <= length - num_vector_lanes; x += num_vector_lanes)
             {
-                uint8x16_t v_src = vld1q_u8(image + x);
-                if (vminvq_u8(v_src) == 0)
+                const uint8x16_t v_src = vld1q_u8(image + x);
+                const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+                if (vminvq_u8(v_mask) == 0)
                 {
                     break;
                 }
             }
+#elif 1
+            constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
+            for (; x <= length - num_vector_lanes; x += num_vector_lanes)
+            {
+                const uint8x16_t v_src = vld1q_u8(image + x);
+                const uint8x16_t v_mask = vcleq_u8(v_src, v_threshold);
+                const auto low = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 0);
+                if (low != 0)
+                {
+                    return x + (__builtin_ctzll(low) >> 3);
+                }
+                const auto high = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 1);
+                if (high != 0)
+                {
+                    return x + (__builtin_ctzll(high) >> 3) + 8;
+                }
+            }
+#endif
 #endif
             for (; x < length; x++)
             {
-                if (image[x] == 0)
+                if (image[x] <= threshold)
                 {
                     return x;
                 }
@@ -149,72 +192,48 @@ namespace coalsack
             LOWER,
         };
 
-    public:
-        void detect(std::vector<std::vector<u32vec2>> &contours)
+        struct contour_connector
         {
             std::vector<linked_point> points;
-
             std::vector<std::size_t> internal_contour_heads;
             std::vector<std::size_t> external_contour_heads;
 
-            for (std::size_t x = 0; x < width;)
+            inline void add_segment(int start_x, int start_y, int end_x, int end_y)
             {
-                x += find_nonzero(image + x, width - x);
-
-                if (x >= width)
-                {
-                    break;
-                }
-
                 linked_point start_point;
-                start_point.x = x;
-                start_point.y = 0;
+                start_point.x = start_x;
+                start_point.y = start_y;
                 start_point.link = points.size() + 1;
                 points.push_back(start_point);
 
-                x += 1;
-                x += find_zero(image + x, width - x);
-
                 linked_point end_point;
-                end_point.x = x - 1;
-                end_point.y = 0;
+                end_point.x = end_x - 1;
+                end_point.y = end_y;
                 end_point.link = points.size() - 1;
                 points.push_back(end_point);
 
                 external_contour_heads.push_back(points.size() - 1);
             }
+            std::size_t last_row_points_end = 0;
+            std::vector<std::pair<std::size_t, std::size_t>> rows;
 
-            std::size_t upper_row_points_start = 0;
-            std::size_t upper_row_points_end = points.size();
-            for (std::size_t y = 1; y < height; y++)
+            void next_line()
             {
-                for (std::size_t x = 0; x < width;)
+                rows.push_back(std::make_pair(last_row_points_end, points.size()));
+                last_row_points_end = points.size();
+            }
+
+            void build_link()
+            {
+                for (std::size_t lower_row = 1; lower_row < rows.size(); lower_row++)
                 {
-                    x += find_nonzero(image + y * width + x, width - x);
-
-                    if (x >= width)
-                    {
-                        break;
-                    }
-
-                    linked_point start_point;
-                    start_point.x = x;
-                    start_point.y = y;
-                    start_point.link = points.size() + 1;
-                    points.push_back(start_point);
-
-                    x += find_zero(image + y * width + x, width - x);
-
-                    linked_point end_point;
-                    end_point.x = x - 1;
-                    end_point.y = y;
-                    end_point.link = points.size() - 1;
-                    points.push_back(end_point);
+                    const auto upper_row = lower_row - 1;
+                    connect_rows(rows.at(lower_row).first, rows.at(lower_row).second, rows.at(upper_row).first, rows.at(upper_row).second);
                 }
+            }
 
-                std::size_t lower_row_points_start = upper_row_points_end;
-                std::size_t lower_row_points_end = points.size();
-
+            void connect_rows(std::size_t lower_row_points_start, std::size_t lower_row_points_end, std::size_t upper_row_points_start, std::size_t upper_row_points_end)
+            {
                 std::size_t i = upper_row_points_start;
                 std::size_t j = lower_row_points_start;
                 CONNECTING_LINE connecting_line = CONNECTING_LINE::NONE;
@@ -372,52 +391,232 @@ namespace coalsack
                         connecting_line = CONNECTING_LINE::NONE;
                     }
                 }
-
-                upper_row_points_start = lower_row_points_start;
-                upper_row_points_end = lower_row_points_end;
             }
+        };
 
-            const auto visited = std::make_unique<bool[]>(points.size());
-            for (std::size_t i = 0; i < external_contour_heads.size(); i++)
+    public:
+        void detect(double threshold, std::vector<std::vector<u32vec2>> &contours)
+        {
+            contour_connector connector;
+
+            for (std::size_t x = 0; x < width;)
             {
-                const auto start = external_contour_heads[i];
-                if (visited[start])
+                x += find_nonzero(image + x, width - x, threshold);
+
+                if (x >= width)
                 {
-                    continue;
+                    break;
                 }
 
-                auto idx = start;
-                std::vector<u32vec2> contour;
-                do
-                {
-                    contour.push_back(u32vec2{
-                        static_cast<std::uint32_t>(points[idx].x), static_cast<std::uint32_t>(points[idx].y)});
-                    visited[idx] = true;
-                    idx = points[idx].link;
-                } while (idx != start);
+                const auto start_x = x;
 
-                contours.push_back(contour);
+                x += 1;
+                x += find_zero(image + x, width - x, threshold);
+
+                const auto end_x = x;
+                connector.add_segment(start_x, 0, end_x, 0);
             }
 
-            for (std::size_t i = 0; i < internal_contour_heads.size(); i++)
+            connector.next_line();
+
+            for (std::size_t y = 1; y < height; y++)
             {
-                const auto start = internal_contour_heads[i];
-                if (visited[start])
+                for (std::size_t x = 0; x < width;)
                 {
-                    continue;
+                    x += find_nonzero(image + y * stride + x, width - x, threshold);
+
+                    if (x >= width)
+                    {
+                        break;
+                    }
+
+                    const auto start_x = x;
+
+                    x += 1;
+                    x += find_zero(image + y * stride + x, width - x, threshold);
+
+                    const auto end_x = x;
+                    connector.add_segment(start_x, y, end_x, y);
                 }
 
-                auto idx = start;
-                std::vector<u32vec2> contour;
-                do
-                {
-                    contour.push_back(u32vec2{
-                        static_cast<std::uint32_t>(points[idx].x), static_cast<std::uint32_t>(points[idx].y)});
-                    visited[idx] = true;
-                    idx = points[idx].link;
-                } while (idx != start);
+                connector.next_line();
+            }
+            connector.build_link();
 
-                contours.push_back(contour);
+            const auto traverse_contours = [](const auto &connector, auto &contours)
+            {
+                const auto &points = connector.points;
+                const auto &external_contour_heads = connector.external_contour_heads;
+                const auto &internal_contour_heads = connector.internal_contour_heads;
+
+                const auto visited = std::make_unique<bool[]>(points.size());
+                for (std::size_t i = 0; i < external_contour_heads.size(); i++)
+                {
+                    const auto start = external_contour_heads[i];
+                    if (visited[start])
+                    {
+                        continue;
+                    }
+
+                    auto idx = start;
+                    std::vector<u32vec2> contour;
+                    do
+                    {
+                        contour.push_back(u32vec2{
+                            static_cast<std::uint32_t>(points[idx].x), static_cast<std::uint32_t>(points[idx].y)});
+                        visited[idx] = true;
+                        idx = points[idx].link;
+                    } while (idx != start);
+
+                    contours.push_back(contour);
+                }
+
+                for (std::size_t i = 0; i < internal_contour_heads.size(); i++)
+                {
+                    const auto start = internal_contour_heads[i];
+                    if (visited[start])
+                    {
+                        continue;
+                    }
+
+                    auto idx = start;
+                    std::vector<u32vec2> contour;
+                    do
+                    {
+                        contour.push_back(u32vec2{
+                            static_cast<std::uint32_t>(points[idx].x), static_cast<std::uint32_t>(points[idx].y)});
+                        visited[idx] = true;
+                        idx = points[idx].link;
+                    } while (idx != start);
+
+                    contours.push_back(contour);
+                }
+            };
+
+            traverse_contours(connector, contours);
+        }
+
+        using contour_t = std::vector<u32vec2>;
+
+        void detect_multi_layer(const std::vector<double> &thresholds, std::vector<std::vector<contour_t>> &contours)
+        {
+            contours.resize(thresholds.size());
+
+            std::vector<contour_connector> connectors(thresholds.size());
+
+            for (std::size_t layer = 0; layer < thresholds.size(); layer++)
+            {
+                auto &connector = connectors.at(layer);
+                const auto threshold = thresholds.at(layer);
+
+                for (std::size_t x = 0; x < width;)
+                {
+                    x += find_nonzero(image + x, width - x, threshold);
+
+                    if (x >= width)
+                    {
+                        break;
+                    }
+
+                    const auto start_x = x;
+
+                    x += 1;
+                    x += find_zero(image + x, width - x, threshold);
+
+                    const auto end_x = x;
+                    connector.add_segment(start_x, 0, end_x, 0);
+                }
+                connector.next_line();
+            }
+
+            for (std::size_t y = 1; y < height; y++)
+            {
+                for (std::size_t layer = 0; layer < thresholds.size(); layer++)
+                {
+                    auto &connector = connectors.at(layer);
+                    const auto threshold = thresholds.at(layer);
+                    for (std::size_t x = 0; x < width;)
+                    {
+                        x += find_nonzero(image + y * stride + x, width - x, threshold);
+                        if (x >= width)
+                        {
+                            break;
+                        }
+
+                        const auto start_x = x;
+
+                        x += 1;
+                        x += find_zero(image + y * stride + x, width - x, threshold);
+
+                        const auto end_x = x;
+                        connector.add_segment(start_x, y, end_x, y);
+                    }
+
+                    connector.next_line();
+                }
+            }
+
+            for (std::size_t layer = 0; layer < thresholds.size(); layer++)
+            {
+                auto &connector = connectors.at(layer);
+                connector.build_link();
+            }
+
+            const auto traverse_contours = [](const auto &connector, auto &contours)
+            {
+                const auto &points = connector.points;
+                const auto &external_contour_heads = connector.external_contour_heads;
+                const auto &internal_contour_heads = connector.internal_contour_heads;
+
+                const auto visited = std::make_unique<bool[]>(points.size());
+                for (std::size_t i = 0; i < external_contour_heads.size(); i++)
+                {
+                    const auto start = external_contour_heads[i];
+                    if (visited[start])
+                    {
+                        continue;
+                    }
+
+                    auto idx = start;
+                    std::vector<u32vec2> contour;
+                    do
+                    {
+                        contour.push_back(u32vec2{
+                            static_cast<std::uint32_t>(points[idx].x), static_cast<std::uint32_t>(points[idx].y)});
+                        visited[idx] = true;
+                        idx = points[idx].link;
+                    } while (idx != start);
+
+                    contours.push_back(contour);
+                }
+
+                for (std::size_t i = 0; i < internal_contour_heads.size(); i++)
+                {
+                    const auto start = internal_contour_heads[i];
+                    if (visited[start])
+                    {
+                        continue;
+                    }
+
+                    auto idx = start;
+                    std::vector<u32vec2> contour;
+                    do
+                    {
+                        contour.push_back(u32vec2{
+                            static_cast<std::uint32_t>(points[idx].x), static_cast<std::uint32_t>(points[idx].y)});
+                        visited[idx] = true;
+                        idx = points[idx].link;
+                    } while (idx != start);
+
+                    contours.push_back(contour);
+                }
+            };
+
+            for (std::size_t layer = 0; layer < thresholds.size(); layer++)
+            {
+                const auto &connector = connectors.at(layer);
+                const auto threshold = thresholds.at(layer);
+                traverse_contours(connector, contours.at(layer));
             }
         }
     };
@@ -659,10 +858,11 @@ namespace coalsack
         const std::uint8_t *image;
         std::size_t width;
         std::size_t height;
+        std::size_t stride;
 
     public:
-        blob_detector(const std::uint8_t *image, std::size_t width, std::size_t height)
-            : image(image), width(width), height(height), min_threshold(50.0), max_threshold(220.0), step_threshold(10.0), min_area(25.0), max_area(5000.0), min_circularity(0.8f), max_circularity(std::numeric_limits<float>::max()), min_dist_between_blobs(10), min_repeatability(2)
+        blob_detector(const std::uint8_t *image, std::size_t width, std::size_t height, std::size_t stride)
+            : image(image), width(width), height(height), stride(stride), min_threshold(50.0), max_threshold(220.0), step_threshold(10.0), min_area(25.0), max_area(5000.0), min_circularity(0.8f), max_circularity(std::numeric_limits<float>::max()), min_dist_between_blobs(10), min_repeatability(2)
         {
         }
 
@@ -678,17 +878,30 @@ namespace coalsack
 
         void detect(std::vector<circle_t> &keypoints)
         {
-            std::vector<std::vector<circle_t>> centers;
-            const auto binarized_image = std::make_unique<std::uint8_t[]>(width * height);
+            std::vector<double> threshs;
             for (double thresh = min_threshold; thresh < max_threshold; thresh += step_threshold)
             {
-                threshold(image, width * height, static_cast<std::uint8_t>(thresh), 255, binarized_image.get());
+                threshs.push_back(thresh);
+            }
+            std::vector<std::vector<circle_t>> circles_list(threshs.size());
+            std::vector<std::vector<std::vector<u32vec2>>> contours_list(threshs.size());
+            contours_detector detector(image, width, height, stride);
+#if 0
+	        for (std::size_t layer = 0; layer < threshs.size(); layer++)
+            {
+                const auto thresh = threshs.at(layer);
+                auto& contours = contours_list.at(layer);
+                detector.detect(thresh, contours);
+	        }
+#else
+            detector.detect_multi_layer(threshs, contours_list);
+#endif
 
-                std::vector<std::vector<u32vec2>> contours;
-                contours_detector detector(binarized_image.get(), width, height);
-                detector.detect(contours);
+            for (std::size_t layer = 0; layer < threshs.size(); layer++)
+            {
+                const auto &contours = contours_list.at(layer);
 
-                std::vector<circle_t> circles;
+                auto &circles = circles_list[layer];
                 for (std::size_t i = 0; i < contours.size(); i++)
                 {
                     const auto moments = compute_contour_moments(contours[i]);
@@ -728,7 +941,11 @@ namespace coalsack
                     circles.push_back(circle_t{
                         center, radius});
                 }
+            }
 
+            std::vector<std::vector<circle_t>> centers;
+            for (const auto &circles : circles_list)
+            {
                 std::vector<std::vector<circle_t>> new_centers;
                 for (size_t i = 0; i < circles.size(); i++)
                 {
