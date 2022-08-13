@@ -525,6 +525,100 @@ namespace coalsack
         }
     };
 
+    class scale_node : public image_transform_node
+    {
+        double alpha;
+        double beta;
+
+    public:
+        scale_node()
+            : image_transform_node(), alpha(1.0), beta(0.0)
+        {
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "scale_node";
+        }
+
+        double get_alpha() const
+        {
+            return alpha;
+        }
+        void set_alpha(double value)
+        {
+            alpha = value;
+        }
+        double get_beta() const
+        {
+            return beta;
+        }
+        void set_beta(double value)
+        {
+            beta = value;
+        }
+
+        virtual void transform(const image &src_image, image &dst_image) override
+        {
+            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
+            memcpy(binary_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            binary_image.set_format(src_image.get_format());
+
+            int cv_type = convert_to_cv_type(src_image.get_format());
+
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
+            cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type, (void *)binary_image.get_data(), binary_image.get_stride());
+
+            if (dst_mat.channels() == 1)
+            {
+                for (int y = 0; y < dst_mat.rows; y++)
+                {
+                    for (int x = 0; x < dst_mat.cols; x++)
+                    {
+                        dst_mat.at<uchar>(y, x) =
+                            cv::saturate_cast<uchar>(alpha * src_mat.at<uchar>(y, x) + beta);
+                    }
+                }
+            } 
+            else if (dst_mat.channels() == 2)
+            {
+                for (int y = 0; y < dst_mat.rows; y++)
+                {
+                    for (int x = 0; x < dst_mat.cols; x++)
+                    {
+                        for (int c = 0; c < dst_mat.channels(); c++)
+                        {
+                            dst_mat.at<cv::Vec2b>(y, x)[c] =
+                                cv::saturate_cast<uchar>(alpha * src_mat.at<cv::Vec2b>(y, x)[c] + beta);
+                        }
+                    }
+                }
+            }
+            else if (dst_mat.channels() == 3)
+            {
+                for (int y = 0; y < dst_mat.rows; y++)
+                {
+                    for (int x = 0; x < dst_mat.cols; x++)
+                    {
+                        for (int c = 0; c < dst_mat.channels(); c++)
+                        {
+                            dst_mat.at<cv::Vec3b>(y, x)[c] =
+                                cv::saturate_cast<uchar>(alpha * src_mat.at<cv::Vec3b>(y, x)[c] + beta);
+                        }
+                    }
+                }
+            }
+
+            dst_image = std::move(binary_image);
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(alpha, beta);
+        }
+    };
+
     struct keypoint
     {
         float pt_x;
@@ -910,6 +1004,9 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::r
 
 CEREAL_REGISTER_TYPE(coalsack::scale_abs_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::scale_abs_node)
+
+CEREAL_REGISTER_TYPE(coalsack::scale_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::scale_node)
 
 CEREAL_REGISTER_TYPE(coalsack::keypoint_frame_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::keypoint_frame_message)
