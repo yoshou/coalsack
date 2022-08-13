@@ -61,8 +61,7 @@ namespace coalsack
                 if (image_msg)
                 {
                     const auto& image = image_msg->get_image();
-                    cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3);
-                    frame.data = (uchar*)image.get_data();
+                    cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data(), image.get_stride());
                     cv::imshow(image_name, frame);
                 }
             }
@@ -131,8 +130,7 @@ namespace coalsack
             if (auto image_msg = std::dynamic_pointer_cast<image_message>(message))
             {
                 const auto &image = image_msg->get_image();
-                cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3);
-                frame.data = (uchar *)image.get_data();
+                cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data(), image.get_stride());
                 cv::imwrite(path, frame);
 
                 spdlog::debug("Saved image to '{0}'", path);
@@ -279,7 +277,7 @@ namespace coalsack
                     throw std::logic_error("Unknown image format");
                 }
 
-                const auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar *)image.get_data()).clone();
+                const auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar *)image.get_data(), image.get_stride()).clone();
                 cv_window::imshow(image_name, frame);
             }
         }
@@ -391,8 +389,8 @@ namespace coalsack
 
             int cv_type = convert_to_cv_type(src_image.get_format());
 
-            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
-            cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type, (void *)binary_image.get_data());
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
+            cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type, (void *)binary_image.get_data(), binary_image.get_stride());
 
             cv::threshold(src_mat, dst_mat, thresh, maxval, thresh_type);
 
@@ -456,8 +454,8 @@ namespace coalsack
 
             const auto cv_type = convert_to_cv_type(src_image.get_format());
 
-            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
-            cv::Mat dst_mat((int)resized_image.get_height(), (int)resized_image.get_width(), cv_type, (void *)resized_image.get_data());
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
+            cv::Mat dst_mat((int)resized_image.get_height(), (int)resized_image.get_width(), cv_type, (void *)resized_image.get_data(), resized_image.get_stride());
 
             cv::resize(src_mat, dst_mat, dst_mat.size(), 0, 0, interpolation);
 
@@ -512,8 +510,8 @@ namespace coalsack
 
             int cv_type = convert_to_cv_type(src_image.get_format());
 
-            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
-            cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type, (void *)binary_image.get_data());
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
+            cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type, (void *)binary_image.get_data(), binary_image.get_stride());
 
             cv::convertScaleAbs(src_mat, dst_mat, alpha, beta);
 
@@ -575,7 +573,7 @@ namespace coalsack
                 const auto &src_image = image_msg->get_data();
                 int cv_type = convert_to_cv_type(src_image.get_format());
 
-                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
+                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
 
                 std::vector<cv::KeyPoint> kps;
                 detector->detect(src_mat, kps);
@@ -687,7 +685,7 @@ namespace coalsack
                 const auto &src_image = image_msg->get_data();
                 int cv_type = convert_to_cv_type(src_image.get_format());
 
-                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data());
+                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
 
                 auto detector = cv::SimpleBlobDetector::create(params);
                 std::vector<cv::KeyPoint> kps;
