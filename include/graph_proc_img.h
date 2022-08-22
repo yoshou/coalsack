@@ -641,7 +641,10 @@ namespace coalsack
                         names.insert(name);
                     }
                 }
-                for (const auto &name : names)
+                std::vector<std::string> name_list;
+                std::copy(names.begin(), names.end(), std::back_inserter(name_list));
+                std::sort(name_list.begin(), name_list.end());
+                for (const auto &name : name_list)
                 {
                     if (const auto iter = obj_msg->get_fields().find(name); iter != obj_msg->get_fields().end())
                     {
@@ -658,6 +661,10 @@ namespace coalsack
                         {
                             images.push_back(nullptr);
                         }
+                    }
+                    else
+                    {
+                        images.push_back(nullptr);
                     }
                 }
 
