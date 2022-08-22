@@ -94,30 +94,36 @@ namespace coalsack
             const uint8x16_t v_threshold = vdupq_n_u8(threshold);
 #if 0
             constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
-            for (; x <= length - num_vector_lanes; x += num_vector_lanes)
+            if (length >= num_vector_lanes)
             {
-                const uint8x16_t v_src = vld1q_u8(image + x);
-                const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
-                if (vmaxvq_u8(v_mask) != 0)
+                for (; x <= length - num_vector_lanes; x += num_vector_lanes)
                 {
-		            break;
+                    const uint8x16_t v_src = vld1q_u8(image + x);
+                    const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+                    if (vmaxvq_u8(v_mask) != 0)
+                    {
+                        break;
+                    }
                 }
             }
 #elif 1
             constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
-            for (; x <= length - num_vector_lanes; x += num_vector_lanes)
+            if (length >= num_vector_lanes)
             {
-                const uint8x16_t v_src = vld1q_u8(image + x);
-                const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
-                const auto low = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 0);
-                if (low != 0)
+                for (; x <= length - num_vector_lanes; x += num_vector_lanes)
                 {
-                    return x + (__builtin_ctzll(low) >> 3);
-                }
-                const auto high = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 1);
-                if (high != 0)
-                {
-                    return x + (__builtin_ctzll(high) >> 3) + 8;
+                    const uint8x16_t v_src = vld1q_u8(image + x);
+                    const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+                    const auto low = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 0);
+                    if (low != 0)
+                    {
+                        return x + (__builtin_ctzll(low) >> 3);
+                    }
+                    const auto high = vgetq_lane_u64(vreinterpretq_u64_u8(v_mask), 1);
+                    if (high != 0)
+                    {
+                        return x + (__builtin_ctzll(high) >> 3) + 8;
+                    }
                 }
             }
 #endif
@@ -410,7 +416,7 @@ namespace coalsack
 
                 const auto start_x = x;
 
-                x += 1;
+                x = std::min(x + 1, width);
                 x += find_zero(image + x, width - x, threshold);
 
                 const auto end_x = x;
@@ -432,7 +438,7 @@ namespace coalsack
 
                     const auto start_x = x;
 
-                    x += 1;
+                    x = std::min(x + 1, width);
                     x += find_zero(image + y * stride + x, width - x, threshold);
 
                     const auto end_x = x;
@@ -520,7 +526,7 @@ namespace coalsack
 
                     const auto start_x = x;
 
-                    x += 1;
+                    x = std::min(x + 1, width);
                     x += find_zero(image + x, width - x, threshold);
 
                     const auto end_x = x;
@@ -538,6 +544,7 @@ namespace coalsack
                     for (std::size_t x = 0; x < width;)
                     {
                         x += find_nonzero(image + y * stride + x, width - x, threshold);
+
                         if (x >= width)
                         {
                             break;
@@ -545,7 +552,7 @@ namespace coalsack
 
                         const auto start_x = x;
 
-                        x += 1;
+                        x = std::min(x + 1, width);
                         x += find_zero(image + y * stride + x, width - x, threshold);
 
                         const auto end_x = x;
