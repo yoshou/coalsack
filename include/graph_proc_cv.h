@@ -12,6 +12,13 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
 
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#define USE_NEON 1
+#else
+#define USE_NEON 0
+#endif
+
 namespace coalsack
 {
     class image_viz_node : public graph_node
@@ -571,15 +578,41 @@ namespace coalsack
 
             if (dst_mat.channels() == 1)
             {
+                const auto stride = static_cast<std::size_t>(dst_mat.step);
                 for (int y = 0; y < dst_mat.rows; y++)
                 {
-                    for (int x = 0; x < dst_mat.cols; x++)
+                    const auto src_row = &src_mat.data[y * stride];
+                    const auto dst_row = &dst_mat.data[y * stride];
+                    int x = 0;
+#if USE_NEON
+                    constexpr auto num_vector_lanes = static_cast<int>(sizeof(uint8x16_t) / sizeof(uint8_t));
+                    const auto v_alpha = vdupq_n_f32(static_cast<float>(alpha));
+                    const auto v_beta = vdupq_n_f32(static_cast<float>(beta));
+                    for (; x <= dst_mat.cols - num_vector_lanes; x += num_vector_lanes)
                     {
-                        dst_mat.at<uchar>(y, x) =
-                            cv::saturate_cast<uchar>(alpha * src_mat.at<uchar>(y, x) + beta);
+                        const uint8x16_t v_src = vld1q_u8(src_row + x);
+                        const uint16x8_t v_src_l = vmovl_u8(vget_low_u8(v_src));
+                        const uint16x8_t v_src_h = vmovl_u8(vget_high_u8(v_src));
+                        const uint32x4_t v_src0 = vmovl_u16(vget_low_u16(v_src_l));
+                        const uint32x4_t v_src1 = vmovl_u16(vget_high_u16(v_src_l));
+                        const uint32x4_t v_src2 = vmovl_u16(vget_low_u16(v_src_h));
+                        const uint32x4_t v_src3 = vmovl_u16(vget_high_u16(v_src_h));
+                        const uint32x4_t v_dst0 = vcvtq_u32_f32(vmlaq_f32(v_beta, v_alpha, vcvtq_f32_u32(v_src0)));
+                        const uint32x4_t v_dst1 = vcvtq_u32_f32(vmlaq_f32(v_beta, v_alpha, vcvtq_f32_u32(v_src1)));
+                        const uint32x4_t v_dst2 = vcvtq_u32_f32(vmlaq_f32(v_beta, v_alpha, vcvtq_f32_u32(v_src2)));
+                        const uint32x4_t v_dst3 = vcvtq_u32_f32(vmlaq_f32(v_beta, v_alpha, vcvtq_f32_u32(v_src3)));
+                        const uint16x8_t v_dst_l = vcombine_u16(vqmovn_u32(v_dst0), vqmovn_u32(v_dst1));
+                        const uint16x8_t v_dst_h = vcombine_u16(vqmovn_u32(v_dst2), vqmovn_u32(v_dst3));
+                        const uint8x16_t v_dst = vcombine_u8(vqmovn_u16(v_dst_l), vqmovn_u16(v_dst_h));
+                        vst1q_u8(dst_row + x, v_dst);
+                    }
+#endif
+                    for (; x < dst_mat.cols; x++)
+                    {
+                        dst_row[x] = cv::saturate_cast<uchar>(static_cast<float>(alpha) * static_cast<float>(src_row[x]) + static_cast<float>(beta));
                     }
                 }
-            } 
+            }
             else if (dst_mat.channels() == 2)
             {
                 for (int y = 0; y < dst_mat.rows; y++)
