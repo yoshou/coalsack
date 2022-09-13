@@ -19,6 +19,8 @@
 #define USE_NEON 0
 #endif
 
+#include "imgproc.h"
+
 namespace coalsack
 {
     class image_viz_node : public graph_node
@@ -408,6 +410,87 @@ namespace coalsack
         void serialize(Archive &archive)
         {
             archive(thresh, maxval, thresh_type);
+        }
+    };
+
+    class gaussian_blur_node : public image_transform_node
+    {
+        int kernel_width;
+        int kernel_height;
+        double sigma_x;
+        double sigma_y;
+
+    public:
+        gaussian_blur_node()
+            : image_transform_node(), kernel_width(1), kernel_height(1), sigma_x(1.0), sigma_y(1.0)
+        {
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "gaussian_blur_node";
+        }
+
+        void set_kernel_width(int value)
+        {
+            kernel_width = value;
+        }
+        int get_kernel_width() const
+        {
+            return kernel_width;
+        }
+        void set_kernel_height(int value)
+        {
+            kernel_height = value;
+        }
+        int get_kernel_height() const
+        {
+            return kernel_height;
+        }
+        void set_sigma_x(double value)
+        {
+            sigma_x = value;
+        }
+        double get_sigma_x() const
+        {
+            return sigma_x;
+        }
+        void set_sigma_y(double value)
+        {
+            sigma_y = value;
+        }
+        double get_sigma_y() const
+        {
+            return sigma_y;
+        }
+
+        virtual void transform(const image &src_image, image &dst_image) override
+        {
+            image blurred_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
+            memcpy(blurred_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            blurred_image.set_format(src_image.get_format());
+
+            int cv_type = convert_to_cv_type(src_image.get_format());
+
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
+            cv::Mat dst_mat((int)blurred_image.get_height(), (int)blurred_image.get_width(), cv_type, (void *)blurred_image.get_data(), blurred_image.get_stride());
+
+            if (dst_mat.channels() == 1)
+            {
+                gaussian_blur(src_mat, dst_mat, kernel_width, kernel_height, sigma_x, sigma_y);
+            }
+            else
+            {
+                cv::GaussianBlur(src_mat, dst_mat, cv::Size(kernel_width, kernel_height), sigma_x, sigma_y);
+            }
+
+            dst_image = std::move(blurred_image);
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(kernel_width, kernel_height, sigma_x, sigma_y);
         }
     };
 
@@ -1031,6 +1114,12 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::image_trans
 
 CEREAL_REGISTER_TYPE(coalsack::threshold_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::threshold_node)
+
+CEREAL_REGISTER_TYPE(coalsack::mask_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::mask_node)
+
+CEREAL_REGISTER_TYPE(coalsack::gaussian_blur_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::gaussian_blur_node)
 
 CEREAL_REGISTER_TYPE(coalsack::resize_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::resize_node)
