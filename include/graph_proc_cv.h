@@ -413,6 +413,51 @@ namespace coalsack
         }
     };
 
+    class mask_node : public image_transform_node
+    {
+        image mask;
+        graph_edge_ptr output;
+
+    public:
+        mask_node()
+            : image_transform_node(), mask()
+        {
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "mask_node";
+        }
+
+        void set_mask(const image &value)
+        {
+            mask = value;
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(mask);
+        }
+        
+        virtual void transform(const image &src_image, image &dst_image) override
+        {
+            image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
+            memcpy(masked_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            masked_image.set_format(src_image.get_format());
+
+            int cv_type = convert_to_cv_type(src_image.get_format());
+
+            cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), (int)src_image.get_stride());
+            cv::Mat dst_mat((int)masked_image.get_height(), (int)masked_image.get_width(), cv_type, (void *)masked_image.get_data(), (int)masked_image.get_stride());
+            cv::Mat mask_mat((int)mask.get_height(), (int)mask.get_width(), CV_8UC1, (void *)mask.get_data(), (int)mask.get_stride());
+
+            cv::bitwise_and(src_mat, mask_mat, dst_mat);
+
+            dst_image = std::move(masked_image);
+        }
+    };
+
     class gaussian_blur_node : public image_transform_node
     {
         int kernel_width;
