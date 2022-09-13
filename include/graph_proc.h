@@ -1716,11 +1716,12 @@ namespace coalsack
             while (running.load())
             {
                 std::unique_lock<std::mutex> lock(mtx);
-                while (messages.empty() && running)
-                {
-                    cv.wait_for(lock, std::chrono::milliseconds(100));
-                }
+                cv.wait(lock, [&] { return !messages.empty() || !running; });
 
+                if (!running)
+                {
+                    break;
+                }
                 if (!messages.empty())
                 {
                     const auto message = messages.front();
