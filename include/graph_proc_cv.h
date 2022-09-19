@@ -211,6 +211,9 @@ namespace coalsack
         case stream_format::Y8:
             type = CV_8UC1;
             break;
+        case stream_format::Y16:
+            type = CV_16UC1;
+            break;
         case stream_format::RGB8:
             type = CV_8UC3;
             break;
