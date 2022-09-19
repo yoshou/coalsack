@@ -254,10 +254,22 @@ namespace coalsack
 
             if (emitter_enabled)
             {
-                std::system("raspi-gpio set 18 op dh");
-                std::system("raspi-gpio set 13 op dh");
-                std::system("raspi-gpio set 19 op dh");
-                std::system("raspi-gpio set 26 op dh");
+                if (std::system("raspi-gpio set 18 op dh") != 0)
+                {
+                    spdlog::error("Failed to enable led");
+                }
+                if (std::system("raspi-gpio set 13 op dh") != 0)
+                {
+                    spdlog::error("Failed to enable led");
+                }
+                if (std::system("raspi-gpio set 19 op dh") != 0)
+                {
+                    spdlog::error("Failed to enable led");
+                }
+                if (std::system("raspi-gpio set 26 op dh") != 0)
+                {
+                    spdlog::error("Failed to enable led");
+                }
             }
 
             camera->start(std::bind(&libcamera_capture_node::frame_received, this, std::placeholders::_1));
@@ -282,10 +294,22 @@ namespace coalsack
 
             if (emitter_enabled)
             {
-                std::system("raspi-gpio set 18 op dl");
-                std::system("raspi-gpio set 13 op dl");
-                std::system("raspi-gpio set 19 op dl");
-                std::system("raspi-gpio set 26 op dl");
+                if (std::system("raspi-gpio set 18 op dl") != 0)
+                {
+                    spdlog::error("Failed to disable led");
+                }
+                if (std::system("raspi-gpio set 13 op dl") != 0)
+                {
+                    spdlog::error("Failed to disable led");
+                }
+                if (std::system("raspi-gpio set 19 op dl") != 0)
+                {
+                    spdlog::error("Failed to disable led");
+                }
+                if (std::system("raspi-gpio set 26 op dl") != 0)
+                {
+                    spdlog::error("Failed to disable led");
+                }
             }
         }
 
