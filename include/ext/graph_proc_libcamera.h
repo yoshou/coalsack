@@ -129,6 +129,8 @@ namespace coalsack
                 return libcamera_capture::stream_format::RGB888;
             case image_format::Y8_UINT:
                 return libcamera_capture::stream_format::YUV420;
+            case image_format::Y16_UINT:
+                return libcamera_capture::stream_format::SBGGR10;
             default:
                 throw std::runtime_error("Unsupported format");
             }
@@ -198,7 +200,14 @@ namespace coalsack
 
                     if (frame.channels() == 1)
                     {
-                        img.set_format(image_format::Y8_UINT);
+                        if (frame.elemSize() == 1)
+                        {
+                            img.set_format(image_format::Y8_UINT);
+                        }
+                        else if (frame.elemSize() == 2)
+                        {
+                            img.set_format(image_format::Y16_UINT);
+                        }
                     }
                     else if (frame.channels() == 3)
                     {
@@ -211,7 +220,14 @@ namespace coalsack
                     stream_format stream_fmt = stream_format::ANY;
                     if (frame.channels() == 1)
                     {
-                        stream_fmt = stream_format::Y8;
+                        if (frame.elemSize() == 1)
+                        {
+                            stream_fmt = stream_format::Y8;
+                        }
+                        else if (frame.elemSize() == 2)
+                        {
+                            stream_fmt = stream_format::Y16;
+                        }
                     }
                     else if (frame.channels() == 3)
                     {

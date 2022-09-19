@@ -49,6 +49,7 @@ namespace coalsack
         {
             YUV420,
             RGB888,
+            SBGGR10,
         };
 
         struct stream_configuration
@@ -139,14 +140,21 @@ namespace coalsack
                     void *u_ptr = mapped_buffer.at(buffer->planes().at(1).fd.get()).pointer;
                     void *v_ptr = mapped_buffer.at(buffer->planes().at(2).fd.get()).pointer;
 
-                    frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC1, y_ptr, cfg.stride);
+                    frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC1, y_ptr, cfg.stride).clone();
                 }
                 else if (cfg.pixelFormat == libcamera::formats::RGB888)
                 {
                     std::vector<cv::Mat> planes;
 
                     void *ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
-                    frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC3, ptr, cfg.stride);
+                    frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC3, ptr, cfg.stride).clone();
+                }
+                else if (cfg.pixelFormat == libcamera::formats::SBGGR10)
+                {
+                    std::vector<cv::Mat> planes;
+
+                    void *ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
+                    frame = cv::Mat(cfg.size.height, cfg.size.width, CV_16UC1, ptr, cfg.stride).clone();
                 }
 
                 this->frame_received(libcamera_capture::buffer{frame, timestamp, sequence});
@@ -174,6 +182,8 @@ namespace coalsack
                 return libcamera::formats::RGB888;
             case stream_format::YUV420:
                 return libcamera::formats::YUV420;
+            case stream_format::SBGGR10:
+                return libcamera::formats::SBGGR10;
             default:
                 throw std::runtime_error("Unsupported format");
             }
