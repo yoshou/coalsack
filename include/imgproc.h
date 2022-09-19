@@ -211,6 +211,9 @@ namespace coalsack
 
     static void gaussian_blur(cv::Mat src_mat, cv::Mat dst_mat, int kernel_width, int kernel_height, double sigma_x, double sigma_y)
     {
+        assert(kernel_width >= 1);
+        assert(kernel_height >= 1);
+
         if (dst_mat.channels() == 1)
         {
             const auto kernel_x = std::make_unique<float[]>(kernel_width);
@@ -227,12 +230,12 @@ namespace coalsack
             const auto row_ptrs = std::make_unique<const float *[]>(kernel_height);
             const auto row_buffer = std::make_unique<float[]>(kernel_height * width);
 
-            for (std::size_t y = 0; y < kernel_height - 1; y++)
+            for (std::size_t y = 0; y < static_cast<std::size_t>(kernel_height) - 1; y++)
             {
                 filter_row(&src_mat.data[y * stride], width, kernel_x.get(), kernel_width, &row_buffer[(y % kernel_height) * width]);
             }
 
-            for (std::size_t y = 0; y < radius_y; y++)
+            for (std::size_t y = 0; y < static_cast<std::size_t>(radius_y); y++)
             {
                 const auto dst_row = &dst_mat.data[y * stride];
 
@@ -260,7 +263,7 @@ namespace coalsack
                     row_ptrs[k] = &row_buffer[(j % kernel_height) * width];
                 }
 
-                filter_col(row_ptrs.get(), width, kernel_y.get(), kernel_height, dst_row);
+                filter_col(row_ptrs.get(), width, kernel_y.get(), static_cast<std::size_t>(kernel_height), dst_row);
             }
 
             for (std::size_t y = height - radius_y; y < height; y++)
