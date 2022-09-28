@@ -204,9 +204,23 @@ namespace coalsack
         std::mutex mtx;
 
     public:
-        data_stream_receiver(udp::endpoint endpoint)
+        data_stream_receiver(udp::endpoint endpoint, bool enable_broadcast = false)
             : io_service(), socket_(io_service, endpoint), started(false), mtx()
         {
+            if (enable_broadcast)
+            {
+                socket_.set_option(
+                    boost::asio::ip::udp::socket::broadcast(true));
+            }
+        }
+        data_stream_receiver(udp::endpoint endpoint, std::string multicast_address)
+            : io_service(), socket_(io_service), started(false), mtx()
+        {
+            socket_.open(endpoint.protocol());
+            socket_.set_option(boost::asio::ip::udp::socket::reuse_address(true));
+            socket_.bind(endpoint);
+            socket_.set_option(
+                boost::asio::ip::multicast::join_group(asio::ip::address_v4::from_string(multicast_address)));
         }
 
         udp::endpoint local_endpoint() const

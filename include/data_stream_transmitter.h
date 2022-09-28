@@ -35,6 +35,14 @@ namespace coalsack
             socket_.open(udp::v4());
             remote_endpoint_ = udp::endpoint(asio::ip::address_v4::from_string(address), port);
         }
+        void open_broadcast(uint16_t port)
+        {
+            counter_ = 0;
+            socket_.open(udp::v4());
+            remote_endpoint_ = udp::endpoint(asio::ip::address_v4::broadcast(), port);
+            socket_.set_option(asio::ip::udp::socket::reuse_address(true));
+            socket_.set_option(asio::socket_base::broadcast(true));
+        }
         void close()
         {
             counter_ = 0;
