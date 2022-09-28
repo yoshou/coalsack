@@ -93,7 +93,7 @@ namespace coalsack
         libcamera::ControlList controls;
         std::vector<std::unique_ptr<libcamera::Request>> requests;
         std::unordered_map<int, mapped_buffer_data> mapped_buffer;
-        int fps;
+        double duration;
 
         std::chrono::system_clock::time_point system_clock_start;
         std::chrono::steady_clock::time_point steady_clock_start;
@@ -170,6 +170,13 @@ namespace coalsack
             /* Re-queue the Request to the camera. */
             request->reuse(libcamera::Request::ReuseBuffers);
 
+            const int64_t frame_time = static_cast<int64_t>(duration * 1000); // in us
+            controls.set(libcamera::controls::FrameDurationLimits, libcamera::Span<const int64_t, 2>({frame_time, frame_time}));
+
+            spdlog::debug("Frame duration control: {0}", frame_time);
+
+            request->controls() = controls;
+
             if (camera->queueRequest(request) < 0)
                 throw std::runtime_error("failed to queue request");
         }
@@ -228,9 +235,9 @@ namespace coalsack
 
         void set_framerate(int32_t fps)
         {
-            this->fps = fps;
+            this->duration = 1000.0 / fps;
 
-            const int64_t frame_time = 1000000 / fps; // in us
+            const int64_t frame_time = static_cast<int64_t>(duration * 1000); // in us
             controls.set(libcamera::controls::FrameDurationLimits, libcamera::Span<const int64_t, 2>({frame_time, frame_time}));
         }
 
@@ -278,7 +285,7 @@ namespace coalsack
 
     public:
         libcamera_capture()
-            : running(false), stream(nullptr), controls(libcamera::controls::controls), fps(30)
+            : running(false), stream(nullptr), controls(libcamera::controls::controls), duration(1000.0 / 30)
         {
         }
 
@@ -338,6 +345,10 @@ namespace coalsack
             set_framerate(cfg.fps);
         }
 
+        void set_interval(double time_ms)
+        {
+            this->duration = time_ms;
+        }
         void set_exposure_time(int32_t time_us)
         {
             controls.set(libcamera::controls::ExposureTime, time_us);
@@ -368,7 +379,7 @@ namespace coalsack
         }
         int32_t get_framerate() const
         {
-            return this->fps;
+            return static_cast<int32_t>(1000 / this->duration);
         }
 
         void start(std::function<void(const libcamera_capture::buffer &)> frame_received)
@@ -497,6 +508,7 @@ namespace coalsack
         void stop() {}
         void close() {}
 
+        void set_interval(double interval) {}
         void set_exposure_time(int32_t time_us) {}
         void set_gain(float value) {}
         void set_color_gain(float value_r, float value_b) {}

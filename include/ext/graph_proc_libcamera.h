@@ -313,6 +313,17 @@ namespace coalsack
             }
         }
 
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            if (input_name == "interval")
+            {
+                if (auto number_msg = std::dynamic_pointer_cast<number_message>(message))
+                {
+                    camera->set_interval(number_msg->get_value());
+                }
+            }
+        }
+
         void set_stream(stream_type stream)
         {
             this->stream = stream;
@@ -344,7 +355,100 @@ namespace coalsack
             emitter_enabled = value;
         }
     };
+
+    class video_time_sync_control_node : public graph_node
+    {
+        graph_edge_ptr output;
+        double gain;
+        double interval;
+        std::atomic<double> ref_timestamp;
+
+    public:
+        video_time_sync_control_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this)), gain(0)
+        {
+            set_output(output);
+        }
+
+        virtual ~video_time_sync_control_node()
+        {
+        }
+
+        virtual void initialize() override
+        {
+        }
+
+        double get_gain() const
+        {
+            return gain;
+        }
+        void set_gain(double value)
+        {
+            gain = value;
+        }
+        double get_interval() const
+        {
+            return interval;
+        }
+        void set_interval(double value)
+        {
+            interval = value;
+        }
+
+        double calc_interval_ref(double timestamp) const
+        {
+            const auto diff = std::fmod(timestamp - ref_timestamp, interval);
+
+            auto adj_diff = diff;
+            if (std::abs(diff) > (interval - std::abs(diff)))
+            {
+                const auto sign = diff > 0 ? -1.0 : 1.0;
+                adj_diff = sign * (interval - std::abs(diff));
+            }
+            double interval_ref = std::min(std::max(interval - adj_diff * gain, 1000.0 / 100), 1000.0 / 80);
+            spdlog::debug("Video timing diff: {0} [ms], Interval ref: {1}", adj_diff, interval_ref);
+            return interval_ref;
+        }
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            if (input_name == "ref")
+            {
+                if (auto number_msg = std::dynamic_pointer_cast<number_message>(message))
+                {
+                    ref_timestamp = number_msg->get_value();
+                }
+            }
+            else
+            {
+                if (auto number_msg = std::dynamic_pointer_cast<number_message>(message))
+                {
+                    const auto timestamp = number_msg->get_value();
+                    const auto interval_ref = calc_interval_ref(timestamp);
+
+                    auto msg = std::make_shared<number_message>();
+                    msg->set_value(interval_ref);
+                    output->send(msg);
+                }
+            }
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "video_time_sync_control";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(gain);
+            archive(interval);
+        }
+    };
 }
 
 CEREAL_REGISTER_TYPE(coalsack::libcamera_capture_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::libcamera_capture_node)
+
+CEREAL_REGISTER_TYPE(coalsack::video_time_sync_control_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::video_time_sync_control_node)
