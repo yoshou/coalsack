@@ -953,6 +953,36 @@ namespace coalsack
         }
     };
 
+    class number_message : public graph_message
+    {
+        double value;
+
+    public:
+        number_message()
+            : value(0.0)
+        {
+        }
+
+        void set_value(double value)
+        {
+            this->value = value;
+        }
+        double get_value() const
+        {
+            return value;
+        }
+        static std::string get_type()
+        {
+            return "number";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(value);
+        }
+    };
+
     class list_message : public graph_message
     {
         std::vector<graph_message_ptr> list;
@@ -1942,6 +1972,9 @@ namespace coalsack
 
 CEREAL_REGISTER_TYPE(coalsack::text_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::text_message)
+
+CEREAL_REGISTER_TYPE(coalsack::number_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::number_message)
 
 CEREAL_REGISTER_TYPE(coalsack::list_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::list_message)
