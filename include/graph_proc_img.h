@@ -682,6 +682,38 @@ namespace coalsack
             }
         }
     };
+
+    class timestamp_node : public graph_node
+    {
+        graph_edge_ptr output;
+
+    public:
+        timestamp_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this))
+        {
+            set_output(output);
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "timestamp_node";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+        }
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            if (const auto frame_msg = std::dynamic_pointer_cast<image_frame_message>(message))
+            {
+                auto msg = std::make_shared<number_message>();
+                msg->set_value(frame_msg->get_timestamp());
+                output->send(msg);
+            }
+        }
+    };
 }
 
 CEREAL_REGISTER_TYPE(coalsack::image_message)
@@ -701,3 +733,6 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::approximate
 
 CEREAL_REGISTER_TYPE(coalsack::tiling_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::tiling_node)
+
+CEREAL_REGISTER_TYPE(coalsack::timestamp_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::timestamp_node)
