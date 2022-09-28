@@ -217,8 +217,6 @@ namespace coalsack
                 end_point.y = end_y;
                 end_point.link = points.size() - 1;
                 points.push_back(end_point);
-
-                external_contour_heads.push_back(points.size() - 1);
             }
             std::size_t last_row_points_end = 0;
             std::vector<std::pair<std::size_t, std::size_t>> rows;
@@ -421,6 +419,8 @@ namespace coalsack
 
                 const auto end_x = x;
                 connector.add_segment(start_x, 0, end_x, 0);
+
+                connector.external_contour_heads.push_back(connector.points.size() - 1);
             }
 
             connector.next_line();
@@ -531,6 +531,8 @@ namespace coalsack
 
                     const auto end_x = x;
                     connector.add_segment(start_x, 0, end_x, 0);
+
+                    connector.external_contour_heads.push_back(connector.points.size() - 1);
                 }
                 connector.next_line();
             }
