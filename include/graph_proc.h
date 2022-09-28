@@ -1283,6 +1283,200 @@ namespace coalsack
         }
     };
 
+    class broadcast_talker_node : public graph_node
+    {
+        graph_edge_ptr output;
+        std::shared_ptr<data_stream_transmitter> transmitter;
+        boost::asio::io_service io_service;
+        std::shared_ptr<std::thread> th;
+        std::atomic_bool running;
+        std::string address;
+        std::uint16_t port;
+
+    public:
+        broadcast_talker_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)), transmitter(), io_service(), th(), running(false)
+        {
+            set_output(output);
+        }
+
+        void set_endpoint(std::string address, uint16_t port)
+        {
+            this->address = address;
+            this->port = port;
+        }
+
+        virtual ~broadcast_talker_node()
+        {
+            finalize();
+        }
+
+        virtual void finalize() override
+        {
+            if (transmitter)
+            {
+                transmitter->close();
+                transmitter.reset();
+            }
+        }
+
+        virtual void initialize() override
+        {
+            transmitter.reset(new data_stream_transmitter(io_service));
+
+            if (asio::ip::address_v4::from_string(address).is_multicast())
+            {
+                transmitter->open(address, port);
+            }
+            else
+            {
+                transmitter->open_broadcast(port);
+            }
+        }
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            source_identifier id{0, 0};
+            std::stringstream ss;
+            {
+                cereal::BinaryOutputArchive oarchive(ss);
+                oarchive(message);
+            }
+            std::string str = ss.str();
+
+            auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+            transmitter->send(id, (double)(ns / 100), (uint8_t *)str.data(), str.size());
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "broadcast_talker";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(address);
+            archive(port);
+        }
+
+        virtual void run() override
+        {
+            running = true;
+            th.reset(new std::thread([&]()
+                                     { io_service.run(); }));
+        }
+
+        virtual void stop() override
+        {
+            if (running.load())
+            {
+                running.store(false);
+                io_service.stop();
+                if (th && th->joinable())
+                {
+                    th->join();
+                }
+            }
+        }
+    };
+
+    class broadcast_listener_node : public graph_node
+    {
+        graph_edge_ptr output;
+        std::shared_ptr<data_stream_receiver> receiver;
+        std::string address;
+        uint16_t port;
+        std::string multicast_address;
+
+    public:
+        broadcast_listener_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this))
+        {
+            set_output(output);
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "broadcast_listener";
+        }
+
+        void set_endpoint(std::string address, uint16_t port, std::string multicast_address = std::string())
+        {
+            this->address = address;
+            this->port = port;
+            this->multicast_address = multicast_address;
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(address);
+            archive(port);
+            archive(multicast_address);
+        }
+
+        virtual void initialize() override
+        {
+            if (!multicast_address.empty())
+            {
+                receiver.reset(new data_stream_receiver(udp::endpoint(udp::v4(), port), multicast_address));
+            }
+            else
+            {
+                receiver.reset(new data_stream_receiver(udp::endpoint(udp::v4(), port), true));
+            }
+
+            source_identifier id{0, 0};
+            receiver->add_session(id);
+        }
+
+        virtual void run() override
+        {
+            receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream)
+                            { this->on_receive_handler(timestamp, id, stream); });
+        }
+
+        virtual void stop() override
+        {
+            receiver->stop();
+        }
+
+        void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream)
+        {
+            if (id.data_id == 0)
+            {
+                on_receive_data_handler(timestamp, id, stream);
+            }
+            else
+            {
+                spdlog::error("Received unknown data");
+            }
+        }
+
+        void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream)
+        {
+            if (stream.size() < sizeof(int))
+            {
+                return;
+            }
+
+            std::string str(boost::asio::buffers_begin(stream.data()), boost::asio::buffers_end(stream.data()));
+            std::stringstream ss(str);
+
+            std::shared_ptr<graph_message> msg;
+            {
+                cereal::BinaryInputArchive iarchive(ss);
+                iarchive(msg);
+            }
+
+            output->send(msg);
+        }
+    };
+
     class heartbeat_node : public graph_node
     {
         uint32_t interval;
@@ -1766,6 +1960,12 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_talker_
 
 CEREAL_REGISTER_TYPE(coalsack::p2p_listener_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_listener_node)
+
+CEREAL_REGISTER_TYPE(coalsack::broadcast_talker_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_talker_node)
+
+CEREAL_REGISTER_TYPE(coalsack::broadcast_listener_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_listener_node)
 
 CEREAL_REGISTER_TYPE(coalsack::heartbeat_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::heartbeat_node)
