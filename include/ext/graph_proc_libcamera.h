@@ -154,6 +154,7 @@ namespace coalsack
                     break;
                 case option::auto_exposure:
                     camera->set_auto_exposure(value != 0.0);
+                    break;
                 }
             }
 
