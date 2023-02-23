@@ -226,6 +226,9 @@ namespace coalsack
         case stream_format::BGRA8:
             type = CV_8UC4;
             break;
+        case stream_format::YUYV:
+            type = CV_8UC2;
+            break;
         default:
             break;
         }
@@ -278,9 +281,10 @@ namespace coalsack
                 const auto &image = image_msg->get_data();
 
                 int type = -1;
+                stream_format format = stream_format::ANY;
                 if (image_msg->get_profile())
                 {
-                    auto format = image_msg->get_profile()->get_format();
+                    format = image_msg->get_profile()->get_format();
                     type = stream_format_to_cv_type(format);
                 }
 
@@ -289,7 +293,11 @@ namespace coalsack
                     throw std::logic_error("Unknown image format");
                 }
 
-                const auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar *)image.get_data(), image.get_stride()).clone();
+                auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar *)image.get_data(), image.get_stride()).clone();
+                if (format == stream_format::YUYV)
+                {
+                    cv::cvtColor(frame, frame, cv::COLOR_YUV2BGR_YUYV);
+                }
                 cv_window::imshow(image_name, frame);
             }
         }
