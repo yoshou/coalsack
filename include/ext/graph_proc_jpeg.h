@@ -85,12 +85,6 @@ namespace coalsack
                 uint32_t height = image.get_height();
                 auto format = image_msg->get_profile()->get_format();
 
-                size_t row_size = image.get_bpp() * width;
-                if (row_size > row_buffer.size())
-                {
-                    row_buffer.resize(row_size);
-                }
-
                 auto src_buf = image.get_data();
                 auto row_stride = (size_t)image.get_stride();
 
@@ -113,6 +107,12 @@ namespace coalsack
                 {
                     spdlog::error("Unsupported format");
                     return;
+                }
+
+                const size_t row_size = cinfo.input_components * width;
+                if (row_size > row_buffer.size())
+                {
+                    row_buffer.resize(row_size);
                 }
                 jpeg_set_defaults(&cinfo);
 
