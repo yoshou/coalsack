@@ -182,10 +182,39 @@ namespace coalsack
 
     class subgraph;
 
+    class resource_base
+    {
+    public:
+        virtual std::string get_name() const = 0;
+        virtual ~resource_base() = default;
+    };
+
+    class resource_list
+    {
+        std::unordered_map<std::string, std::shared_ptr<resource_base>> resources;
+
+    public:
+        void add(const std::shared_ptr<resource_base> &resource)
+        {
+            resources.insert(std::make_pair(resource->get_name(), resource));
+        }
+
+        std::shared_ptr<resource_base> get(const std::string &name) const
+        {
+            const auto found = resources.find(name);
+            if (found == resources.end())
+            {
+                return nullptr;
+            }
+            return found->second;
+        }
+    };
+
     class graph_node
     {
     protected:
         subgraph *g;
+        std::shared_ptr<resource_list> resources;
 
         void set_output(graph_edge_ptr output)
         {
@@ -222,6 +251,10 @@ namespace coalsack
             }
         }
 
+        void set_resources(const std::shared_ptr<resource_list> &resources)
+        {
+            this->resources = resources;
+        }
         void set_input(graph_edge_ptr input)
         {
             set_input(input, "default");
@@ -512,12 +545,13 @@ namespace coalsack
     class graph_proc_server
     {
         rpc_server rpc_server_;
+        std::shared_ptr<resource_list> resources_;
         std::map<uint32_t, std::shared_ptr<subgraph>> graphs_;
         std::mutex mtx;
 
     public:
-        graph_proc_server(boost::asio::io_service &io_service, std::string address, uint16_t port)
-            : rpc_server_(io_service, address, port)
+        graph_proc_server(boost::asio::io_service &io_service, std::string address, uint16_t port, const std::shared_ptr<resource_list> &resources = nullptr)
+            : rpc_server_(io_service, address, port), resources_(resources)
         {
             rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::DEPLOY, [this](uint32_t session, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res) -> uint32_t
                                          {
@@ -561,6 +595,7 @@ namespace coalsack
                 output->request = req;
             }
 
+            node->set_resources(resources_);
             node->initialize();
 
             std::unordered_map<std::string, subscribe_request> input_reqs;
