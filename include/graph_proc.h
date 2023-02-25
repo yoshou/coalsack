@@ -701,6 +701,11 @@ namespace coalsack
                 }
             } });
         }
+
+        uint16_t get_port() const
+        {
+            return rpc_server_.local_endpoint().port();
+        }
     };
 
     class graph_proc_client

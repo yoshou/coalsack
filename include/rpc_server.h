@@ -149,6 +149,11 @@ namespace coalsack
             disconnect_handler = handler;
         }
 
+        boost::asio::ip::tcp::endpoint local_endpoint() const
+        {
+            return acceptor_.local_endpoint();
+        }
+
     private:
         void do_accept()
         {
