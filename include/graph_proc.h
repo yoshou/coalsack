@@ -340,7 +340,7 @@ namespace coalsack
     class subgraph
     {
         std::vector<graph_node_ptr> nodes;
-        std::unordered_map<graph_node *, uint32_t> node_ids;
+        std::unordered_map<const graph_node *, uint32_t> node_ids;
 
     public:
         subgraph()
@@ -358,7 +358,7 @@ namespace coalsack
             node->set_parent(this);
         }
 
-        uint32_t get_node_id(graph_node *node) const
+        uint32_t get_node_id(const graph_node *node) const
         {
             return node_ids.at(node);
         }
@@ -540,6 +540,7 @@ namespace coalsack
         RUN = 2,
         STOP = 3,
         FINALIZE = 4,
+        PROCESS = 5,
     };
 
     class graph_proc_server
@@ -687,6 +688,29 @@ namespace coalsack
 
             return 0; });
 
+            rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::PROCESS, [this](uint32_t session, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res) -> uint32_t
+                                         {
+            
+            std::stringstream arg_ss(std::string((const char *)arg.data(), arg.size()));
+            const auto node_id = read_uint32(arg_ss);
+            const auto input_name = read_string(arg_ss);
+            spdlog::debug("Process node (session = {0}, node = {1}, input_name = {2})", session, node_id, input_name);
+
+            std::shared_ptr<graph_message> msg;
+            {
+                cereal::BinaryInputArchive iarchive(arg_ss);
+                iarchive(msg);
+            }
+
+            auto g_ = graphs_.at(session);
+
+            assert(node_id > 0);
+            auto node = g_->get_node(node_id - 1);
+
+            node->process(input_name, msg);
+
+            return 0; });
+
             rpc_server_.on_discconect([this](uint32_t session)
                                       {
             spdlog::debug("Delete graph (session = {0})", session);
@@ -744,6 +768,14 @@ namespace coalsack
             }
 
             finalize();
+        }
+
+        void process(const graph_node *node, const std::string &input_name, const graph_message_ptr &message)
+        {
+            auto g = node->get_parent();
+            auto node_idx = node->get_parent()->get_node_id(node);
+
+            invoke_process(g, node_idx, input_name, message);
         }
 
     private:
@@ -958,6 +990,28 @@ namespace coalsack
 
             auto rpc = rpcs_.at(g);
             rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::STOP, arg, res);
+        }
+
+        void invoke_process(subgraph *g, uint32_t node_id, const std::string &input_name, const graph_message_ptr &message)
+        {
+            std::vector<uint8_t> arg, res;
+
+            {
+                std::stringstream output;
+                write_uint32(output, node_id);
+                write_string(output, input_name);
+
+                {
+                    cereal::BinaryOutputArchive oarchive(output);
+                    oarchive(message);
+                }
+
+                std::string str = output.str();
+                std::copy(str.begin(), str.end(), std::back_inserter(arg));
+            }
+
+            auto rpc = rpcs_.at(g);
+            rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::PROCESS, arg, res);
         }
     };
 
