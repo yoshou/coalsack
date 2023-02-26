@@ -427,6 +427,7 @@ namespace coalsack
     class mask_node : public image_transform_node
     {
         image mask;
+        std::mutex mask_mutex;
         graph_edge_ptr output;
 
     public:
@@ -450,9 +451,26 @@ namespace coalsack
         {
             archive(mask);
         }
-        
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            if (input_name == "mask")
+            {
+                if (auto image_msg = std::dynamic_pointer_cast<image_message>(message))
+                {
+                    std::lock_guard lock(mask_mutex);
+                    mask = image_msg->get_image();
+                }
+
+                return;
+            }
+            image_transform_node::process(input_name, message);
+        }
+
         virtual void transform(const image &src_image, image &dst_image) override
         {
+            std::lock_guard lock(mask_mutex);
+
             image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
             memcpy(masked_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
             masked_image.set_format(src_image.get_format());
