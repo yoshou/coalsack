@@ -33,6 +33,7 @@ ExternalProject_Add (lz4
 
 include_directories(
     SYSTEM ${CMAKE_BINARY_DIR}/libjpeg-turbo/include
+    SYSTEM ${CMAKE_BINARY_DIR}/lz4/include
 )
 
 include(${CMAKE_CURRENT_LIST_DIR}/server/CMakeLists.txt)
