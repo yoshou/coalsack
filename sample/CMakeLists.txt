@@ -1,50 +1,39 @@
-cmake_minimum_required(VERSION 3.8)
+find_package(realsense2)
+find_package(PkgConfig)
+if(${PkgConfig_FOUND})
+    pkg_check_modules(LIBCAMERA libcamera)
+endif()
 
-project(graph_proc_server)
+set(ENABLE_RS_D435_EXT ${realsense2_FOUND})
+set(ENABLE_LIBCAMERA_EXT ${LIBCAMERA_FOUND})
+
+message("ENABLE_LIBCAMERA_EXT: ${ENABLE_LIBCAMERA_EXT}")
+message("ENABLE_RS_D435_EXT: ${ENABLE_RS_D435_EXT}")
+
+ExternalProject_Add (libjpeg-turbo
+    PREFIX libjpeg-turbo
+    GIT_REPOSITORY "https://github.com/libjpeg-turbo/libjpeg-turbo.git"
+    GIT_TAG "2.1.4"
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/libjpeg-turbo"
+    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/libjpeg-turbo"
+        "-DCMAKE_GENERATOR=${CMAKE_GENERATOR}"
+        "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
+        "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
+)
+
+ExternalProject_Add (lz4
+    PREFIX lz4
+    GIT_REPOSITORY "https://github.com/lz4/lz4.git"
+    GIT_TAG "dev"
+    SOURCE_SUBDIR "build/cmake"
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/lz4"
+    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/lz4"
+        "-DBUILD_STATIC_LIBS=ON"
+)
 
 include_directories(
     SYSTEM ${CMAKE_BINARY_DIR}/libjpeg-turbo/include
 )
-add_executable(${PROJECT_NAME}
-    ${CMAKE_CURRENT_LIST_DIR}/server.cpp
-)
 
-add_dependencies(${PROJECT_NAME}
-    cereal
-    spdlog
-    libjpeg-turbo
-)
-
-target_link_libraries(${PROJECT_NAME}
-    ${OpenCV_LIBS}
-    coalsack
-    pthread
-    boost_system
-    boost_thread
-    realsense2
-    ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/libturbojpeg.a
-)
-
-project(graph_proc_client)
-
-add_executable(${PROJECT_NAME}
-    ${CMAKE_CURRENT_LIST_DIR}/client.cpp
-)
-
-add_dependencies(${PROJECT_NAME}
-    cereal
-    spdlog
-    libjpeg-turbo
-)
-
-target_link_libraries(${PROJECT_NAME}
-    ${OpenCV_LIBS}
-    coalsack
-    pthread
-    stdc++fs
-    boost_system
-    boost_thread
-    boost_program_options
-    realsense2
-    ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/libturbojpeg.a
-)
+include(${CMAKE_CURRENT_LIST_DIR}/server/CMakeLists.txt)
+include(${CMAKE_CURRENT_LIST_DIR}/greeting/CMakeLists.txt)

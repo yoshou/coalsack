@@ -4,17 +4,6 @@ project(coalsack)
 
 find_package(OpenCV 4.0 REQUIRED)
 find_package(Boost REQUIRED)
-find_package(realsense2)
-find_package(PkgConfig)
-if(${PkgConfig_FOUND})
-    pkg_check_modules(LIBCAMERA libcamera)
-endif()
-
-set(ENABLE_RS_D435_EXT ${realsense2_FOUND})
-set(ENABLE_LIBCAMERA_EXT ${LIBCAMERA_FOUND})
-
-message("ENABLE_LIBCAMERA_EXT: ${ENABLE_LIBCAMERA_EXT}")
-message("ENABLE_RS_D435_EXT: ${ENABLE_RS_D435_EXT}")
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -46,12 +35,11 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/data_stream_transmitter.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/graph_proc.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/graph_proc_img.h"
-    "${CMAKE_CURRENT_LIST_DIR}/include/ext/graph_proc_rs_d435.h"
-    "${CMAKE_CURRENT_LIST_DIR}/include/ext/graph_proc_jpeg.h"
 )
 
 include_directories(
     ${CMAKE_CURRENT_LIST_DIR}/include
+    ${Boost_INCLUDE_DIRS}
 )
 
 include(${CMAKE_CURRENT_LIST_DIR}/third-party/CMakeLists.txt)

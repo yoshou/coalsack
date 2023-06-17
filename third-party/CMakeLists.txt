@@ -1,27 +1,4 @@
-string(REPLACE ${PROJECT_SOURCE_DIR}/ "" _rel_path ${CMAKE_CURRENT_LIST_DIR})
-
 include(ExternalProject)
-
-ExternalProject_Add (libjpeg-turbo
-    PREFIX libjpeg-turbo
-    GIT_REPOSITORY "https://github.com/libjpeg-turbo/libjpeg-turbo.git"
-    GIT_TAG "2.1.4"
-    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/libjpeg-turbo"
-    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/libjpeg-turbo"
-        "-DCMAKE_GENERATOR=${CMAKE_GENERATOR}"
-        "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
-        "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
-)
-
-ExternalProject_Add (lz4
-    PREFIX lz4
-    GIT_REPOSITORY "https://github.com/lz4/lz4.git"
-    GIT_TAG "dev"
-    SOURCE_SUBDIR "build/cmake"
-    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/lz4"
-    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/lz4"
-        "-DBUILD_STATIC_LIBS=ON"
-)
 
 ExternalProject_Add (cereal
     PREFIX cereal
@@ -44,7 +21,7 @@ ExternalProject_Add (spdlog
 
 ExternalProject_Add(googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG release-1.10.0
+    GIT_TAG release-1.12.1
     SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/googletest"
     BINARY_DIR "${CMAKE_BINARY_DIR}/third-party/googletest-build"
     INSTALL_COMMAND ""
