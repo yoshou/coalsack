@@ -9,7 +9,7 @@ add_dependencies(graph_proc_server
 )
 
 target_include_directories(graph_proc_server PUBLIC
-    ${ONNXRUNTIME_INCLUDE_DIRS}
+    $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:${ONNXRUNTIME_INCLUDE_DIRS}>
 )
 
 target_link_libraries(graph_proc_server
@@ -22,10 +22,12 @@ target_link_libraries(graph_proc_server
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:camera>
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:camera-base>
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:${ONNXRUNTIME_LIBS}>
+    $<$<BOOL:${ENABLE_TFLITE_EXT}>:tensorflow-lite>
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     $<$<BOOL:${ENABLE_RS_D435_EXT}>:ENABLE_RS_D435_EXT>
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:ENABLE_LIBCAMERA_EXT>
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:ENABLE_ONNXRUNTIME_EXT>
+    $<$<BOOL:${ENABLE_TFLITE_EXT}>:ENABLE_TFLITE_EXT>
 )
