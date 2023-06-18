@@ -13,6 +13,6 @@ target_link_libraries(greeting
     coalsack
     pthread
     stdc++fs
-    realsense2::realsense2
     ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/libturbojpeg.a
+    $<$<BOOL:${ENABLE_RS_D435_EXT}>:realsense2::realsense2>
 )

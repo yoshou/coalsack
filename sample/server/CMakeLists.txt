@@ -10,6 +10,7 @@ add_dependencies(graph_proc_server
 
 target_include_directories(graph_proc_server PUBLIC
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:${ONNXRUNTIME_INCLUDE_DIRS}>
+    $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:${LIBCAMERA_INCLUDE_DIRS}>
 )
 
 target_link_libraries(graph_proc_server
