@@ -112,7 +112,7 @@ namespace coalsack
             stride[0] = 1;
             for (size_t i = 1; i < num_dims; i++)
             {
-                stride[i] = stride[i - 1] * shape[i];
+                stride[i] = stride[i - 1] * shape[i - 1];
             }
         }
 
