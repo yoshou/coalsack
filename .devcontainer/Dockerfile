@@ -44,7 +44,7 @@ RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends gfortran bison python3 python3-pip python3-setuptools libarchive-dev libblas-dev liblapack-dev
 
-RUN su vscode -c "${VCPKG_ROOT}/vcpkg install boost-asio opencv4[core]"
+RUN su vscode -c "${VCPKG_ROOT}/vcpkg install boost-asio opencv4[core,jpeg]"
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends autoconf automake libtool libudev-dev
