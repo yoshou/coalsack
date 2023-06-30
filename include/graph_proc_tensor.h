@@ -70,7 +70,7 @@ namespace coalsack
         {
             if constexpr (dim < 0)
             {
-                *to = (decltype(*to))*from;
+                *to = static_cast<std::decay_t<decltype(*to)>>(*from);
             }
             else
             {
