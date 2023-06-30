@@ -403,8 +403,7 @@ namespace coalsack
 
         virtual void transform(const image &src_image, image &dst_image) override
         {
-            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
-            memcpy(binary_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride());
             binary_image.set_format(src_image.get_format());
 
             int cv_type = convert_to_cv_type(src_image.get_format());
@@ -471,8 +470,7 @@ namespace coalsack
         {
             std::lock_guard lock(mask_mutex);
 
-            image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
-            memcpy(masked_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride());
             masked_image.set_format(src_image.get_format());
 
             int cv_type = convert_to_cv_type(src_image.get_format());
@@ -540,8 +538,7 @@ namespace coalsack
 
         virtual void transform(const image &src_image, image &dst_image) override
         {
-            image blurred_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
-            memcpy(blurred_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            image blurred_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride());
             blurred_image.set_format(src_image.get_format());
 
             int cv_type = convert_to_cv_type(src_image.get_format());
@@ -612,8 +609,7 @@ namespace coalsack
 
         virtual void transform(const image &src_image, image &dst_image) override
         {
-            image resized_image(width, height, src_image.get_bpp(), width * src_image.get_bpp(), src_image.get_metadata_size());
-            memcpy(resized_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            image resized_image(width, height, src_image.get_bpp(), width * src_image.get_bpp());
             resized_image.set_format(src_image.get_format());
 
             const auto cv_type = convert_to_cv_type(src_image.get_format());
@@ -668,8 +664,7 @@ namespace coalsack
 
         virtual void transform(const image &src_image, image &dst_image) override
         {
-            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
-            memcpy(binary_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride());
             binary_image.set_format(src_image.get_format());
 
             int cv_type = convert_to_cv_type(src_image.get_format());
@@ -724,8 +719,7 @@ namespace coalsack
 
         virtual void transform(const image &src_image, image &dst_image) override
         {
-            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride(), src_image.get_metadata_size());
-            memcpy(binary_image.get_metadata(), src_image.get_metadata(), src_image.get_metadata_size());
+            image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(), src_image.get_stride());
             binary_image.set_format(src_image.get_format());
 
             int cv_type = convert_to_cv_type(src_image.get_format());

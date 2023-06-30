@@ -29,35 +29,34 @@ namespace coalsack
     {
     public:
         image()
-            : data(), metadata(), width(0), height(0), bpp(0), stride(0), format(image_format::ANY)
+            : data(), width(0), height(0), bpp(0), stride(0), format(image_format::ANY)
         {
         }
 
-        image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, uint32_t metadata_capacity = 0)
-            : data(stride * height), metadata(metadata_capacity), width(width), height(height), bpp(bpp), stride(stride), format(image_format::ANY)
+        image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride)
+            : data(stride * height), width(width), height(height), bpp(bpp), stride(stride), format(image_format::ANY)
         {
         }
 
-        image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, const uint8_t *data, uint32_t metadata_capacity = 0)
-            : image(width, height, bpp, stride, metadata_capacity)
+        image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, const uint8_t *data)
+            : image(width, height, bpp, stride)
         {
             std::copy_n(data, stride * height, this->data.begin());
         }
 
         image(const image &other)
-            : data(other.data), metadata(other.metadata), width(other.width), height(other.height), bpp(other.bpp), stride(other.stride), format(other.format)
+            : data(other.data), width(other.width), height(other.height), bpp(other.bpp), stride(other.stride), format(other.format)
         {
         }
 
         image(image &&other)
-            : data(std::move(other.data)), metadata(std::move(other.metadata)), width(other.width), height(other.height), bpp(other.bpp), stride(other.stride), format(other.format)
+            : data(std::move(other.data)), width(other.width), height(other.height), bpp(other.bpp), stride(other.stride), format(other.format)
         {
         }
 
         image &operator=(const image &other)
         {
             data = other.data;
-            metadata = other.metadata;
             width = other.width;
             height = other.height;
             bpp = other.bpp;
@@ -69,7 +68,6 @@ namespace coalsack
         image &operator=(image &&other)
         {
             data = std::move(other.data);
-            metadata = std::move(other.metadata);
             width = other.width;
             height = other.height;
             bpp = other.bpp;
@@ -117,65 +115,6 @@ namespace coalsack
             return data.empty();
         }
 
-        template <typename T>
-        void set_metadata(T value)
-        {
-            const size_t metadata_size = sizeof(T);
-            const size_t metadata_offset = 0;
-
-            if (metadata_size + metadata_offset > metadata.size())
-            {
-                throw std::logic_error("Invalid type size");
-            }
-
-            auto ptr = reinterpret_cast<T *>(data.data() + metadata_offset);
-            *ptr = value;
-        }
-
-        template <typename T>
-        const T &get_metadata() const
-        {
-            const size_t metadata_size = sizeof(T);
-            const size_t metadata_offset = 0;
-
-            if (metadata_size + metadata_offset > metadata.size())
-            {
-                throw std::logic_error("Invalid type size");
-            }
-
-            auto ptr = reinterpret_cast<const T *>(data.data() + metadata_offset);
-            return *ptr;
-        }
-
-        template <typename T>
-        T &get_metadata()
-        {
-            const size_t metadata_size = sizeof(T);
-            const size_t metadata_offset = 0;
-
-            if (metadata_size + metadata_offset > metadata.size())
-            {
-                throw std::logic_error("Invalid type size");
-            }
-
-            auto ptr = reinterpret_cast<T *>(data.data() + metadata_offset);
-            return *ptr;
-        }
-
-        const uint8_t *get_metadata() const
-        {
-            return metadata.data();
-        }
-        uint8_t *get_metadata()
-        {
-            return metadata.data();
-        }
-
-        uint32_t get_metadata_size() const
-        {
-            return metadata.size();
-        }
-
         template <typename Archive>
         void serialize(Archive &archive)
         {
@@ -184,7 +123,6 @@ namespace coalsack
 
     private:
         std::vector<uint8_t> data;
-        std::vector<uint8_t> metadata;
         uint32_t width;
         uint32_t height;
         uint32_t bpp;
@@ -324,6 +262,7 @@ namespace coalsack
         time_type timestamp;
         uint64_t frame_number;
         std::shared_ptr<stream_profile> profile;
+        std::unordered_map<std::string, graph_message_ptr> metadata;
 
     public:
         frame_message()
@@ -371,6 +310,14 @@ namespace coalsack
         {
             this->profile = profile;
         }
+        graph_message_ptr get_metadata(const std::string& name) const
+        {
+            return metadata.at(name);
+        }
+        void set_metadata(const std::string &name, graph_message_ptr value)
+        {
+            metadata[name] = value;
+        }
 
         static std::string get_type()
         {
@@ -380,7 +327,7 @@ namespace coalsack
         template <typename Archive>
         void serialize(Archive &archive)
         {
-            archive(data, timestamp, frame_number, profile);
+            archive(data, timestamp, frame_number, profile, metadata);
         }
     };
 
