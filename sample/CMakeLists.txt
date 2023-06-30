@@ -56,10 +56,33 @@ ExternalProject_Add (lz4
         "-DBUILD_STATIC_LIBS=ON"
 )
 
+ExternalProject_Add (fmt
+    PREFIX fmt
+    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+    GIT_TAG "10.0.0"
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/fmt"
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+)
+
+ExternalProject_Add(json
+    PREFIX json
+    GIT_REPOSITORY https://github.com/nlohmann/json
+    GIT_TAG v3.10.2
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/json"
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+)
+
 include_directories(
-    SYSTEM ${CMAKE_BINARY_DIR}/libjpeg-turbo/include
-    SYSTEM ${CMAKE_BINARY_DIR}/lz4/include
+    SYSTEM ${CMAKE_BINARY_DIR}/third-party/libjpeg-turbo/include
+    SYSTEM ${CMAKE_BINARY_DIR}/third-party/lz4/include
+    SYSTEM ${CMAKE_BINARY_DIR}/third-party/fmt/include
+    SYSTEM ${CMAKE_BINARY_DIR}/third-party/json/include
 )
 
 include(${CMAKE_CURRENT_LIST_DIR}/server/CMakeLists.txt)
 include(${CMAKE_CURRENT_LIST_DIR}/greeting/CMakeLists.txt)
+include(${CMAKE_CURRENT_LIST_DIR}/dnn/CMakeLists.txt)
