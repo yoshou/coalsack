@@ -318,6 +318,14 @@ namespace coalsack
         {
             metadata[name] = value;
         }
+        template <typename U>
+        void set_metadata(const frame_message<U> &other)
+        {
+            for (const auto &[name, data] : other.metadata)
+            {
+                metadata[name] = data;
+            }
+        }
 
         static std::string get_type()
         {
