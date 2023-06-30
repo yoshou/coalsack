@@ -248,8 +248,8 @@ namespace coalsack
         stride_type stride;
     };
 
-    using tensor_u8_4 = coalsack::frame_message<tensor<uint8_t, 4>>;
-    using tensor_f32_4 = coalsack::frame_message<tensor<float, 4>>;
+    using tensor_u8_4 = tensor<uint8_t, 4>;
+    using tensor_f32_4 = tensor<float, 4>;
 }
 
 #define REGISTER_FRAME_MESSAGE_SUBTYPE(type)            \
