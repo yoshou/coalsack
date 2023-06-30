@@ -415,6 +415,26 @@ namespace coalsack
         }
     };
 
+    struct frame_number_sync_config
+    {
+        using sync_info = frame_number;
+
+        frame_number_sync_config()
+        {
+        }
+
+        template <typename T>
+        sync_info create_sync_info(std::shared_ptr<frame_message<T>> message)
+        {
+            return frame_number(message->get_frame_number());
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+        }
+    };
+
     template <typename T, typename Config = approximate_time_sync_config>
     class sync_node : public graph_node
     {
@@ -479,6 +499,7 @@ namespace coalsack
     };
 
     using approximate_time_sync_node = sync_node<image, approximate_time_sync_config>;
+    using frame_number_sync_node = sync_node<image, frame_number_sync_config>;
 
     class tiling_node : public graph_node
     {
@@ -677,6 +698,9 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::image_h
 
 CEREAL_REGISTER_TYPE(coalsack::approximate_time_sync_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::approximate_time_sync_node)
+
+CEREAL_REGISTER_TYPE(coalsack::frame_number_sync_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_number_sync_node)
 
 CEREAL_REGISTER_TYPE(coalsack::tiling_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::tiling_node)

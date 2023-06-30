@@ -70,6 +70,61 @@ namespace coalsack
         }
     };
 
+    class frame_number
+    {
+        int64_t number;
+
+    public:
+        int64_t get_number() const { return number; }
+
+        frame_number()
+            : number(0)
+        {
+        }
+        frame_number(int64_t number)
+            : number(number)
+        {
+        }
+        frame_number(const frame_number &src)
+            : number(src.number)
+        {
+        }
+        frame_number &operator=(const frame_number &src)
+        {
+            number = src.number;
+            return *this;
+        }
+
+        bool is_same(const frame_number &t) const
+        {
+            return number == t.number;
+        }
+
+        bool is_less_than(const frame_number &t) const
+        {
+            return number < t.number;
+        }
+
+        frame_number get_next_time() const
+        {
+            return frame_number(number + 1);
+        }
+
+        bool is_dropped(frame_number expect_time)
+        {
+            if (get_number() >= expect_time.get_number())
+            {
+                return false;
+            }
+            if (std::abs(expect_time.get_number() - get_number()) <= 4)
+            {
+                return false;
+            }
+
+            return true;
+        }
+    };
+
     template <typename DataTy, typename IDTy, typename TimeTy = approximate_time>
     struct sync_frame
     {
@@ -149,7 +204,7 @@ namespace coalsack
         using data_type = DataTy;
         using time_type = TimeTy;
 
-        using frame_type = sync_frame<data_type, stream_id_type>;
+        using frame_type = sync_frame<data_type, stream_id_type, time_type>;
         using frame_queue = std::priority_queue<frame_type, std::vector<frame_type>, std::greater<frame_type>>;
         using callback_type = synced_frame_callback<data_type, stream_id_type>;
 
