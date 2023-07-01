@@ -24,9 +24,10 @@ namespace coalsack
         using shape_type = std::array<uint32_t, num_dims>;
         using stride_type = std::array<uint32_t, num_dims>;
         using index_type = std::array<uint32_t, num_dims>;
-        
+        using this_type = tensor<elem_type, num_dims>;
+
         template <typename DataType>
-        class view_type
+        class view_type_base
         {
         public:
             DataType data;
@@ -44,7 +45,23 @@ namespace coalsack
             {
                 return get(data, shape, stride, index);
             }
+
+            template <typename Func, typename T>
+            void assign(const view_type_base<T> &other, Func f)
+            {
+                assert(other.shape == shape);
+                this_type::assign(other.data, data, shape, other.stride, stride, f);
+            }
+
+            template <typename Func>
+            void assign(Func f)
+            {
+                this_type::assign(data, shape, stride, f);
+            }
         };
+
+        using view_type = view_type_base<elem_type *>;
+        using const_view_type = view_type_base<const elem_type *>;
 
         static size_t calculate_size(const shape_type &shape)
         {
@@ -97,6 +114,79 @@ namespace coalsack
                     const auto from_offset = from_stride.at(dim) * i;
                     const auto to_offset = to_stride.at(dim) * i;
                     transform<dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride, f, i, indexes...);
+                }
+            }
+        }
+
+        template <int dim = num_dims - 1, typename FromIter1, typename FromIter2, typename ToIter, typename Func, typename... Indexes>
+        static void transform(FromIter1 from1, FromIter2 from2, ToIter to, const shape_type &shape, const stride_type &from1_stride, const stride_type &from2_stride, const stride_type &to_stride, Func f, Indexes... indexes)
+        {
+            if constexpr (dim < 0)
+            {
+                *to = f(*from1, *from2, indexes...);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < shape.at(dim); i++)
+                {
+                    const auto from1_offset = from1_stride.at(dim) * i;
+                    const auto from2_offset = from2_stride.at(dim) * i;
+                    const auto to_offset = to_stride.at(dim) * i;
+                    transform<dim - 1>(from1 + from1_offset, from2 + from2_offset, to + to_offset, shape, from1_stride, from2_stride, to_stride, f, i, indexes...);
+                }
+            }
+        }
+
+        template <int dim = num_dims - 1, typename ToIter, typename Func, typename... Indexes>
+        static void assign(ToIter to, const shape_type &shape, const stride_type &to_stride, Func f, Indexes... indexes)
+        {
+            if constexpr (dim < 0)
+            {
+                *to = f(*to, indexes...);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < shape.at(dim); i++)
+                {
+                    const auto to_offset = to_stride.at(dim) * i;
+                    assign<dim - 1>(to + to_offset, shape, to_stride, f, i, indexes...);
+                }
+            }
+        }
+
+        template <int dim = num_dims - 1, typename FromIter, typename ToIter, typename Func, typename... Indexes>
+        static void assign(FromIter from, ToIter to, const shape_type &shape, const stride_type &from_stride, const stride_type &to_stride, Func f, Indexes... indexes)
+        {
+            if constexpr (dim < 0)
+            {
+                *to = f(*to, *from, indexes...);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < shape.at(dim); i++)
+                {
+                    const auto from_offset = from_stride.at(dim) * i;
+                    const auto to_offset = to_stride.at(dim) * i;
+                    assign<dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride, f, i, indexes...);
+                }
+            }
+        }
+
+        template <int dim = num_dims - 1, typename FromIter1, typename FromIter2, typename ToIter, typename Func, typename... Indexes>
+        static void assign(FromIter1 from1, FromIter2 from2, ToIter to, const shape_type &shape, const stride_type &from1_stride, const stride_type &from2_stride, const stride_type &to_stride, Func f, Indexes... indexes)
+        {
+            if constexpr (dim < 0)
+            {
+                *to = f(*to, *from1, *from2, indexes...);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < shape.at(dim); i++)
+                {
+                    const auto from1_offset = from1_stride.at(dim) * i;
+                    const auto from2_offset = from2_stride.at(dim) * i;
+                    const auto to_offset = to_stride.at(dim) * i;
+                    assign<dim - 1>(from1 + from1_offset, from2 + from2_offset, to + to_offset, shape, from1_stride, from2_stride, to_stride, f, i, indexes...);
                 }
             }
         }
@@ -216,7 +306,81 @@ namespace coalsack
             return new_tensor;
         }
 
-        view_type<const elem_type*> transpose(const std::array<uint32_t, num_dims> &axes) const
+        template <typename Func>
+        tensor transform(const tensor& other, Func f) const
+        {
+            shape_type new_shape;
+            stride_type access_stride1 = stride;
+            stride_type access_stride2 = other.stride;
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                new_shape[i] = std::max(shape[i], other.shape[i]);
+
+                if (new_shape[i] != shape[i])
+                {
+                    assert(shape[i] == 1);
+                    access_stride1[i] = 0;
+                }
+                if (new_shape[i] != other.shape[i])
+                {
+                    assert(other.shape[i] == 1);
+                    access_stride2[i] = 0;
+                }
+            }
+            tensor new_tensor(new_shape);
+            transform(data.begin(), other.data.begin(), new_tensor.data.begin(), new_shape, access_stride1, access_stride2, new_tensor.stride, f);
+            return new_tensor;
+        }
+
+        template <int num_reduced_dims>
+        tensor<elem_type, num_dims - num_reduced_dims> sum(const std::array<uint32_t, num_reduced_dims> &axes) const
+        {
+            static_assert(num_reduced_dims >= 1);
+            using reduced_tensor = tensor<elem_type, num_dims - num_reduced_dims>;
+
+            std::array<bool, num_dims> drop;
+            std::fill(drop.begin(), drop.end(), false);
+            for (size_t i = 0; i < axes.size(); i++)
+            {
+                drop[i] = true;
+            }
+
+            typename reduced_tensor::shape_type new_tensor_shape;
+            
+            for (size_t i = 0, j = 0; i < num_dims; i++)
+            {
+                if (drop[i] == false)
+                {
+                    new_tensor_shape[j] = shape[i];
+                    ++j;
+                }
+            }
+
+            reduced_tensor new_tensor(new_tensor_shape);
+            stride_type new_tensor_assign_stride;
+
+            for (size_t i = 0, j = 0; i < num_dims; i++)
+            {
+                if (drop[i] == false)
+                {
+                    new_tensor_assign_stride[i] = new_tensor.stride[j];
+                    ++j;
+                }
+                else
+                {
+                    new_tensor_assign_stride[i] = 0;
+                }
+            }
+
+            assign(data.begin(), new_tensor.data.begin(), shape, stride, new_tensor_assign_stride,
+                   [](const float value1, const float value2, const size_t w, const size_t h, const size_t c, const size_t n)
+                   {
+                       return value1 + value2;
+                   });
+            return new_tensor;
+        }
+
+        const_view_type transpose(const std::array<uint32_t, num_dims> &axes) const
         {
             stride_type new_stride = stride;
             for (size_t i = 0; i < axes.size(); i++)
@@ -229,11 +393,106 @@ namespace coalsack
                 new_shape[i] = shape[axes[i]];
             }
 
-            view_type<const elem_type*> view;
+            const_view_type view;
             view.data = data.data();
             view.stride = new_stride;
             view.shape = new_shape;
             return view;
+        }
+
+        template <int new_num_dims>
+        typename tensor<elem_type, new_num_dims>::view_type view(const std::array<uint32_t, new_num_dims> &shape)
+        {
+            typename tensor<elem_type, new_num_dims>::view_type view;
+            view.data = data.data();
+            view.shape = shape;
+            view.stride[0] = 1;
+            for (size_t i = 1; i < new_num_dims; i++)
+            {
+                view.stride[i] = view.stride[i - 1] * shape[i - 1];
+            }
+            return view;
+        }
+
+        template <int new_num_dims>
+        typename tensor<elem_type, new_num_dims>::const_view_type view(const std::array<uint32_t, new_num_dims> &shape) const
+        {
+            typename tensor<elem_type, new_num_dims>::const_view_type view;
+            view.data = data.data();
+            view.shape = shape;
+            view.stride[0] = 1;
+            for (size_t i = 1; i < new_num_dims; i++)
+            {
+                view.stride[i] = view.stride[i - 1] * shape[i - 1];
+            }
+            return view;
+        }
+
+        view_type view()
+        {
+            view_type view;
+            view.data = data.data();
+            view.shape = shape;
+            view.stride = stride;
+            return view;
+        }
+
+        const_view_type view() const
+        {
+            const_view_type view;
+            view.data = data.data();
+            view.shape = shape;
+            view.stride = stride;
+            return view;
+        }
+
+        view_type view(const shape_type &shape, const index_type &offset)
+        {
+            view_type view;
+            view.data = data.data();
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                view.data += offset[i] * stride[i];
+            }
+            size_t avail_dims = 0;
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                if (shape[i] > 0)
+                {
+                    view.stride[avail_dims] = stride[i];
+                    view.shape[avail_dims] = shape[i];
+                    avail_dims++;
+                }
+            }
+
+            if (avail_dims > 0)
+            {
+                for (size_t i = avail_dims; i < num_dims; i++)
+                {
+                    view.stride[i] = view.stride[i - 1];
+                    view.shape[i] = 1;
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    view.stride[i] = 0;
+                    view.shape[i] = 1;
+                }
+            }
+            return view;
+        }
+
+        static tensor zeros(const shape_type &shape)
+        {
+            tensor new_tensor(shape);
+            assign(new_tensor.data.begin(), new_tensor.shape, new_tensor.stride,
+                      [](const float value, const size_t w, const size_t h, const size_t c, const size_t n)
+                      {
+                          return static_cast<elem_type>(0);
+                      });
+            return new_tensor;
         }
 
         template <typename Archive>
