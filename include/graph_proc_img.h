@@ -264,6 +264,9 @@ namespace coalsack
         std::shared_ptr<stream_profile> profile;
         std::unordered_map<std::string, graph_message_ptr> metadata;
 
+        template <typename>
+        friend class frame_message;
+
     public:
         frame_message()
             : data(), timestamp(), frame_number(0), profile()
@@ -313,6 +316,11 @@ namespace coalsack
         graph_message_ptr get_metadata(const std::string& name) const
         {
             return metadata.at(name);
+        }
+        template <typename U>
+        std::shared_ptr<U> get_metadata(const std::string &name) const
+        {
+            return std::dynamic_pointer_cast<U>(metadata.at(name));
         }
         void set_metadata(const std::string &name, graph_message_ptr value)
         {
