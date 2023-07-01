@@ -85,4 +85,6 @@ include_directories(
 
 include(${CMAKE_CURRENT_LIST_DIR}/server/CMakeLists.txt)
 include(${CMAKE_CURRENT_LIST_DIR}/greeting/CMakeLists.txt)
-include(${CMAKE_CURRENT_LIST_DIR}/dnn/CMakeLists.txt)
+if(${ENABLE_ONNXRUNTIME_EXT})
+    include(${CMAKE_CURRENT_LIST_DIR}/dnn/CMakeLists.txt)
+endif()
