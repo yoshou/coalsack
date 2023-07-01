@@ -18,6 +18,7 @@
 #include <fmt/core.h>
 #include <cereal/types/array.hpp>
 #include <nlohmann/json.hpp>
+#include <opencv2/calib3d/calib3d.hpp>
 
 namespace fs = std::filesystem;
 
@@ -81,6 +82,86 @@ public:
         archive(data.fx, data.fy, data.cx, data.cy, data.k, data.p, data.rotation, data.translation);
     }
 };
+
+struct roi_data
+{
+    std::array<double, 2> scale;
+    double rotation;
+    std::array<double, 2> center;
+};
+
+class roi_data_message : public graph_message
+{
+    roi_data data;
+
+public:
+    roi_data_message()
+    {
+    }
+
+    void set_data(const roi_data &value)
+    {
+        data = value;
+    }
+    const roi_data &get_data() const
+    {
+        return data;
+    }
+    static std::string get_type()
+    {
+        return "roi_data";
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(data.scale, data.rotation, data.center);
+    }
+};
+
+static cv::Mat get_transform(const cv::Point2f &center, const cv::Size2f &scale, const cv::Size2f &output_size)
+{
+    const auto get_tri_3rd_point = [](const cv::Point2f &a, const cv::Point2f &b)
+    {
+        const auto direct = a - b;
+        return b + cv::Point2f(-direct.y, direct.x);
+    };
+
+    const auto get_affine_transform = [&](const cv::Point2f &center, const cv::Size2f &scale, const cv::Size2f &output_size)
+    {
+        const auto src_w = scale.width * 200.0;
+        const auto src_h = scale.height * 200.0;
+        const auto dst_w = output_size.width;
+        const auto dst_h = output_size.height;
+
+        cv::Point2f src_dir, dst_dir;
+        if (src_w >= src_h)
+        {
+            src_dir = cv::Point2f(0, src_w * -0.5);
+            dst_dir = cv::Point2f(0, dst_w * -0.5);
+        }
+        else
+        {
+            src_dir = cv::Point2f(src_h * -0.5, 0);
+            dst_dir = cv::Point2f(dst_h * -0.5, 0);
+        }
+
+        const auto src_tri_a = center;
+        const auto src_tri_b = center + src_dir;
+        const auto src_tri_c = get_tri_3rd_point(src_tri_a, src_tri_b);
+        cv::Point2f src_tri[3] = {src_tri_a, src_tri_b, src_tri_c};
+
+        const auto dst_tri_a = cv::Point2f(dst_w * 0.5, dst_h * 0.5);
+        const auto dst_tri_b = dst_tri_a + dst_dir;
+        const auto dst_tri_c = get_tri_3rd_point(dst_tri_a, dst_tri_b);
+
+        cv::Point2f dst_tri[3] = {dst_tri_a, dst_tri_b, dst_tri_c};
+
+        return cv::getAffineTransform(src_tri, dst_tri);
+    };
+
+    return get_affine_transform(center, scale, output_size);
+}
 
 class panoptic_data_loader_node : public graph_node
 {
@@ -264,47 +345,9 @@ public:
                     const auto&& image_size = cv::Size2f(960, 512);
                     const auto scale = get_scale(data.size(), image_size);
                     const auto center = cv::Point2f(data.size().width / 2.0, data.size().height / 2.0);
+                    const auto rotation = 0.0;
 
-                    const auto get_tri_3rd_point = [](const cv::Point2f& a, const cv::Point2f& b) {
-                        const auto direct = a - b;
-                        return b + cv::Point2f(-direct.y, direct.x);
-                    };
-
-                    const auto get_affine_transform = [&](const cv::Point2f& center, const cv::Size2f& scale, const cv::Size2f& output_size) {
-                        const auto src_w = scale.width * 200.0;
-                        const auto src_h = scale.height * 200.0;
-                        const auto dst_w = output_size.width;
-                        const auto dst_h = output_size.height;
-
-                        cv::Point2f src_dir, dst_dir;
-                        if (src_w >= src_h)
-                        {
-                            src_dir = cv::Point2f(0, src_w * -0.5);
-                            dst_dir = cv::Point2f(0, dst_w * -0.5);
-                        }
-                        else
-                        {
-                            src_dir = cv::Point2f(src_h * -0.5, 0);
-                            dst_dir = cv::Point2f(dst_h * -0.5, 0);
-                        }
-
-                        const auto src_tri_a = center;
-                        const auto src_tri_b = center + src_dir;
-                        const auto src_tri_c = get_tri_3rd_point(src_tri_a, src_tri_b);
-                        cv::Point2f src_tri[3] = {src_tri_a, src_tri_b, src_tri_c};
-
-                        const auto dst_tri_a = cv::Point2f(dst_w * 0.5, dst_h * 0.5);
-                        const auto dst_tri_b = dst_tri_a + dst_dir;
-                        const auto dst_tri_c = get_tri_3rd_point(dst_tri_a, dst_tri_b);
-                        
-                        cv::Point2f dst_tri[3] = {dst_tri_a, dst_tri_b, dst_tri_c};
-
-                        cv::Mat trans = cv::getAffineTransform(src_tri, dst_tri);
-
-                        return trans;
-                    };
-
-                    const auto trans = get_affine_transform(center, scale, image_size);
+                    const auto trans = get_transform(center, scale, image_size);
 
                     cv::Mat input_img;
                     cv::warpAffine(data, input_img, trans, cv::Size(image_size), cv::INTER_LINEAR);
@@ -322,6 +365,9 @@ public:
                     auto camera_data_msg = std::make_shared<camera_data_message>();
                     camera_data_msg->set_data(camera);
 
+                    auto roi_data_msg = std::make_shared<roi_data_message>();
+                    roi_data_msg->set_data({{scale.width, scale.height}, rotation, {center.x, center.y}});
+
                     auto frame_msg = std::make_shared<frame_message<tensor<float, 4>>>();
     
                     const auto input_img_tensor_f = input_img_tensor.cast<float>().transform([this](const float value, const size_t w, const size_t h, const size_t c, const size_t n)
@@ -331,6 +377,7 @@ public:
                     frame_msg->set_timestamp(0);
                     frame_msg->set_frame_number(frame_number);
                     frame_msg->set_metadata("camera", camera_data_msg);
+                    frame_msg->set_metadata("roi", roi_data_msg);
 
                     msg->add_field(camera_name, frame_msg);
                 }
@@ -553,7 +600,7 @@ public:
         return it->second;
     }
 
-    Ort::Env env { ORT_LOGGING_LEVEL_WARNING, "test"};
+    Ort::Env env { ORT_LOGGING_LEVEL_WARNING };
 
     virtual void initialize() override
     {
@@ -636,26 +683,50 @@ public:
 
                 if (value.IsTensor())
                 {
-                    auto msg = std::make_shared<frame_message<tensor<float, 4>>>();
-
                     const auto data = value.GetTensorData<float>();
                     const auto tensor_info = value.GetTensorTypeAndShapeInfo();
                     const auto type = tensor_info.GetElementType();
                     const auto shape = tensor_info.GetShape();
 
-                    tensor<float, 4> output_tensor({static_cast<std::uint32_t>(shape.at(3)),
-                                                    static_cast<std::uint32_t>(shape.at(2)),
-                                                    static_cast<std::uint32_t>(shape.at(1)),
-                                                    static_cast<std::uint32_t>(shape.at(0))},
-                                                   data);
+                    if (shape.size() == 4)
+                    {
+                        constexpr auto num_dims = 4;
 
-                    msg->set_data(std::move(output_tensor));
-                    msg->set_profile(frame_msg->get_profile());
-                    msg->set_timestamp(frame_msg->get_timestamp());
-                    msg->set_frame_number(frame_msg->get_frame_number());
-                    msg->set_metadata(*frame_msg);
+                        auto msg = std::make_shared<frame_message<tensor<float, num_dims>>>();
+                        tensor<float, num_dims> output_tensor({static_cast<std::uint32_t>(shape.at(3)),
+                                                               static_cast<std::uint32_t>(shape.at(2)),
+                                                               static_cast<std::uint32_t>(shape.at(1)),
+                                                               static_cast<std::uint32_t>(shape.at(0))},
+                                                              data);
 
-                    output_msg = msg;
+                        msg->set_data(std::move(output_tensor));
+                        msg->set_profile(frame_msg->get_profile());
+                        msg->set_timestamp(frame_msg->get_timestamp());
+                        msg->set_frame_number(frame_msg->get_frame_number());
+                        msg->set_metadata(*frame_msg);
+
+                        output_msg = msg;
+                    }
+                    else if (shape.size() == 5)
+                    {
+                        constexpr auto num_dims = 5;
+
+                        auto msg = std::make_shared<frame_message<tensor<float, num_dims>>>();
+                        tensor<float, num_dims> output_tensor({static_cast<std::uint32_t>(shape.at(4)),
+                                                               static_cast<std::uint32_t>(shape.at(3)),
+                                                               static_cast<std::uint32_t>(shape.at(2)),
+                                                               static_cast<std::uint32_t>(shape.at(1)),
+                                                               static_cast<std::uint32_t>(shape.at(0))},
+                                                              data);
+
+                        msg->set_data(std::move(output_tensor));
+                        msg->set_profile(frame_msg->get_profile());
+                        msg->set_timestamp(frame_msg->get_timestamp());
+                        msg->set_frame_number(frame_msg->get_frame_number());
+                        msg->set_metadata(*frame_msg);
+
+                        output_msg = msg;
+                    }
                 }
 
                 try
@@ -679,6 +750,10 @@ class project_node : public graph_node
 {
     graph_edge_ptr output;
 
+    std::array<float, 3> grid_size;
+    std::array<float, 3> grid_center;
+    std::array<int32_t, 3> cube_size;
+
 public:
     project_node()
         : graph_node(), output(std::make_shared<graph_edge>(this))
@@ -691,6 +766,301 @@ public:
         return "project_node";
     }
 
+    std::array<float, 3> get_grid_size() const
+    {
+        return grid_size;
+    }
+    void set_grid_size(const std::array<float, 3>& value)
+    {
+        grid_size = value;
+    }
+    std::array<float, 3> get_grid_center() const
+    {
+        return grid_center;
+    }
+    void set_grid_center(const std::array<float, 3> &value)
+    {
+        grid_center = value;
+    }
+    std::array<int32_t, 3> get_cube_size() const
+    {
+        return cube_size;
+    }
+    void set_cube_size(const std::array<int32_t, 3>& value)
+    {
+        cube_size = value;
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(grid_size, grid_center, cube_size);
+    }
+
+    std::vector<std::array<float, 3>> compute_grid() const
+    {
+        std::vector<std::array<float, 3>> grid;
+        for (int32_t x = 0; x < cube_size.at(0); x++)
+        {
+            for (int32_t y = 0; y < cube_size.at(1); y++)
+            {
+                for (int32_t z = 0; z < cube_size.at(2); z++)
+                {
+                    const auto gridx = -grid_size.at(0) / 2 + grid_size.at(0) * x / (cube_size.at(0) - 1) + grid_center.at(0);
+                    const auto gridy = -grid_size.at(1) / 2 + grid_size.at(1) * y / (cube_size.at(1) - 1) + grid_center.at(1);
+                    const auto gridz = -grid_size.at(2) / 2 + grid_size.at(2) * z / (cube_size.at(2) - 1) + grid_center.at(2);
+
+                    grid.push_back({gridx, gridy, gridz});
+                }
+            }
+        }
+        return grid;
+    }
+
+    static std::vector<std::array<float, 2>> project_point(const std::vector<std::array<float, 3>>& x, const camera_data& camera)
+    {
+        std::vector<cv::Point3d> points;
+
+        std::transform(x.begin(), x.end(), std::back_inserter(points), [&](const auto& p) {
+            const auto pt_x = p[0] - camera.translation[0];
+            const auto pt_y = p[1] - camera.translation[1];
+            const auto pt_z = p[2] - camera.translation[2];
+            const auto cam_x = pt_x * camera.rotation[0][0] + pt_y * camera.rotation[0][1] + pt_z * camera.rotation[0][2];
+            const auto cam_y = pt_x * camera.rotation[1][0] + pt_y * camera.rotation[1][1] + pt_z * camera.rotation[1][2];
+            const auto cam_z = pt_x * camera.rotation[2][0] + pt_y * camera.rotation[2][1] + pt_z * camera.rotation[2][2];
+
+            return cv::Point3d(cam_x / (cam_z + 1e-5), cam_y / (cam_z + 1e-5), 1.0);
+        });
+
+        cv::Mat camera_matrix = cv::Mat::eye(3, 3, cv::DataType<double>::type);
+        camera_matrix.at<double>(0, 0) = camera.fx;
+        camera_matrix.at<double>(1, 1) = camera.fy;
+        camera_matrix.at<double>(0, 2) = camera.cx;
+        camera_matrix.at<double>(1, 2) = camera.cy;
+
+        cv::Mat dist_coeffs(5, 1, cv::DataType<double>::type);
+        dist_coeffs.at<double>(0) = camera.k[0];
+        dist_coeffs.at<double>(1) = camera.k[1];
+        dist_coeffs.at<double>(2) = camera.p[0];
+        dist_coeffs.at<double>(3) = camera.p[1];
+        dist_coeffs.at<double>(4) = camera.k[2];
+
+        cv::Mat rvec = cv::Mat::zeros(3, 1, cv::DataType<double>::type);
+        cv::Mat tvec = cv::Mat::zeros(3, 1, cv::DataType<double>::type);
+
+        std::vector<cv::Point2d> projected_points;
+        cv::projectPoints(points, rvec, tvec, camera_matrix, dist_coeffs, projected_points);
+
+        std::vector<std::array<float, 2>> y;
+
+        std::transform(projected_points.begin(), projected_points.end(), std::back_inserter(y), [](const auto& p) {
+            return std::array<float, 2>{static_cast<float>(p.x), static_cast<float>(p.y)};
+        });
+
+        return y;
+    }
+
+    static tensor<float, 4> grid_sample(const tensor<float, 4> &src, const std::vector<std::array<float, 2>>& grid, bool align_corner = false)
+    {
+        const auto num_o = src.shape[3];
+        const auto num_c = src.shape[2];
+        const auto num_h = src.shape[1];
+        const auto num_w = src.shape[0];
+
+        tensor<float, 4> dst({static_cast<uint32_t>(grid.size()), 1, num_c, num_o});
+
+        constexpr size_t num_size = SHRT_MAX - 1;
+
+        for (size_t offset = 0; offset < grid.size(); offset += num_size)
+        {
+            const auto grid_num = std::min(num_size, grid.size() - offset);
+
+            cv::Mat map_x(grid_num, 1, cv::DataType<float>::type);
+            cv::Mat map_y(grid_num, 1, cv::DataType<float>::type);
+
+            if (align_corner)
+            {
+                for (size_t i = 0; i < grid_num; i++)
+                {
+                    const auto x = ((grid[i + offset][0] + 1) / 2) * (num_w - 1);
+                    const auto y = ((grid[i + offset][1] + 1) / 2) * (num_h - 1);
+                    map_x.at<float>(i, 0) = x;
+                    map_y.at<float>(i, 0) = y;
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < grid_num; i++)
+                {
+                    const auto x = ((grid[i + offset][0] + 1) * num_w - 1) / 2;
+                    const auto y = ((grid[i + offset][1] + 1) * num_h - 1) / 2;
+                    map_x.at<float>(i, 0) = x;
+                    map_y.at<float>(i, 0) = y;
+                }
+            }
+
+            for (uint32_t o = 0; o < num_o; o++)
+            {
+                for (uint32_t c = 0; c < num_c; c++)
+                {
+                    cv::Mat plane(num_h, num_w, cv::DataType<float>::type, const_cast<float *>(src.get_data()) + c * src.stride[2] + o * src.stride[3]);
+                    cv::Mat remapped(grid_num, 1, cv::DataType<float>::type, dst.get_data() + offset + c * dst.stride[2] + o * dst.stride[3]);
+                    cv::remap(plane, remapped, map_x, map_y, cv::INTER_LINEAR);
+                }
+            }
+        }
+
+        return dst;
+    }
+
+    std::tuple<tensor<float, 4>, std::vector<std::array<float, 3>>> get_voxel(const std::vector<tensor<float, 4>> &heatmaps, const std::vector<camera_data> &cameras, const std::vector<roi_data> &rois) const
+    {
+        const auto num_bins = std::accumulate(cube_size.begin(), cube_size.end(), 1, std::multiplies<int32_t>());
+        const auto num_joints = heatmaps.at(0).shape[2];
+        const auto num_cameras = heatmaps.size();
+        const auto w = heatmaps.at(0).shape[0];
+        const auto h = heatmaps.at(0).shape[1];
+        const auto grid = compute_grid();
+
+        auto cubes = tensor<float, 4>::zeros({num_cameras, num_bins, 1, num_joints});
+        auto bounding = tensor<float, 4>::zeros({num_cameras, num_bins, 1, 1});
+
+        for (size_t c = 0; c < num_cameras; c++)
+        {
+            const auto &roi = rois.at(c);
+            const auto &&image_size = cv::Size2f(960, 512);
+            const auto center = cv::Point2f(roi.center[0], roi.center[1]);
+            const auto scale = cv::Size2f(roi.scale[0], roi.scale[1]);
+            const auto width = center.x * 2;
+            const auto height = center.y * 2;
+
+            const auto trans = get_transform(center, scale, image_size);
+            cv::Mat transf;
+            trans.convertTo(transf, cv::DataType<float>::type);
+
+            const auto xy = project_point(grid, cameras[c]);
+
+            auto camera_bounding = bounding.view({0, cubes.shape[1], 0, 0}, {c, 0, 0, 0});
+
+            camera_bounding.assign([&xy, width, height](const float value, const size_t w, const size_t h, const size_t c, const size_t n)
+                                   { return (xy[w][0] >= 0 && xy[w][0] < width && xy[w][1] >= 0 && xy[w][1] < height); });
+
+            std::vector<std::array<float, 2>> sample_grid;
+            std::transform(xy.begin(), xy.end(), std::back_inserter(sample_grid), [&](const auto& p) {
+                const auto x0 = p[0];
+                const auto y0 = p[1];
+
+                const auto x1 = std::clamp(x0, -1.0f, std::max(width, height));
+                const auto y1 = std::clamp(y0, -1.0f, std::max(width, height));
+
+                const auto x2 = x1 * transf.at<float>(0, 0) + y1 * transf.at<float>(0, 1) + transf.at<float>(0, 2);
+                const auto y2 = x1 * transf.at<float>(1, 0) + y1 * transf.at<float>(1, 1) + transf.at<float>(1, 2);
+
+                const auto x3 = x2 * w / image_size.width;
+                const auto y3 = y2 * h / image_size.height;
+
+                const auto x4 = x3 / (w - 1) * 2.0f - 1.0f;
+                const auto y4 = y3 / (h - 1) * 2.0f - 1.0f;
+
+                const auto x5 = std::clamp(x4, -1.1f, 1.1f);
+                const auto y5 = std::clamp(y4, -1.1f, 1.1f);
+
+                return std::array<float, 2>{x5, y5};
+            });
+
+            const auto cube = grid_sample(heatmaps[c], sample_grid);
+
+            auto camera_cubes = cubes.view({0, cubes.shape[1], cubes.shape[2], cubes.shape[3]}, {c, 0, 0, 0});
+
+            camera_cubes.assign(cube.view(), [](const float value1, const float value2, const size_t w, const size_t h, const size_t c, const size_t n)
+                                { return value1 + value2; });
+        }
+
+        const auto bounding_count = bounding.sum<1>({0});
+        const auto merged_cubes = cubes
+            .transform(bounding,
+                [](const float value1, const float value2, const size_t w, const size_t h, const size_t c, const size_t n) {
+                    return value1 * value2;
+                })
+            .sum<1>({0})
+            .transform(bounding_count,
+                [](const float value1, const float value2, const size_t w, const size_t h, const size_t c) {
+                    return std::clamp(value1 / (value2 + 1e-6f), 0.f, 1.f);
+                });
+
+        const auto output_cubes = merged_cubes.view<4>({cube_size[2], cube_size[1], cube_size[0], num_joints}).contiguous();
+        return std::forward_as_tuple(output_cubes, grid);
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
+        {
+            std::shared_ptr<frame_message<tensor<float, 4>>> src_msg = nullptr;
+
+            std::vector<tensor<float, 4>> heatmaps;
+            std::vector<camera_data> cameras;
+            std::vector<roi_data> rois;
+            for (const auto &[name, field] : obj_msg->get_fields())
+            {
+                if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field))
+                {
+                    auto &src = frame_msg->get_data();
+                    heatmaps.push_back(std::move(src));
+
+                    const auto camera_msg = frame_msg->get_metadata<camera_data_message>("camera");
+                    const auto camera = camera_msg->get_data();
+                    cameras.push_back(camera);
+
+                    const auto roi_msg = frame_msg->get_metadata<roi_data_message>("roi");
+                    const auto roi = roi_msg->get_data();
+                    rois.push_back(roi);
+
+                    src_msg = frame_msg;
+                }
+            }
+
+            if (heatmaps.size() == 0)
+            {
+                return;
+            }
+
+            const auto [cubes, grid] = get_voxel(heatmaps, cameras, rois);
+
+            auto msg = std::make_shared<frame_message<tensor<float, 4>>>();
+
+            msg->set_data(std::move(cubes));
+            msg->set_profile(src_msg->get_profile());
+            msg->set_timestamp(src_msg->get_timestamp());
+            msg->set_frame_number(src_msg->get_frame_number());
+            msg->set_metadata(*src_msg);
+
+            output->send(msg);
+
+            return;
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(project_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_node)
+
+class proposal_node : public graph_node
+{
+    graph_edge_ptr output;
+
+public:
+    proposal_node()
+        : graph_node(), output(std::make_shared<graph_edge>(this))
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "proposal_node";
+    }
+
     template <typename Archive>
     void serialize(Archive &archive)
     {
@@ -698,21 +1068,15 @@ public:
 
     virtual void process(std::string input_name, graph_message_ptr message) override
     {
-        if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
+        if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 5>>>(message))
         {
-            for (const auto &[name, field] : obj_msg->get_fields())
-            {
-                if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field))
-                {
-                    const auto &src = frame_msg->get_data();
-                }
-            }
+            const auto &src = frame_msg->get_data();
         }
     }
 };
 
-CEREAL_REGISTER_TYPE(project_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_node)
+CEREAL_REGISTER_TYPE(proposal_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, proposal_node)
 
 using tensor_f32_4_frame_number_sync_node = sync_node<tensor_f32_4, frame_number_sync_config>;
 
@@ -803,6 +1167,29 @@ try
         backbone_model_data = std::move(data);
     }
 
+    std::vector<uint8_t> v2v_net_model_data;
+    {
+        const auto model_path = "../sample/dnn/data/v2v_net.onnx";
+        std::ifstream ifs;
+        ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
+        if (ifs.fail())
+        {
+            std::cerr << "File open error: " << model_path << "\n";
+            std::quick_exit(0);
+        }
+
+        std::istreambuf_iterator<char> ifs_begin(ifs);
+        std::istreambuf_iterator<char> ifs_end{};
+        std::vector<uint8_t> data(ifs_begin, ifs_end);
+        if (ifs.fail())
+        {
+            std::cerr << "File read error: " << model_path << "\n";
+            std::quick_exit(0);
+        }
+
+        v2v_net_model_data = std::move(data);
+    }
+
     std::shared_ptr<panoptic_data_loader_node> data_loader(new panoptic_data_loader_node());
     data_loader->set_data_dir("/workspace/panoptic-toolbox/data");
     data_loader->set_sequence_list({"171204_pose1"});
@@ -845,7 +1232,21 @@ try
 
     std::shared_ptr<project_node> project(new project_node());
     project->set_input(sync->get_output());
+    project->set_grid_size({8000.0, 8000.0, 2000.0});
+    project->set_grid_center({0.0, -500.0, 800.0});
+    project->set_cube_size({{80, 80, 20}});
     g->add_node(project);
+
+    std::shared_ptr<onnx_runtime_node> inference_v2v_net(new onnx_runtime_node());
+    inference_v2v_net->set_input(project->get_output());
+    inference_v2v_net->set_model_data(v2v_net_model_data);
+    g->add_node(inference_v2v_net);
+
+    const auto root_cubes = inference_v2v_net->add_output("output");
+
+    std::shared_ptr<proposal_node> proposal(new proposal_node());
+    proposal->set_input(root_cubes);
+    g->add_node(proposal);
 
     graph_proc_client client;
     client.deploy(io_service, "127.0.0.1", 31400, g);
