@@ -217,6 +217,16 @@ namespace coalsack
             _callback = callback;
         }
 
+        void start(std::shared_ptr<callback_type> callback, const std::vector<stream_id_type> &initial_ids)
+        {
+            for (const auto &initial_id : initial_ids)
+            {
+                _frames_queue[initial_id] = std::make_shared<frame_queue>();
+                _times[initial_id];
+            }
+            start(callback);
+        }
+
         void sync(stream_id_type id, data_type data, time_type sync_info)
         {
             frame_type frame(sync_info, id, data);

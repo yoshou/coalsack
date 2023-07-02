@@ -252,43 +252,22 @@ namespace coalsack
         }
     };
 
-    template <typename T>
-    class frame_message : public graph_message
+    class frame_message_base : public graph_message
     {
-        using data_type = T;
         using time_type = double;
 
-        data_type data;
+    protected:
         time_type timestamp;
         uint64_t frame_number;
         std::shared_ptr<stream_profile> profile;
         std::unordered_map<std::string, graph_message_ptr> metadata;
 
-        template <typename>
-        friend class frame_message;
-
     public:
-        frame_message()
-            : data(), timestamp(), frame_number(0), profile()
+        frame_message_base()
+            : timestamp(), frame_number(0), profile(), metadata()
         {
         }
 
-        void set_data(const T &data)
-        {
-            this->data = data;
-        }
-        void set_data(T &&data)
-        {
-            this->data = std::move(data);
-        }
-        T &get_data()
-        {
-            return data;
-        }
-        const T &get_data() const
-        {
-            return data;
-        }
         time_type get_timestamp() const
         {
             return timestamp;
@@ -313,7 +292,7 @@ namespace coalsack
         {
             this->profile = profile;
         }
-        graph_message_ptr get_metadata(const std::string& name) const
+        graph_message_ptr get_metadata(const std::string &name) const
         {
             return metadata.at(name);
         }
@@ -326,13 +305,46 @@ namespace coalsack
         {
             metadata[name] = value;
         }
-        template <typename U>
-        void set_metadata(const frame_message<U> &other)
+        void set_metadata(const frame_message_base &other)
         {
             for (const auto &[name, data] : other.metadata)
             {
                 metadata[name] = data;
             }
+        }
+    };
+
+    template <typename T>
+    class frame_message : public frame_message_base
+    {
+        using data_type = T;
+
+        data_type data;
+
+        template <typename>
+        friend class frame_message;
+
+    public:
+        frame_message()
+            : data()
+        {
+        }
+
+        void set_data(const T &data)
+        {
+            this->data = data;
+        }
+        void set_data(T &&data)
+        {
+            this->data = std::move(data);
+        }
+        T &get_data()
+        {
+            return data;
+        }
+        const T &get_data() const
+        {
+            return data;
         }
 
         static std::string get_type()
@@ -409,8 +421,7 @@ namespace coalsack
         {
         }
 
-        template <typename T>
-        approximate_time create_sync_info(std::shared_ptr<frame_message<T>> message)
+        approximate_time create_sync_info(std::shared_ptr<frame_message_base> message)
         {
             return approximate_time(message->get_timestamp(), interval);
         }
@@ -439,8 +450,7 @@ namespace coalsack
         {
         }
 
-        template <typename T>
-        sync_info create_sync_info(std::shared_ptr<frame_message<T>> message)
+        sync_info create_sync_info(std::shared_ptr<frame_message_base> message)
         {
             return frame_number(message->get_frame_number());
         }
@@ -451,7 +461,7 @@ namespace coalsack
         }
     };
 
-    template <typename T, typename Config = approximate_time_sync_config>
+    template <typename Config = approximate_time_sync_config>
     class sync_node : public graph_node
     {
         using sync_config = Config;
@@ -495,6 +505,12 @@ namespace coalsack
 
         virtual void run() override
         {
+            std::vector<std::string> streams;
+            for (const auto& [name, input]: get_inputs())
+            {
+                streams.push_back(name);
+            }
+
             syncer.start(std::make_shared<typename syncer_type::callback_type>([this](const std::map<std::string, graph_message_ptr> &frames)
                                                                                {
             auto msg = std::make_shared<object_message>();
@@ -502,20 +518,20 @@ namespace coalsack
             {
                 msg->add_field(frame.first, frame.second);
             }
-            output->send(msg); }));
+            output->send(msg); }), streams);
         }
 
         virtual void process(std::string input_name, graph_message_ptr message) override
         {
-            if (auto frame_msg = std::dynamic_pointer_cast<frame_message<T>>(message))
+            if (auto frame_msg = std::dynamic_pointer_cast<frame_message_base>(message))
             {
                 syncer.sync(input_name, frame_msg, config.create_sync_info(frame_msg));
             }
         }
     };
 
-    using approximate_time_sync_node = sync_node<image, approximate_time_sync_config>;
-    using frame_number_sync_node = sync_node<image, frame_number_sync_config>;
+    using approximate_time_sync_node = sync_node<approximate_time_sync_config>;
+    using frame_number_sync_node = sync_node<frame_number_sync_config>;
 
     class tiling_node : public graph_node
     {
@@ -703,11 +719,14 @@ namespace coalsack
 CEREAL_REGISTER_TYPE(coalsack::image_message)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::image_message)
 
+CEREAL_REGISTER_TYPE(coalsack::frame_message_base)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::frame_message_base)
+
 CEREAL_REGISTER_TYPE(coalsack::blob_frame_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::blob_frame_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::frame_message_base, coalsack::blob_frame_message)
 
 CEREAL_REGISTER_TYPE(coalsack::image_frame_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::image_frame_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::frame_message_base, coalsack::image_frame_message)
 
 CEREAL_REGISTER_TYPE(coalsack::image_heartbeat_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::image_heartbeat_node)
