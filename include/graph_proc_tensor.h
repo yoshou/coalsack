@@ -115,6 +115,20 @@ namespace coalsack
             }
         }
 
+        template <int dim = num_dims - 1, typename ToIter>
+        static void set(ToIter to, const elem_type &value, const shape_type &shape, const stride_type &to_stride, const index_type &index)
+        {
+            if constexpr (dim < 0)
+            {
+                *to = value;
+            }
+            else
+            {
+                const auto to_offset = to_stride.at(dim) * index[dim];
+                set<dim - 1>(to + to_offset, value, shape, to_stride, index);
+            }
+        }
+
         template <int dim = num_dims - 1, typename FromIter, typename ToIter>
         static void copy(FromIter from, ToIter to, const shape_type &shape, const stride_type &from_stride, const stride_type &to_stride)
         {
@@ -333,9 +347,13 @@ namespace coalsack
             return data.data();
         }
 
-        elem_type at(index_type index) const
+        elem_type get(index_type index) const
         {
             return get(data.begin(), shape, stride, index);
+        }
+        void set(index_type index, const elem_type& value)
+        {
+            set(data.begin(), value, shape, stride, index);
         }
 
         bool empty() const
