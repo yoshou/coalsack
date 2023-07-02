@@ -746,12 +746,108 @@ public:
 CEREAL_REGISTER_TYPE(onnx_runtime_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, onnx_runtime_node)
 
+class pre_project_node : public graph_node
+{
+    graph_edge_ptr output;
+
+    std::array<float, 3> grid_center;
+
+public:
+    pre_project_node()
+        : graph_node(), output(std::make_shared<graph_edge>(this))
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "pre_project_node";
+    }
+
+    std::array<float, 3> get_grid_center() const
+    {
+        return grid_center;
+    }
+    void set_grid_center(const std::array<float, 3> &value)
+    {
+        grid_center = value;
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(grid_center);
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
+        {
+            tensor<float, 1> grid_center({3});
+            grid_center.set({0}, this->grid_center[0]);
+            grid_center.set({1}, this->grid_center[1]);
+            grid_center.set({2}, this->grid_center[2]);
+
+            using heatmaps_list_type = std::vector<std::tuple<tensor<float, 4>, camera_data, roi_data>>;
+
+            heatmaps_list_type heatmaps;
+
+            std::shared_ptr<frame_message<tensor<float, 4>>> src_msg = nullptr;
+            for (const auto &[name, field] : obj_msg->get_fields())
+            {
+                if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field))
+                {
+                    auto &src = frame_msg->get_data();
+
+                    const auto camera_msg = frame_msg->get_metadata<camera_data_message>("camera");
+                    const auto camera = camera_msg->get_data();
+
+                    const auto roi_msg = frame_msg->get_metadata<roi_data_message>("roi");
+                    const auto roi = roi_msg->get_data();
+                    
+                    heatmaps.emplace_back(src, camera, roi);
+
+                    src_msg = frame_msg;
+                }
+            }
+
+            if (src_msg == nullptr)
+            {
+                return;
+            }
+
+            auto msg = std::make_shared<object_message>();
+
+            auto grid_center_msg = std::make_shared<frame_message<tensor<float, 1>>>();
+            grid_center_msg->set_data(grid_center);
+            grid_center_msg->set_profile(src_msg->get_profile());
+            grid_center_msg->set_timestamp(src_msg->get_timestamp());
+            grid_center_msg->set_frame_number(src_msg->get_frame_number());
+            grid_center_msg->set_metadata(*src_msg);
+
+            auto heatmaps_list_msg = std::make_shared<frame_message<heatmaps_list_type>>();
+            heatmaps_list_msg->set_data(heatmaps);
+            heatmaps_list_msg->set_profile(src_msg->get_profile());
+            heatmaps_list_msg->set_timestamp(src_msg->get_timestamp());
+            heatmaps_list_msg->set_frame_number(src_msg->get_frame_number());
+            heatmaps_list_msg->set_metadata(*src_msg);
+
+            msg->add_field("grid_center", grid_center_msg);
+            msg->add_field("heatmaps", heatmaps_list_msg);
+
+            output->send(msg);
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(pre_project_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, pre_project_node)
+
 class project_node : public graph_node
 {
     graph_edge_ptr output;
 
     std::array<float, 3> grid_size;
-    std::array<float, 3> grid_center;
     std::array<int32_t, 3> cube_size;
 
 public:
@@ -774,14 +870,6 @@ public:
     {
         grid_size = value;
     }
-    std::array<float, 3> get_grid_center() const
-    {
-        return grid_center;
-    }
-    void set_grid_center(const std::array<float, 3> &value)
-    {
-        grid_center = value;
-    }
     std::array<int32_t, 3> get_cube_size() const
     {
         return cube_size;
@@ -794,10 +882,10 @@ public:
     template <typename Archive>
     void serialize(Archive &archive)
     {
-        archive(grid_size, grid_center, cube_size);
+        archive(grid_size, cube_size);
     }
 
-    std::vector<std::array<float, 3>> compute_grid() const
+    std::vector<std::array<float, 3>> compute_grid(const std::array<float, 3>& grid_center) const
     {
         std::vector<std::array<float, 3>> grid;
         for (int32_t x = 0; x < cube_size.at(0); x++)
@@ -913,14 +1001,14 @@ public:
         return dst;
     }
 
-    std::tuple<tensor<float, 4>, std::vector<std::array<float, 3>>> get_voxel(const std::vector<tensor<float, 4>> &heatmaps, const std::vector<camera_data> &cameras, const std::vector<roi_data> &rois) const
+    std::tuple<tensor<float, 4>, std::vector<std::array<float, 3>>> get_voxel(const std::vector<tensor<float, 4>> &heatmaps, const std::vector<camera_data> &cameras, const std::vector<roi_data> &rois, const std::array<float, 3> &grid_center) const
     {
         const auto num_bins = std::accumulate(cube_size.begin(), cube_size.end(), 1, std::multiplies<int32_t>());
         const auto num_joints = heatmaps.at(0).shape[2];
         const auto num_cameras = heatmaps.size();
         const auto w = heatmaps.at(0).shape[0];
         const auto h = heatmaps.at(0).shape[1];
-        const auto grid = compute_grid();
+        const auto grid = compute_grid(grid_center);
 
         auto cubes = tensor<float, 4>::zeros({num_cameras, num_bins, 1, num_joints});
         auto bounding = tensor<float, 4>::zeros({num_cameras, num_bins, 1, 1});
@@ -996,28 +1084,41 @@ public:
     {
         if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
         {
-            std::shared_ptr<frame_message<tensor<float, 4>>> src_msg = nullptr;
+            std::shared_ptr<frame_message_base> base_frame_msg = nullptr;
+
+            using heatmaps_list_type = std::vector<std::tuple<tensor<float, 4>, camera_data, roi_data>>;
+
+            heatmaps_list_type heatmaps_and_metas;
+            tensor<float, 1> grid_center;
+
+            for (const auto &[name, field] : obj_msg->get_fields())
+            {
+                if (name == "heatmaps")
+                {
+                    if (auto frame_msg = std::dynamic_pointer_cast<frame_message<heatmaps_list_type>>(field))
+                    {
+                        heatmaps_and_metas = frame_msg->get_data();
+                        base_frame_msg = frame_msg;
+                    }
+                }
+                else if (name == "grid_center")
+                {
+                    if (const auto grid_center_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 1>>>(field))
+                    {
+                        grid_center = grid_center_msg->get_data();
+                    }
+                }
+            }
 
             std::vector<tensor<float, 4>> heatmaps;
             std::vector<camera_data> cameras;
             std::vector<roi_data> rois;
-            for (const auto &[name, field] : obj_msg->get_fields())
+
+            for (const auto& [heatmap, camera, roi] : heatmaps_and_metas)
             {
-                if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field))
-                {
-                    auto &src = frame_msg->get_data();
-                    heatmaps.push_back(std::move(src));
-
-                    const auto camera_msg = frame_msg->get_metadata<camera_data_message>("camera");
-                    const auto camera = camera_msg->get_data();
-                    cameras.push_back(camera);
-
-                    const auto roi_msg = frame_msg->get_metadata<roi_data_message>("roi");
-                    const auto roi = roi_msg->get_data();
-                    rois.push_back(roi);
-
-                    src_msg = frame_msg;
-                }
+                heatmaps.push_back(heatmap);
+                cameras.push_back(camera);
+                rois.push_back(roi);
             }
 
             if (heatmaps.size() == 0)
@@ -1025,19 +1126,17 @@ public:
                 return;
             }
 
-            const auto [cubes, grid] = get_voxel(heatmaps, cameras, rois);
+            const auto [cubes, grid] = get_voxel(heatmaps, cameras, rois, {grid_center.get({0}), grid_center.get({1}), grid_center.get({2})});
 
             auto msg = std::make_shared<frame_message<tensor<float, 4>>>();
 
             msg->set_data(std::move(cubes));
-            msg->set_profile(src_msg->get_profile());
-            msg->set_timestamp(src_msg->get_timestamp());
-            msg->set_frame_number(src_msg->get_frame_number());
-            msg->set_metadata(*src_msg);
+            msg->set_profile(base_frame_msg->get_profile());
+            msg->set_timestamp(base_frame_msg->get_timestamp());
+            msg->set_frame_number(base_frame_msg->get_frame_number());
+            msg->set_metadata(*base_frame_msg);
 
             output->send(msg);
-
-            return;
         }
     }
 };
@@ -1185,10 +1284,83 @@ public:
 CEREAL_REGISTER_TYPE(proposal_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, proposal_node)
 
-using tensor_f32_4_frame_number_sync_node = sync_node<tensor_f32_4, frame_number_sync_config>;
+class iterate_proposal_node : public graph_node
+{
+    graph_edge_ptr output;
 
-CEREAL_REGISTER_TYPE(tensor_f32_4_frame_number_sync_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, tensor_f32_4_frame_number_sync_node)
+public:
+    iterate_proposal_node()
+        : graph_node(), output(std::make_shared<graph_edge>(this))
+    {
+        set_output(output);
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "iterate_proposal_node";
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message))
+        {
+            using heatmaps_list_type = std::vector<std::tuple<tensor<float, 4>, camera_data, roi_data>>;
+
+            std::shared_ptr<frame_message<heatmaps_list_type>> heatmaps_msg = nullptr;
+            std::shared_ptr<frame_message<tensor<float, 2>>> proposal_msg = nullptr;
+
+            for (const auto &[name, field] : obj_msg->get_fields())
+            {
+                if (name == "heatmaps")
+                {
+                    if (auto frame_msg = std::dynamic_pointer_cast<frame_message<heatmaps_list_type>>(field))
+                    {
+                        heatmaps_msg = frame_msg;
+                    }
+                }
+                if (name == "proposal")
+                {
+                    if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(field))
+                    {
+                        proposal_msg = frame_msg;
+                    }
+                }
+            }
+
+            if (heatmaps_msg == nullptr || proposal_msg == nullptr)
+            {
+                return;
+            }
+
+            auto &proposal = proposal_msg->get_data();
+
+            for (uint32_t i = 0; i < proposal.shape[1]; i++)
+            {
+                auto msg = std::make_shared<object_message>();
+
+                auto grid_center_msg = std::make_shared<frame_message<tensor<float, 1>>>();
+                grid_center_msg->set_data(std::move(proposal.view<1>({proposal.shape[0], 0}, {0, i}).contiguous()));
+                grid_center_msg->set_profile(proposal_msg->get_profile());
+                grid_center_msg->set_timestamp(proposal_msg->get_timestamp());
+                grid_center_msg->set_frame_number(proposal_msg->get_frame_number());
+                grid_center_msg->set_metadata(*proposal_msg);
+
+                msg->add_field("grid_center", grid_center_msg);
+                msg->add_field("heatmaps", heatmaps_msg);
+
+                output->send(msg);
+            }
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(iterate_proposal_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, iterate_proposal_node)
 
 class local_server
 {
@@ -1274,9 +1446,9 @@ try
         backbone_model_data = std::move(data);
     }
 
-    std::vector<uint8_t> v2v_net_model_data;
+    std::vector<uint8_t> proposal_v2v_net_model_data;
     {
-        const auto model_path = "../sample/dnn/data/v2v_net.onnx";
+        const auto model_path = "../sample/dnn/data/proposal_v2v_net.onnx";
         std::ifstream ifs;
         ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
         if (ifs.fail())
@@ -1294,7 +1466,30 @@ try
             std::quick_exit(0);
         }
 
-        v2v_net_model_data = std::move(data);
+        proposal_v2v_net_model_data = std::move(data);
+    }
+
+    std::vector<uint8_t> pose_v2v_net_model_data;
+    {
+        const auto model_path = "../sample/dnn/data/pose_v2v_net.onnx";
+        std::ifstream ifs;
+        ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
+        if (ifs.fail())
+        {
+            std::cerr << "File open error: " << model_path << "\n";
+            std::quick_exit(0);
+        }
+
+        std::istreambuf_iterator<char> ifs_begin(ifs);
+        std::istreambuf_iterator<char> ifs_end{};
+        std::vector<uint8_t> data(ifs_begin, ifs_end);
+        if (ifs.fail())
+        {
+            std::cerr << "File read error: " << model_path << "\n";
+            std::quick_exit(0);
+        }
+
+        pose_v2v_net_model_data = std::move(data);
     }
 
     std::shared_ptr<panoptic_data_loader_node> data_loader(new panoptic_data_loader_node());
@@ -1330,26 +1525,30 @@ try
         heatmaps_list[camera_name] = heatmaps;
     }
 
-    std::shared_ptr<tensor_f32_4_frame_number_sync_node> sync(new tensor_f32_4_frame_number_sync_node());
+    std::shared_ptr<frame_number_sync_node> sync(new frame_number_sync_node());
     for (const auto &[camera_name, heatmaps] : heatmaps_list)
     {
         sync->set_input(heatmaps, camera_name);
     }
     g->add_node(sync);
 
+    std::shared_ptr<pre_project_node> pre_project(new pre_project_node());
+    pre_project->set_input(sync->get_output());
+    pre_project->set_grid_center({0.0, -500.0, 800.0});
+    g->add_node(pre_project);
+
     std::shared_ptr<project_node> project(new project_node());
-    project->set_input(sync->get_output());
+    project->set_input(pre_project->get_output());
     project->set_grid_size({8000.0, 8000.0, 2000.0});
-    project->set_grid_center({0.0, -500.0, 800.0});
     project->set_cube_size({{80, 80, 20}});
     g->add_node(project);
 
-    std::shared_ptr<onnx_runtime_node> inference_v2v_net(new onnx_runtime_node());
-    inference_v2v_net->set_input(project->get_output());
-    inference_v2v_net->set_model_data(v2v_net_model_data);
-    g->add_node(inference_v2v_net);
+    std::shared_ptr<onnx_runtime_node> inference_proposal_v2v_net(new onnx_runtime_node());
+    inference_proposal_v2v_net->set_input(project->get_output());
+    inference_proposal_v2v_net->set_model_data(proposal_v2v_net_model_data);
+    g->add_node(inference_proposal_v2v_net);
 
-    const auto root_cubes = inference_v2v_net->add_output("output");
+    const auto root_cubes = inference_proposal_v2v_net->add_output("output");
 
     std::shared_ptr<proposal_node> proposal(new proposal_node());
     proposal->set_input(root_cubes);
@@ -1359,6 +1558,32 @@ try
     proposal->set_grid_center({0.0, -500.0, 800.0});
     proposal->set_cube_size({{80, 80, 20}});
     g->add_node(proposal);
+
+    std::shared_ptr<object_map_node> map_data2(new object_map_node());
+    map_data2->set_input(pre_project->get_output());
+    g->add_node(map_data2);
+
+    std::shared_ptr<frame_number_sync_node> heatmap_proposal_sync(new frame_number_sync_node());
+    heatmap_proposal_sync->set_input(map_data2->add_output("heatmaps"), "heatmaps");
+    heatmap_proposal_sync->set_input(proposal->get_output(), "proposal");
+    g->add_node(heatmap_proposal_sync);
+
+    std::shared_ptr<iterate_proposal_node> iterate_proposal(new iterate_proposal_node());
+    iterate_proposal->set_input(heatmap_proposal_sync->get_output());
+    g->add_node(iterate_proposal);
+
+    std::shared_ptr<project_node> project_proposal(new project_node());
+    project_proposal->set_input(iterate_proposal->get_output());
+    project_proposal->set_grid_size({2000.0, 2000.0, 2000.0});
+    project_proposal->set_cube_size({{64, 64, 64}});
+    g->add_node(project_proposal);
+
+    std::shared_ptr<onnx_runtime_node> inference_pose_v2v_net(new onnx_runtime_node());
+    inference_pose_v2v_net->set_input(project_proposal->get_output());
+    inference_pose_v2v_net->set_model_data(pose_v2v_net_model_data);
+    g->add_node(inference_pose_v2v_net);
+
+    const auto valid_cubes = inference_pose_v2v_net->add_output("output");
 
     graph_proc_client client;
     client.deploy(io_service, "127.0.0.1", 31400, g);
