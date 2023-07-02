@@ -942,7 +942,7 @@ public:
 
             auto camera_bounding = bounding.view({0, cubes.shape[1], 0, 0}, {c, 0, 0, 0});
 
-            camera_bounding.assign([&xy, width, height](const float value, const size_t w, const size_t h, const size_t c, const size_t n)
+            camera_bounding.assign([&xy, width, height](const float value, const size_t w, auto...)
                                    { return (xy[w][0] >= 0 && xy[w][0] < width && xy[w][1] >= 0 && xy[w][1] < height); });
 
             std::vector<std::array<float, 2>> sample_grid;
@@ -972,19 +972,19 @@ public:
 
             auto camera_cubes = cubes.view({0, cubes.shape[1], cubes.shape[2], cubes.shape[3]}, {c, 0, 0, 0});
 
-            camera_cubes.assign(cube.view(), [](const float value1, const float value2, const size_t w, const size_t h, const size_t c, const size_t n)
+            camera_cubes.assign(cube.view(), [](const float value1, const float value2, auto...)
                                 { return value1 + value2; });
         }
 
         const auto bounding_count = bounding.sum<1>({0});
         const auto merged_cubes = cubes
             .transform(bounding,
-                [](const float value1, const float value2, const size_t w, const size_t h, const size_t c, const size_t n) {
+                [](const float value1, const float value2, auto...) {
                     return value1 * value2;
                 })
             .sum<1>({0})
             .transform(bounding_count,
-                [](const float value1, const float value2, const size_t w, const size_t h, const size_t c) {
+                [](const float value1, const float value2, auto...) {
                     return std::clamp(value1 / (value2 + 1e-6f), 0.f, 1.f);
                 });
 
@@ -1048,6 +1048,11 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_node)
 class proposal_node : public graph_node
 {
     graph_edge_ptr output;
+    uint32_t max_num;
+    float threshold;
+    std::array<float, 3> grid_size;
+    std::array<float, 3> grid_center;
+    std::array<int32_t, 3> cube_size;
 
 public:
     proposal_node()
@@ -1061,9 +1066,79 @@ public:
         return "proposal_node";
     }
 
+    void set_max_num(uint32_t value)
+    {
+        max_num = value;
+    }
+    void set_threshold(float value)
+    {
+        threshold = value;
+    }
+    std::array<float, 3> get_grid_size() const
+    {
+        return grid_size;
+    }
+    void set_grid_size(const std::array<float, 3> &value)
+    {
+        grid_size = value;
+    }
+    std::array<float, 3> get_grid_center() const
+    {
+        return grid_center;
+    }
+    void set_grid_center(const std::array<float, 3> &value)
+    {
+        grid_center = value;
+    }
+    std::array<int32_t, 3> get_cube_size() const
+    {
+        return cube_size;
+    }
+    void set_cube_size(const std::array<int32_t, 3> &value)
+    {
+        cube_size = value;
+    }
+
     template <typename Archive>
     void serialize(Archive &archive)
     {
+        archive(max_num, threshold, grid_size, grid_center, cube_size);
+    }
+
+    static tensor<float, 4> max_pool(const tensor<float, 4>& inputs, size_t kernel = 3)
+    {
+        const auto padding = (kernel - 1) / 2;
+        const auto max = inputs.max_pool3d(kernel, 1, padding, 1);
+        const auto keep = inputs
+            .transform(max,
+                [](const float value1, const float value2, auto...) {
+                    return value1 == value2 ? value1 : 0.f;
+                });
+        return keep;
+    }
+
+    static tensor<uint64_t, 2> get_index(const tensor<uint64_t, 1> &indices, const std::array<uint64_t, 3>& shape)
+    {
+        const auto num_people = indices.shape[3];
+        const auto result = indices
+            .transform_expand<1>({3},
+                [shape](const uint64_t value, auto...) {
+                    const auto index_x = value / (shape[1] * shape[2]);
+                    const auto index_y = value % (shape[1] * shape[2]) / shape[2];
+                    const auto index_z = value % shape[2];
+                    return std::array<uint64_t, 3>{index_x, index_y, index_z};
+                });
+        return result;
+    }
+
+    tensor<float, 2> get_real_loc(const tensor<uint64_t, 2>& index)
+    {
+        const auto loc = index.cast<float>()
+            .transform(
+                [this](const float value, const size_t i, const size_t j) {
+                    return value / (cube_size[i] - 1) * grid_size[i] + grid_center[i] - grid_size[i] / 2.0f;
+                });
+        return loc;
     }
 
     virtual void process(std::string input_name, graph_message_ptr message) override
@@ -1071,6 +1146,38 @@ public:
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 5>>>(message))
         {
             const auto &src = frame_msg->get_data();
+
+            const auto root_cubes = src.view<4>({src.shape[0], src.shape[1], src.shape[2], src.shape[3]}).contiguous();
+            const auto root_cubes_nms = max_pool(root_cubes);
+            const auto [topk_values, topk_index] = root_cubes_nms.view<1>({src.shape[0] * src.shape[1] * src.shape[2]})
+                .topk(max_num);
+
+            const auto topk_unravel_index = get_index(topk_index, {src.shape[0], src.shape[1], src.shape[2]});
+            const auto topk_loc = get_real_loc(topk_unravel_index);
+
+            auto grid_centers = tensor<float, 2>::zeros({5, max_num});
+            grid_centers.view({3, grid_centers.shape[1]}, {0, 0})
+                .assign(topk_loc.view(), [](auto, const float value, auto...) {
+                    return value;
+                });
+            grid_centers.view<1>({0, grid_centers.shape[1]}, {4, 0})
+                .assign(topk_values.view(), [](auto, const float value, auto...) {
+                    return value;
+                });
+            grid_centers.view<1>({0, grid_centers.shape[1]}, {3, 0})
+                .assign(topk_values.view(), [this](auto, const float value, auto...) {
+                    return (value > threshold ? 1.f : 0.f) - 1.f;
+                });
+
+            auto msg = std::make_shared<frame_message<tensor<float, 2>>>();
+
+            msg->set_data(std::move(grid_centers));
+            msg->set_profile(frame_msg->get_profile());
+            msg->set_timestamp(frame_msg->get_timestamp());
+            msg->set_frame_number(frame_msg->get_frame_number());
+            msg->set_metadata(*frame_msg);
+
+            output->send(msg);
         }
     }
 };
@@ -1246,6 +1353,11 @@ try
 
     std::shared_ptr<proposal_node> proposal(new proposal_node());
     proposal->set_input(root_cubes);
+    proposal->set_max_num(10);
+    proposal->set_threshold(0.3f);
+    proposal->set_grid_size({8000.0, 8000.0, 2000.0});
+    proposal->set_grid_center({0.0, -500.0, 800.0});
+    proposal->set_cube_size({{80, 80, 20}});
     g->add_node(proposal);
 
     graph_proc_client client;
