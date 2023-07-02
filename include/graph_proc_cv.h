@@ -1199,7 +1199,7 @@ CEREAL_REGISTER_TYPE(coalsack::scale_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::scale_node)
 
 CEREAL_REGISTER_TYPE(coalsack::keypoint_frame_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::keypoint_frame_message)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::frame_message_base, coalsack::keypoint_frame_message)
 
 CEREAL_REGISTER_TYPE(coalsack::orb_detector_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::orb_detector_node)
