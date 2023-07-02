@@ -58,6 +58,39 @@ namespace coalsack
             {
                 this_type::assign(data, shape, stride, f);
             }
+
+            std::tuple<tensor, tensor<uint64_t, num_dims>> topk(size_t k) const
+            {
+                static_assert(num_dims == 1);
+
+                using value_index_type = std::pair<float, size_t>;
+
+                auto data = contiguous();
+                std::vector<value_index_type> value_indexes(data.data.size());
+                for (size_t i = 0; i < value_indexes.size(); i++)
+                {
+                    value_indexes[i].first = data.data[i];
+                    value_indexes[i].second = i;
+                }
+                std::nth_element(value_indexes.begin(), value_indexes.begin() + k, value_indexes.end(),
+                    [](const value_index_type& a, const value_index_type& b) { return a.first > b.first; });
+
+                tensor values({k});
+                this_type::assign(values.data.begin(), values.shape, values.stride, 
+                   [&](const float value, const size_t x)
+                   {
+                       return value_indexes.at(x).first;
+                   });
+
+                tensor<uint64_t, num_dims> indexes({k});
+                this_type::assign(indexes.data.begin(), indexes.shape, indexes.stride, 
+                   [&](const uint64_t value, const size_t x)
+                   {
+                       return value_indexes.at(x).second;
+                   });
+
+                return std::forward_as_tuple(values, indexes);
+            }
         };
 
         using view_type = view_type_base<elem_type *>;
@@ -187,6 +220,26 @@ namespace coalsack
                     const auto from2_offset = from2_stride.at(dim) * i;
                     const auto to_offset = to_stride.at(dim) * i;
                     assign<dim - 1>(from1 + from1_offset, from2 + from2_offset, to + to_offset, shape, from1_stride, from2_stride, to_stride, f, i, indexes...);
+                }
+            }
+        }
+
+        template <int new_dims, int dim = num_dims - 1, typename FromIter, typename ToIter, typename Func, typename... Indexes>
+        static void transform_expand(FromIter from, ToIter to, const shape_type &shape, const stride_type &from_stride, const stride_type &to_stride, const std::array<uint32_t, new_dims> &block_shape, const std::array<uint32_t, new_dims> &block_from_stride, const std::array<uint32_t, new_dims> &block_to_stride, Func f, Indexes... indexes)
+        {
+            if constexpr (dim < 0)
+            {
+                const auto block = f(*from, indexes...);
+                transform<new_dims - 1>(block.begin(), to, block_shape, block_from_stride, block_to_stride,
+                    [](const auto& value, auto...) { return value; });
+            }
+            else
+            {
+                for (uint32_t i = 0; i < shape.at(dim); i++)
+                {
+                    const auto from_offset = from_stride.at(dim) * i;
+                    const auto to_offset = to_stride.at(dim) * i;
+                    transform_expand<new_dims, dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride, block_shape, block_from_stride, block_to_stride, f, i, indexes...);
                 }
             }
         }
@@ -332,6 +385,46 @@ namespace coalsack
             return new_tensor;
         }
 
+        template <int num_new_dims, typename Func>
+        tensor<elem_type, num_dims + num_new_dims> transform_expand(const std::array<uint32_t, num_new_dims> &new_dim_shape, Func f) const
+        {
+            static_assert(num_new_dims == 1);
+            typename tensor<elem_type, num_dims + num_new_dims>::shape_type new_shape;
+
+            for (size_t i = 0; i < num_new_dims; i++)
+            {
+                new_shape[i] = new_dim_shape[i];
+            }
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                new_shape[num_new_dims + i] = shape[i];
+            }
+
+            tensor<elem_type, num_dims + num_new_dims> new_tensor(new_shape);
+
+            stride_type access_stride1;
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                access_stride1[i] = new_tensor.stride[num_new_dims + i];
+            }
+
+            typename tensor<elem_type, num_new_dims>::stride_type access_stride2;
+            access_stride2[0] = 1;
+            for (size_t i = 1; i < num_new_dims; i++)
+            {
+                access_stride2[i] = access_stride2[i - 1] * new_dim_shape[i - 1];
+            }
+
+            typename tensor<elem_type, num_new_dims>::stride_type access_stride3;
+            for (size_t i = 0; i < num_new_dims; i++)
+            {
+                access_stride3[i] = new_tensor.stride[i];
+            }
+
+            transform_expand<num_new_dims>(data.begin(), new_tensor.data.begin(), shape, stride, access_stride1, new_dim_shape, access_stride2, access_stride3, f);
+            return new_tensor;
+        }
+
         template <int num_reduced_dims>
         tensor<elem_type, num_dims - num_reduced_dims> sum(const std::array<uint32_t, num_reduced_dims> &axes) const
         {
@@ -373,10 +466,69 @@ namespace coalsack
             }
 
             assign(data.begin(), new_tensor.data.begin(), shape, stride, new_tensor_assign_stride,
-                   [](const float value1, const float value2, const size_t w, const size_t h, const size_t c, const size_t n)
+                   [](const float value1, const float value2, auto...)
                    {
                        return value1 + value2;
                    });
+            return new_tensor;
+        }
+
+        tensor max_pool3d(size_t kernel_size, size_t stride, size_t padding, size_t dilation) const
+        {
+            tensor new_tensor(shape);
+
+            for (size_t k = 0; k < shape[2]; k++)
+            {
+                for (size_t j = 0; j < shape[1]; j++)
+                {
+                    for (size_t i = 0; i < shape[0]; i++)
+                    {
+                        int64_t start_u = i * stride - padding;
+                        int64_t start_v = j * stride - padding;
+                        int64_t start_w = k * stride - padding;
+
+                        int64_t end_u = std::min(start_u + (kernel_size - 1) * dilation + 1, static_cast<size_t>(shape[0]));
+                        int64_t end_v = std::min(start_v + (kernel_size - 1) * dilation + 1, static_cast<size_t>(shape[1]));
+                        int64_t end_w = std::min(start_w + (kernel_size - 1) * dilation + 1, static_cast<size_t>(shape[2]));
+
+                        while (start_u < 0)
+                        {
+                            start_u += dilation;
+                        }
+                        while (start_v < 0)
+                        {
+                            start_v += dilation;
+                        }
+                        while (start_w < 0)
+                        {
+                            start_w += dilation;
+                        }
+
+                        elem_type max_value = -std::numeric_limits<elem_type>::infinity();
+
+                        for (size_t w = static_cast<size_t>(start_w); w < static_cast<size_t>(end_w); w += dilation)
+                        {
+                            for (size_t v = static_cast<size_t>(start_v); v < static_cast<size_t>(end_v); v += dilation)
+                            {
+                                for (size_t u = static_cast<size_t>(start_u); u < static_cast<size_t>(end_u); u += dilation)
+                                {
+                                    const auto index = w * this->stride[2] + v * this->stride[1] + u * this->stride[0];
+                                    const auto value = get_data()[index];
+
+                                    if ((value > max_value) || std::isnan(value))
+                                    {
+                                        max_value = value;
+                                    }
+                                }
+                            }
+                        }
+
+                        elem_type *output = new_tensor.get_data() + k * new_tensor.stride[2] + j * new_tensor.stride[1] + i * new_tensor.stride[0];
+                        *output = max_value;
+                    }
+                }
+            }
+
             return new_tensor;
         }
 
@@ -446,9 +598,10 @@ namespace coalsack
             return view;
         }
 
-        view_type view(const shape_type &shape, const index_type &offset)
+        template <int new_num_dims = num_dims>
+        typename tensor<elem_type, new_num_dims>::view_type view(const shape_type &shape, const index_type &offset)
         {
-            view_type view;
+            typename tensor<elem_type, new_num_dims>::view_type view;
             view.data = data.data();
             for (size_t i = 0; i < num_dims; i++)
             {
@@ -459,15 +612,17 @@ namespace coalsack
             {
                 if (shape[i] > 0)
                 {
+                    assert(avail_dims < new_num_dims);
                     view.stride[avail_dims] = stride[i];
                     view.shape[avail_dims] = shape[i];
                     avail_dims++;
                 }
             }
+            assert(avail_dims <= new_num_dims);
 
             if (avail_dims > 0)
             {
-                for (size_t i = avail_dims; i < num_dims; i++)
+                for (size_t i = avail_dims; i < new_num_dims; i++)
                 {
                     view.stride[i] = view.stride[i - 1];
                     view.shape[i] = 1;
@@ -475,7 +630,7 @@ namespace coalsack
             }
             else
             {
-                for (size_t i = 0; i < num_dims; i++)
+                for (size_t i = 0; i < new_num_dims; i++)
                 {
                     view.stride[i] = 0;
                     view.shape[i] = 1;
@@ -488,7 +643,7 @@ namespace coalsack
         {
             tensor new_tensor(shape);
             assign(new_tensor.data.begin(), new_tensor.shape, new_tensor.stride,
-                      [](const float value, const size_t w, const size_t h, const size_t c, const size_t n)
+                      [](const float value, auto...)
                       {
                           return static_cast<elem_type>(0);
                       });
