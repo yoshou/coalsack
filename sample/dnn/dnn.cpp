@@ -1128,6 +1128,9 @@ public:
 
             const auto [cubes, grid] = get_voxel(heatmaps, cameras, rois, {grid_center.get({0}), grid_center.get({1}), grid_center.get({2})});
 
+            auto grid_msg = std::make_shared<frame_message<std::vector<std::array<float, 3>>>>();
+            grid_msg->set_data(std::move(grid));
+
             auto msg = std::make_shared<frame_message<tensor<float, 4>>>();
 
             msg->set_data(std::move(cubes));
@@ -1135,6 +1138,7 @@ public:
             msg->set_timestamp(base_frame_msg->get_timestamp());
             msg->set_frame_number(base_frame_msg->get_frame_number());
             msg->set_metadata(*base_frame_msg);
+            msg->set_metadata("grid", grid_msg);
 
             output->send(msg);
         }
@@ -1362,6 +1366,68 @@ public:
 CEREAL_REGISTER_TYPE(iterate_proposal_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, iterate_proposal_node)
 
+class soft_argmax_node : public graph_node
+{
+    float beta;
+    graph_edge_ptr output;
+
+public:
+    soft_argmax_node()
+        : graph_node(), output(std::make_shared<graph_edge>(this))
+    {
+        set_output(output);
+    }
+
+    void set_beta(float value)
+    {
+        beta = value;
+    }
+
+    virtual std::string get_proc_name() const override
+    {
+        return "soft_argmax_node";
+    }
+
+    template <typename Archive>
+    void serialize(Archive &archive)
+    {
+        archive(beta);
+    }
+
+    virtual void process(std::string input_name, graph_message_ptr message) override
+    {
+        if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 5>>>(message))
+        {
+            const auto &src = frame_msg->get_data();
+
+            const auto& grid_msg = frame_msg->get_metadata<frame_message<std::vector<std::array<float, 3>>>>("grid");
+            const auto& grid = grid_msg->get_data();
+
+            const auto dst = src.view<3>({src.shape[0] * src.shape[1] * src.shape[2], 0, 0, src.shape[3], src.shape[4]}, {})
+                .transform_expand<1>({3}, [this, &grid](const float value, const size_t i, auto...) {
+                                                const auto x = value * beta * grid[i][0];
+                                                const auto y = value * beta * grid[i][1];
+                                                const auto z = value * beta * grid[i][2];
+                                                return std::array<float, 3>{x, y, z};
+                                            })
+                .sum<1>({1});
+
+            auto msg = std::make_shared<frame_message<tensor<float, 3>>>();
+
+            msg->set_data(std::move(dst));
+            msg->set_profile(frame_msg->get_profile());
+            msg->set_timestamp(frame_msg->get_timestamp());
+            msg->set_frame_number(frame_msg->get_frame_number());
+            msg->set_metadata(*frame_msg);
+
+            output->send(msg);
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(soft_argmax_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, soft_argmax_node)
+
 class local_server
 {
     asio::io_service io_service;
@@ -1584,6 +1650,11 @@ try
     g->add_node(inference_pose_v2v_net);
 
     const auto valid_cubes = inference_pose_v2v_net->add_output("output");
+
+    std::shared_ptr<soft_argmax_node> soft_argmax(new soft_argmax_node());
+    soft_argmax->set_input(valid_cubes);
+    soft_argmax->set_beta(100);
+    g->add_node(soft_argmax);
 
     graph_proc_client client;
     client.deploy(io_service, "127.0.0.1", 31400, g);
