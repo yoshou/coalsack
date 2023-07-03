@@ -19,6 +19,7 @@
 #include <cereal/types/array.hpp>
 #include <nlohmann/json.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <onnxruntime_cxx_api.h>
 
 namespace fs = std::filesystem;
 
