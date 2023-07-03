@@ -91,6 +91,54 @@ namespace coalsack
 
                 return std::forward_as_tuple(values, indexes);
             }
+
+            template <typename Func>
+            tensor transform(Func f) const
+            {
+                tensor new_tensor(shape);
+                this_type::transform(data, new_tensor.data.begin(), shape, stride, new_tensor.stride, f);
+                return new_tensor;
+            }
+
+            template <int num_new_dims, typename Func>
+            tensor<elem_type, num_dims + num_new_dims> transform_expand(const std::array<uint32_t, num_new_dims> &new_dim_shape, Func f) const
+            {
+                static_assert(num_new_dims == 1);
+                typename tensor<elem_type, num_dims + num_new_dims>::shape_type new_shape;
+
+                for (size_t i = 0; i < num_new_dims; i++)
+                {
+                    new_shape[i] = new_dim_shape[i];
+                }
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    new_shape[num_new_dims + i] = shape[i];
+                }
+
+                tensor<elem_type, num_dims + num_new_dims> new_tensor(new_shape);
+
+                stride_type access_stride1;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    access_stride1[i] = new_tensor.stride[num_new_dims + i];
+                }
+
+                typename tensor<elem_type, num_new_dims>::stride_type access_stride2;
+                access_stride2[0] = 1;
+                for (size_t i = 1; i < num_new_dims; i++)
+                {
+                    access_stride2[i] = access_stride2[i - 1] * new_dim_shape[i - 1];
+                }
+
+                typename tensor<elem_type, num_new_dims>::stride_type access_stride3;
+                for (size_t i = 0; i < num_new_dims; i++)
+                {
+                    access_stride3[i] = new_tensor.stride[i];
+                }
+
+                tensor::transform_expand<num_new_dims>(data, new_tensor.data.begin(), shape, stride, access_stride1, new_dim_shape, access_stride2, access_stride3, f);
+                return new_tensor;
+            }
         };
 
         using view_type = view_type_base<elem_type *>;
@@ -244,7 +292,7 @@ namespace coalsack
             if constexpr (dim < 0)
             {
                 const auto block = f(*from, indexes...);
-                transform<new_dims - 1>(block.begin(), to, block_shape, block_from_stride, block_to_stride,
+                tensor<elem_type, new_dims>::transform(block.begin(), to, block_shape, block_from_stride, block_to_stride,
                     [](const auto& value, auto...) { return value; });
             }
             else
@@ -453,7 +501,7 @@ namespace coalsack
             std::fill(drop.begin(), drop.end(), false);
             for (size_t i = 0; i < axes.size(); i++)
             {
-                drop[i] = true;
+                drop[axes[i]] = true;
             }
 
             typename reduced_tensor::shape_type new_tensor_shape;
@@ -613,6 +661,47 @@ namespace coalsack
             view.data = data.data();
             view.shape = shape;
             view.stride = stride;
+            return view;
+        }
+
+        template <int new_num_dims = num_dims>
+        typename tensor<elem_type, new_num_dims>::const_view_type view(const shape_type &shape, const index_type &offset) const
+        {
+            typename tensor<elem_type, new_num_dims>::const_view_type view;
+            view.data = data.data();
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                view.data += offset[i] * stride[i];
+            }
+            size_t avail_dims = 0;
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                if (shape[i] > 0)
+                {
+                    assert(avail_dims < new_num_dims);
+                    view.stride[avail_dims] = stride[i];
+                    view.shape[avail_dims] = shape[i];
+                    avail_dims++;
+                }
+            }
+            assert(avail_dims <= new_num_dims);
+
+            if (avail_dims > 0)
+            {
+                for (size_t i = avail_dims; i < new_num_dims; i++)
+                {
+                    view.stride[i] = view.stride[i - 1];
+                    view.shape[i] = 1;
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < new_num_dims; i++)
+                {
+                    view.stride[i] = 0;
+                    view.shape[i] = 1;
+                }
+            }
             return view;
         }
 
