@@ -1057,7 +1057,7 @@ public:
                 return std::array<float, 2>{x5, y5};
             });
 
-            const auto cube = grid_sample(heatmaps[c], sample_grid);
+            const auto cube = grid_sample(heatmaps[c], sample_grid, true);
 
             auto camera_cubes = cubes.view({0, cubes.shape[1], cubes.shape[2], cubes.shape[3]}, {c, 0, 0, 0});
 
@@ -1227,9 +1227,9 @@ public:
         const auto result = indices
             .transform_expand<1>({3},
                 [shape](const uint64_t value, auto...) {
-                    const auto index_x = value / (shape[1] * shape[2]);
-                    const auto index_y = value % (shape[1] * shape[2]) / shape[2];
-                    const auto index_z = value % shape[2];
+                    const auto index_x = value / (shape[1] * shape[0]);
+                    const auto index_y = value % (shape[1] * shape[0]) / shape[0];
+                    const auto index_z = value % shape[0];
                     return std::array<uint64_t, 3>{index_x, index_y, index_z};
                 });
         return result;
@@ -1346,19 +1346,22 @@ public:
 
             for (uint32_t i = 0; i < proposal.shape[1]; i++)
             {
-                auto msg = std::make_shared<object_message>();
+                if (proposal.get({3, i}) >= 0)
+                {
+                    auto msg = std::make_shared<object_message>();
 
-                auto grid_center_msg = std::make_shared<frame_message<tensor<float, 1>>>();
-                grid_center_msg->set_data(std::move(proposal.view<1>({proposal.shape[0], 0}, {0, i}).contiguous()));
-                grid_center_msg->set_profile(proposal_msg->get_profile());
-                grid_center_msg->set_timestamp(proposal_msg->get_timestamp());
-                grid_center_msg->set_frame_number(proposal_msg->get_frame_number());
-                grid_center_msg->set_metadata(*proposal_msg);
+                    auto grid_center_msg = std::make_shared<frame_message<tensor<float, 1>>>();
+                    grid_center_msg->set_data(std::move(proposal.view<1>({proposal.shape[0], 0}, {0, i}).contiguous()));
+                    grid_center_msg->set_profile(proposal_msg->get_profile());
+                    grid_center_msg->set_timestamp(proposal_msg->get_timestamp());
+                    grid_center_msg->set_frame_number(proposal_msg->get_frame_number());
+                    grid_center_msg->set_metadata(*proposal_msg);
 
-                msg->add_field("grid_center", grid_center_msg);
-                msg->add_field("heatmaps", heatmaps_msg);
+                    msg->add_field("grid_center", grid_center_msg);
+                    msg->add_field("heatmaps", heatmaps_msg);
 
-                output->send(msg);
+                    output->send(msg);
+                }
             }
         }
     }
@@ -1405,10 +1408,14 @@ public:
             const auto& grid = grid_msg->get_data();
 
             const auto dst = src.view<3>({src.shape[0] * src.shape[1] * src.shape[2], 0, 0, src.shape[3], src.shape[4]}, {})
+                .transform([this](const float value, auto...) {
+                                return beta * value;
+                            })
+                .softmax(0)
                 .transform_expand<1>({3}, [this, &grid](const float value, const size_t i, auto...) {
-                                                const auto x = value * beta * grid[i][0];
-                                                const auto y = value * beta * grid[i][1];
-                                                const auto z = value * beta * grid[i][2];
+                                                const auto x = value * grid[i][0];
+                                                const auto y = value * grid[i][1];
+                                                const auto z = value * grid[i][2];
                                                 return std::array<float, 3>{x, y, z};
                                             })
                 .sum<1>({1});
