@@ -13,6 +13,8 @@
 
 namespace coalsack
 {
+    template <int num_dims, int block_num_dims, int dim, typename FromIter, typename ToIter, typename Func, typename... Indexes>
+    static void transform_block(FromIter from, ToIter to, const std::array<uint32_t, num_dims> shape, const std::array<uint32_t, num_dims> from_stride, const std::array<uint32_t, num_dims> to_stride, const std::array<uint32_t, block_num_dims> &block_shape, const std::array<uint32_t, block_num_dims> &block_from_stride, const std::array<uint32_t, block_num_dims> &block_to_stride, Func f, Indexes... indexes);
 
     template <typename ElemType, int num_dims>
     class tensor
@@ -137,6 +139,54 @@ namespace coalsack
                 }
 
                 tensor::transform_expand<num_new_dims>(data, new_tensor.data.begin(), shape, stride, access_stride1, new_dim_shape, access_stride2, access_stride3, f);
+                return new_tensor;
+            }
+
+            tensor softmax(size_t axis) const
+            {
+                tensor new_tensor(shape);
+
+                static_assert(num_dims >= 2);
+                assert(axis < num_dims);
+
+                std::array<uint32_t, 1> block_shape = {shape[axis]};
+                std::array<uint32_t, 1> block_stride1 = {stride[axis]};
+                std::array<uint32_t, 1> block_stride2 = {new_tensor.stride[axis]};
+
+                std::array<uint32_t, num_dims - 1> access_stride1;
+                std::array<uint32_t, num_dims - 1> access_stride2;
+                std::array<uint32_t, num_dims - 1> access_shape;
+
+                size_t j = 0;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    if (i != axis)
+                    {
+                        access_stride1[j] = stride[i];
+                        access_stride2[j] = new_tensor.stride[i];
+                        access_shape[j] = shape[i];
+                        ++j;
+                    }
+                }
+
+                transform_block<num_dims - 1, 1, num_dims - 2>(data, new_tensor.data.begin(), access_shape, access_stride1, access_stride2, block_shape, block_stride1, block_stride2, [](const auto& src, auto& dst, auto...) {
+                    elem_type num = 0;
+                    assert(src.shape.size() == 1);
+                    assert(dst.shape.size() == 1);
+                    assert(src.shape[0] == dst.shape[0]);
+                    for (size_t i = 0; i < src.shape[0]; i++)
+                    {
+                        const auto offset = src.stride[0] * i;
+                        num += std::exp(src.data[offset]);
+                    }
+                    for (size_t i = 0; i < src.shape[0]; i++)
+                    {
+                        const auto src_offset = src.stride[0] * i;
+                        const auto dst_offset = dst.stride[0] * i;
+                        dst.data[dst_offset] = std::exp(src.data[src_offset]) / num;
+                    }
+                });
+
                 return new_tensor;
             }
         };
@@ -618,6 +668,11 @@ namespace coalsack
             return view;
         }
 
+        tensor softmax(size_t axis) const
+        {
+            return view().softmax(axis);
+        }
+
         template <int new_num_dims>
         typename tensor<elem_type, new_num_dims>::view_type view(const std::array<uint32_t, new_num_dims> &shape)
         {
@@ -768,6 +823,36 @@ namespace coalsack
         shape_type shape;
         stride_type stride;
     };
+
+    template <int num_dims, int block_num_dims, int dim, typename FromIter, typename ToIter, typename Func, typename... Indexes>
+    static void transform_block(FromIter from, ToIter to, const std::array<uint32_t, num_dims> shape, const std::array<uint32_t, num_dims> from_stride, const std::array<uint32_t, num_dims> to_stride, const std::array<uint32_t, block_num_dims> &block_shape, const std::array<uint32_t, block_num_dims> &block_from_stride, const std::array<uint32_t, block_num_dims> &block_to_stride, Func f, Indexes... indexes)
+    {
+        if constexpr (dim < 0)
+        {
+            using block_view_type = typename tensor<float, block_num_dims>::view_type;
+            using const_block_view_type = typename tensor<float, block_num_dims>::const_view_type;
+
+            const_block_view_type from_block;
+            from_block.data = &*from;
+            from_block.shape = block_shape;
+            from_block.stride = block_from_stride;
+            block_view_type to_block;
+            to_block.data = &*to;
+            to_block.shape = block_shape;
+            to_block.stride = block_to_stride;
+
+            f(from_block, to_block, indexes...);
+        }
+        else
+        {
+            for (uint32_t i = 0; i < shape.at(dim); i++)
+            {
+                const auto from_offset = from_stride.at(dim) * i;
+                const auto to_offset = to_stride.at(dim) * i;
+                transform_block<num_dims, block_num_dims, dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride, block_shape, block_from_stride, block_to_stride, f, i, indexes...);
+            }
+        }
+    }
 
     using tensor_u8_4 = tensor<uint8_t, 4>;
     using tensor_f32_4 = tensor<float, 4>;
