@@ -41,6 +41,8 @@ namespace coalsack
         {
             boost::system::error_code error;
 
+            assert(arg.size() <= static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()));
+
             request_t request;
             request.func = func;
             request.id = 0;

@@ -72,7 +72,11 @@ namespace coalsack
                         {
                             auto bytes = reinterpret_cast<const uint8_t *>(&*boost::asio::buffers_begin(receive_buff_.data()));
                             std::vector<uint8_t> data(bytes, bytes + request.length);
-                            receive_buff_.consume(request.length);
+                            constexpr uint32_t max_consume_once = static_cast<uint32_t>(std::numeric_limits<int>::max());
+                            for (uint32_t consumed = 0; consumed < request.length; consumed += std::min(request.length, max_consume_once))
+                            {
+                                receive_buff_.consume(std::min(request.length, max_consume_once));
+                            }
                             self->invoke_func(request, data);
                         }
 
