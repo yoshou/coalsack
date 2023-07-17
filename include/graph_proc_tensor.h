@@ -43,9 +43,13 @@ namespace coalsack
                 return new_tensor;
             }
 
-            elem_type at(index_type index) const
+            elem_type get(index_type index) const
             {
-                return get(data, shape, stride, index);
+                return tensor::get(data, shape, stride, index);
+            }
+            void set(index_type index, const elem_type &value)
+            {
+                set(data, value, shape, stride, index);
             }
 
             template <typename Func, typename T>
@@ -53,6 +57,13 @@ namespace coalsack
             {
                 assert(other.shape == shape);
                 this_type::assign(other.data, data, shape, other.stride, stride, f);
+            }
+
+            template <typename T>
+            void assign(const view_type_base<T> &other)
+            {
+                assert(other.shape == shape);
+                this_type::copy(other.data, data, shape, other.stride, stride);
             }
 
             template <typename Func>
@@ -99,6 +110,32 @@ namespace coalsack
             {
                 tensor new_tensor(shape);
                 this_type::transform(data, new_tensor.data.begin(), shape, stride, new_tensor.stride, f);
+                return new_tensor;
+            }
+
+            template <typename Func, typename T>
+            tensor transform(const view_type_base<T> &other, Func f) const
+            {
+                shape_type new_shape;
+                stride_type access_stride1 = stride;
+                stride_type access_stride2 = other.stride;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    new_shape[i] = std::max(shape[i], other.shape[i]);
+
+                    if (new_shape[i] != shape[i])
+                    {
+                        assert(shape[i] == 1);
+                        access_stride1[i] = 0;
+                    }
+                    if (new_shape[i] != other.shape[i])
+                    {
+                        assert(other.shape[i] == 1);
+                        access_stride2[i] = 0;
+                    }
+                }
+                tensor new_tensor(new_shape);
+                this_type::transform(data, other.data, new_tensor.data.begin(), new_shape, access_stride1, access_stride2, new_tensor.stride, f);
                 return new_tensor;
             }
 
@@ -188,6 +225,26 @@ namespace coalsack
                 });
 
                 return new_tensor;
+            }
+
+            view_type_base<const elem_type *> transpose(const std::array<uint32_t, num_dims> &axes) const
+            {
+                stride_type new_stride = stride;
+                for (size_t i = 0; i < axes.size(); i++)
+                {
+                    new_stride[i] = stride[axes[i]];
+                }
+                shape_type new_shape = shape;
+                for (size_t i = 0; i < axes.size(); i++)
+                {
+                    new_shape[i] = shape[axes[i]];
+                }
+
+                const_view_type view;
+                view.data = data;
+                view.stride = new_stride;
+                view.shape = new_shape;
+                return view;
             }
         };
 
