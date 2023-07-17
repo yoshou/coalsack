@@ -1,20 +1,20 @@
-add_executable(dnn
-    ${CMAKE_CURRENT_LIST_DIR}/dnn.cpp
+add_executable(voxelpose
+    ${CMAKE_CURRENT_LIST_DIR}/voxelpose.cpp
 )
 
-add_dependencies(dnn
+add_dependencies(voxelpose
     cereal
     spdlog
     libjpeg-turbo
     json
 )
 
-target_include_directories(dnn PUBLIC
+target_include_directories(voxelpose PUBLIC
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:${ONNXRUNTIME_INCLUDE_DIRS}>
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:${LIBCAMERA_INCLUDE_DIRS}>
 )
 
-target_link_libraries(dnn
+target_link_libraries(voxelpose
     ${OpenCV_LIBS}
     coalsack
     pthread

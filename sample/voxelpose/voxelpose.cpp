@@ -1724,7 +1724,7 @@ try
 
     std::vector<uint8_t> backbone_model_data;
     {
-        const auto model_path = "../sample/dnn/data/backbone.onnx";
+        const auto model_path = "../sample/voxelpose/data/backbone.onnx";
         std::ifstream ifs;
         ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
         if (ifs.fail())
@@ -1747,7 +1747,7 @@ try
 
     std::vector<uint8_t> proposal_v2v_net_model_data;
     {
-        const auto model_path = "../sample/dnn/data/proposal_v2v_net.onnx";
+        const auto model_path = "../sample/voxelpose/data/proposal_v2v_net.onnx";
         std::ifstream ifs;
         ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
         if (ifs.fail())
@@ -1770,7 +1770,7 @@ try
 
     std::vector<uint8_t> pose_v2v_net_model_data;
     {
-        const auto model_path = "../sample/dnn/data/pose_v2v_net.onnx";
+        const auto model_path = "../sample/voxelpose/data/pose_v2v_net.onnx";
         std::ifstream ifs;
         ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
         if (ifs.fail())
