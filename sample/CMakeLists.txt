@@ -86,6 +86,6 @@ include_directories(
 include(${CMAKE_CURRENT_LIST_DIR}/server/CMakeLists.txt)
 include(${CMAKE_CURRENT_LIST_DIR}/greeting/CMakeLists.txt)
 if(${ENABLE_ONNXRUNTIME_EXT})
-    include(${CMAKE_CURRENT_LIST_DIR}/dnn/CMakeLists.txt)
+    include(${CMAKE_CURRENT_LIST_DIR}/voxelpose/CMakeLists.txt)
     include(${CMAKE_CURRENT_LIST_DIR}/pymafx/CMakeLists.txt)
 endif()
