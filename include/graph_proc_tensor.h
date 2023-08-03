@@ -16,6 +16,12 @@ namespace coalsack
     template <int num_dims, int block_num_dims, int dim, typename FromIter, typename ToIter, typename Func, typename... Indexes>
     static void transform_block(FromIter from, ToIter to, const std::array<uint32_t, num_dims> shape, const std::array<uint32_t, num_dims> from_stride, const std::array<uint32_t, num_dims> to_stride, const std::array<uint32_t, block_num_dims> &block_shape, const std::array<uint32_t, block_num_dims> &block_from_stride, const std::array<uint32_t, block_num_dims> &block_to_stride, Func f, Indexes... indexes);
 
+    template <int num_dims, uint32_t concat_dim, int dim = num_dims - 1, typename FromIter, typename ToIter>
+    static void concat(const std::vector<FromIter> &from, ToIter to, const std::vector<std::array<uint32_t, num_dims>> &shape, const std::vector<std::array<uint32_t, num_dims>> &from_stride, const std::array<uint32_t, num_dims> &to_stride);
+
+    template <int num_dims, int dim = num_dims - 1, typename FromIter, typename ToIter>
+    static void copy(FromIter from, ToIter to, const std::array<uint32_t, num_dims> &shape, const std::array<uint32_t, num_dims> &from_stride, const std::array<uint32_t, num_dims> &to_stride);
+
     template <typename ElemType, int num_dims>
     class tensor
     {
@@ -39,7 +45,7 @@ namespace coalsack
             tensor contiguous() const
             {
                 tensor new_tensor(shape);
-                copy(data, new_tensor.data.begin(), shape, stride, new_tensor.stride);
+                coalsack::copy<num_dims>(data, new_tensor.data.begin(), shape, stride, new_tensor.stride);
                 return new_tensor;
             }
 
@@ -284,24 +290,6 @@ namespace coalsack
             }
         }
 
-        template <int dim = num_dims - 1, typename FromIter, typename ToIter>
-        static void copy(FromIter from, ToIter to, const shape_type &shape, const stride_type &from_stride, const stride_type &to_stride)
-        {
-            if constexpr (dim < 0)
-            {
-                *to = static_cast<std::decay_t<decltype(*to)>>(*from);
-            }
-            else
-            {
-                for (uint32_t i = 0; i < shape.at(dim); i++)
-                {
-                    const auto from_offset = from_stride.at(dim) * i;
-                    const auto to_offset = to_stride.at(dim) * i;
-                    copy<dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride);
-                }
-            }
-        }
-
         template <int dim = num_dims - 1, typename FromIter, typename ToIter, typename Func, typename... Indexes>
         static void transform(FromIter from, ToIter to, const shape_type &shape, const stride_type &from_stride, const stride_type &to_stride, Func f, Indexes... indexes)
         {
@@ -413,6 +401,106 @@ namespace coalsack
             }
         }
 
+        template<uint32_t dim>
+        static tensor concat(const std::vector<tensor> &values)
+        {
+            assert(values.size() > 0);
+
+            std::vector<const elem_type *> data;
+            std::vector<stride_type> stride;
+            std::vector<shape_type> shape;
+
+            uint32_t concat_dim_size = 0;
+            for (const auto &value : values)
+            {
+                data.push_back(value.data.data());
+                stride.push_back(value.stride);
+                shape.push_back(value.shape);
+
+                for (uint32_t i = 0; i < num_dims; i++)
+                {
+                    if (i == dim)
+                    {
+                        concat_dim_size += value.shape[i];
+                    }
+                    else
+                    {
+                        assert(shape[0][i] == value.shape[i]);
+                    }
+                }
+            }
+
+            shape_type new_shape = shape[0];
+            new_shape[dim] = concat_dim_size;
+
+            tensor new_tensor(new_shape);
+
+            coalsack::concat<num_dims, dim>(data, new_tensor.data.begin(), shape, stride, new_tensor.stride);
+            return new_tensor;
+        }
+
+        template <uint32_t dim = num_dims - 1>
+        static tensor<elem_type, num_dims + 1> stack(const std::vector<tensor> &values)
+        {
+            assert(values.size() > 0);
+
+            std::vector<const elem_type *> data;
+            std::vector<std::array<uint32_t, num_dims + 1>> strides;
+            std::vector<std::array<uint32_t, num_dims + 1>> shapes;
+
+            uint32_t concat_dim_size = 0;
+            for (const auto &value : values)
+            {
+                data.push_back(value.data.data());
+
+                std::array<uint32_t, num_dims + 1> stride;
+                std::array<uint32_t, num_dims + 1> shape;
+                for (uint32_t i = 0; i < num_dims + 1; i++)
+                {
+                    if (i <= dim)
+                    {
+                        stride[i] = value.stride[i];
+                        shape[i] = value.shape[i];
+                    }
+                    else if (i == dim + 1)
+                    {
+                        stride[i] = value.stride[i - 1];
+                        shape[i] = 1;
+                    }
+                    else
+                    {
+                        stride[i] = value.stride[i - 1];
+                        shape[i] = value.shape[i - 1];
+                    }
+                }
+
+                strides.push_back(stride);
+                shapes.push_back(shape);
+            }
+
+            std::array<uint32_t, num_dims + 1> new_shape;
+            for (uint32_t i = 0; i < num_dims + 1; i++)
+            {
+                if (i <= dim)
+                {
+                    new_shape[i] = shapes[0][i];
+                }
+                else if (i == dim + 1)
+                {
+                    new_shape[i] = values.size();
+                }
+                else
+                {
+                    new_shape[i] = shapes[0][i - 1];
+                }
+            }
+
+            tensor<elem_type, num_dims + 1> new_tensor(new_shape);
+
+            coalsack::concat<num_dims + 1, dim + 1>(data, new_tensor.data.begin(), shapes, strides, new_tensor.stride);
+            return new_tensor;
+        }
+
         tensor()
             : data(), shape()
         {
@@ -442,19 +530,19 @@ namespace coalsack
         tensor(const shape_type &shape, const elem_type *data, const stride_type &data_stride)
             : tensor(shape)
         {
-            copy(data, this->data.begin(), shape, data_stride, stride);
+            coalsack::copy<num_dims>(data, this->data.begin(), shape, data_stride, stride);
         }
 
         tensor(const shape_type &shape, const stride_type &stride, const elem_type *data)
             : tensor(shape, stride)
         {
-            copy(data, this->data.begin(), shape, stride, stride);
+            coalsack::copy<num_dims>(data, this->data.begin(), shape, stride, stride);
         }
 
         tensor(const shape_type &shape, const stride_type &stride, const elem_type *data, const stride_type &data_stride)
             : tensor(shape, stride)
         {
-            copy(data, this->data.begin(), shape, data_stride, stride);
+            coalsack::copy<num_dims>(data, this->data.begin(), shape, data_stride, stride);
         }
 
         tensor(const tensor &other)
@@ -520,7 +608,7 @@ namespace coalsack
         tensor<ToType, num_dims> cast() const
         {
             tensor<ToType, num_dims> new_tensor(shape);
-            copy(data.begin(), new_tensor.data.begin(), shape, stride, new_tensor.stride);
+            coalsack::copy<num_dims>(data.begin(), new_tensor.data.begin(), shape, stride, new_tensor.stride);
             return new_tensor;
         }
 
@@ -881,6 +969,24 @@ namespace coalsack
         stride_type stride;
     };
 
+    template <int num_dims, int dim = num_dims - 1, typename FromIter, typename ToIter>
+    static void copy(FromIter from, ToIter to, const std::array<uint32_t, num_dims> &shape, const std::array<uint32_t, num_dims> &from_stride, const std::array<uint32_t, num_dims> &to_stride)
+    {
+        if constexpr (dim < 0)
+        {
+            *to = static_cast<std::decay_t<decltype(*to)>>(*from);
+        }
+        else
+        {
+            for (uint32_t i = 0; i < shape.at(dim); i++)
+            {
+                const auto from_offset = from_stride.at(dim) * i;
+                const auto to_offset = to_stride.at(dim) * i;
+                coalsack::copy<num_dims, dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride);
+            }
+        }
+    }
+
     template <int num_dims, int block_num_dims, int dim, typename FromIter, typename ToIter, typename Func, typename... Indexes>
     static void transform_block(FromIter from, ToIter to, const std::array<uint32_t, num_dims> shape, const std::array<uint32_t, num_dims> from_stride, const std::array<uint32_t, num_dims> to_stride, const std::array<uint32_t, block_num_dims> &block_shape, const std::array<uint32_t, block_num_dims> &block_from_stride, const std::array<uint32_t, block_num_dims> &block_to_stride, Func f, Indexes... indexes)
     {
@@ -906,7 +1012,39 @@ namespace coalsack
             {
                 const auto from_offset = from_stride.at(dim) * i;
                 const auto to_offset = to_stride.at(dim) * i;
-                transform_block<num_dims, block_num_dims, dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride, block_shape, block_from_stride, block_to_stride, f, i, indexes...);
+                coalsack::transform_block<num_dims, block_num_dims, dim - 1>(from + from_offset, to + to_offset, shape, from_stride, to_stride, block_shape, block_from_stride, block_to_stride, f, i, indexes...);
+            }
+        }
+    }
+
+    template <int num_dims, uint32_t concat_dim, int dim = num_dims - 1, typename FromIter, typename ToIter>
+    static void concat(const std::vector<FromIter> &from, ToIter to, const std::vector<std::array<uint32_t, num_dims>> &shape, const std::vector<std::array<uint32_t, num_dims>> &from_stride, const std::array<uint32_t, num_dims> &to_stride)
+    {
+        if constexpr (dim == concat_dim)
+        {
+            for (size_t i = 0, k = 0; i < from.size(); i++)
+            {
+                for (uint32_t j = 0; j < shape.at(i).at(dim); j++, k++)
+                {
+                    const auto from_offset = from_stride.at(i).at(dim) * j;
+                    const auto to_offset = to_stride.at(dim) * k;
+
+                    coalsack::copy<num_dims, dim - 1>(from.at(i) + from_offset, to + to_offset, shape.at(0), from_stride.at(i), to_stride);
+                }
+            }
+        }
+        else
+        {
+            for (uint32_t i = 0; i < shape.at(0).at(dim); i++)
+            {
+                std::vector<FromIter> next_from;
+                for (size_t j = 0; j < from.size(); j++)
+                {
+                    const auto from_offset = from_stride.at(j).at(dim) * i;
+                    next_from.push_back(from.at(j) + from_offset);
+                }
+                const auto to_offset = to_stride.at(dim) * i;
+                coalsack::concat<num_dims, concat_dim, dim - 1>(next_from, to + to_offset, shape, from_stride, to_stride);
             }
         }
     }
