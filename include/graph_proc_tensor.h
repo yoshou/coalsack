@@ -69,7 +69,7 @@ namespace coalsack
             void assign(const view_type_base<T> &other)
             {
                 assert(other.shape == shape);
-                this_type::copy(other.data, data, shape, other.stride, stride);
+                coalsack::copy<num_dims>(other.data, data, shape, other.stride, stride);
             }
 
             template <typename Func>
