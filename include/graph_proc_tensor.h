@@ -334,6 +334,100 @@ namespace coalsack
                 view.shape = new_shape;
                 return view;
             }
+
+            template <int new_num_dims>
+            tensor<elem_type, new_num_dims> reshape(const std::array<uint32_t, new_num_dims> &new_shape) const
+            {
+                tensor<elem_type, new_num_dims> result(new_shape);
+
+                result.template view<num_dims>(shape).assign(*this, [](auto, const auto value, auto...) {
+                    return value;
+                });
+
+                return result;
+            }
+
+            template <int new_num_dims = num_dims>
+            typename tensor<elem_type, new_num_dims>::const_view_type view(const shape_type &shape, const index_type &offset) const
+            {
+                typename tensor<elem_type, new_num_dims>::const_view_type view;
+                view.data = data;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    view.data += offset[i] * stride[i];
+                }
+                size_t avail_dims = 0;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    if (shape[i] > 0)
+                    {
+                        assert(avail_dims < new_num_dims);
+                        view.stride[avail_dims] = stride[i];
+                        view.shape[avail_dims] = shape[i];
+                        avail_dims++;
+                    }
+                }
+                assert(avail_dims <= new_num_dims);
+
+                if (avail_dims > 0)
+                {
+                    for (size_t i = avail_dims; i < new_num_dims; i++)
+                    {
+                        view.stride[i] = view.stride[i - 1];
+                        view.shape[i] = 1;
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < new_num_dims; i++)
+                    {
+                        view.stride[i] = 0;
+                        view.shape[i] = 1;
+                    }
+                }
+                return view;
+            }
+
+            template <int new_num_dims = num_dims>
+            typename tensor<elem_type, new_num_dims>::const_view_type view(const shape_type &shape, const index_type &offset, const shape_type &step) const
+            {
+                typename tensor<elem_type, new_num_dims>::const_view_type view;
+                view.data = data;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    view.data += offset[i] * stride[i];
+                }
+                size_t avail_dims = 0;
+                for (size_t i = 0; i < num_dims; i++)
+                {
+                    if (shape[i] > 0)
+                    {
+                        assert(avail_dims < new_num_dims);
+                        view.stride[avail_dims] = stride[i] * step[i];
+                        view.shape[avail_dims] = shape[i];
+                        avail_dims++;
+                    }
+                }
+                assert(avail_dims <= new_num_dims);
+
+                if (avail_dims > 0)
+                {
+                    for (size_t i = avail_dims; i < new_num_dims; i++)
+                    {
+                        view.stride[i] = view.stride[i - 1];
+                        view.shape[i] = 1;
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < new_num_dims; i++)
+                    {
+                        view.stride[i] = 0;
+                        view.shape[i] = 1;
+                    }
+                }
+                return view;
+            }
         };
 
         using view_type = view_type_base<elem_type *>;
@@ -565,7 +659,7 @@ namespace coalsack
             {
                 if (i <= dim)
                 {
-                    new_shape[i] = shapes[0][i];
+                    new_shape[i] = values[0].shape[i];
                 }
                 else if (i == dim + 1)
                 {
@@ -573,7 +667,7 @@ namespace coalsack
                 }
                 else
                 {
-                    new_shape[i] = shapes[0][i - 1];
+                    new_shape[i] = values[0].shape[i - 1];
                 }
             }
 
@@ -816,6 +910,54 @@ namespace coalsack
             return new_tensor;
         }
 
+        template <int num_reduced_dims>
+        tensor<elem_type, num_dims - num_reduced_dims> max(const std::array<uint32_t, num_reduced_dims> &axes) const
+        {
+            static_assert(num_reduced_dims >= 1);
+            using reduced_tensor = tensor<elem_type, num_dims - num_reduced_dims>;
+
+            std::array<bool, num_dims> drop;
+            std::fill(drop.begin(), drop.end(), false);
+            for (size_t i = 0; i < axes.size(); i++)
+            {
+                drop[axes[i]] = true;
+            }
+
+            typename reduced_tensor::shape_type new_tensor_shape;
+            
+            for (size_t i = 0, j = 0; i < num_dims; i++)
+            {
+                if (drop[i] == false)
+                {
+                    new_tensor_shape[j] = shape[i];
+                    ++j;
+                }
+            }
+
+            reduced_tensor new_tensor(new_tensor_shape);
+            stride_type new_tensor_assign_stride;
+
+            for (size_t i = 0, j = 0; i < num_dims; i++)
+            {
+                if (drop[i] == false)
+                {
+                    new_tensor_assign_stride[i] = new_tensor.stride[j];
+                    ++j;
+                }
+                else
+                {
+                    new_tensor_assign_stride[i] = 0;
+                }
+            }
+
+            assign(data.begin(), new_tensor.data.begin(), shape, stride, new_tensor_assign_stride,
+                   [](const float value1, const float value2, auto...)
+                   {
+                       return std::max(value1, value2);
+                   });
+            return new_tensor;
+        }
+
         tensor max_pool3d(size_t kernel_size, size_t stride, size_t padding, size_t dilation) const
         {
             tensor new_tensor(shape);
@@ -1025,6 +1167,79 @@ namespace coalsack
                     view.shape[i] = 1;
                 }
             }
+            return view;
+        }
+
+        template <int new_num_dims = num_dims - 1>
+        typename tensor<elem_type, new_num_dims>::view_type squeeze(size_t axis)
+        {
+            assert(axis <= num_dims);
+            assert(shape[axis] == 1);
+
+            typename tensor<elem_type, new_num_dims>::view_type view;
+            view.data = data.data();
+
+            size_t j = 0;
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                if (i != axis)
+                {
+                    view.stride[j] = stride[i];
+                    view.shape[j] = shape[i];
+                    j++;
+                }
+            }
+
+            return view;
+        }
+
+        template <int new_num_dims = num_dims - 1>
+        typename tensor<elem_type, new_num_dims>::const_view_type squeeze(size_t axis) const
+        {
+            assert(axis < num_dims);
+            assert(shape[axis] == 1);
+
+            typename tensor<elem_type, new_num_dims>::const_view_type view;
+            view.data = data.data();
+
+            size_t j = 0;
+            for (size_t i = 0; i < num_dims; i++)
+            {
+                if (i != axis)
+                {
+                    view.stride[j] = stride[i];
+                    view.shape[j] = shape[i];
+                    j++;
+                }
+            }
+
+            return view;
+        }
+
+        template <int new_num_dims = num_dims + 1>
+        typename tensor<elem_type, new_num_dims>::const_view_type unsqueeze(size_t axis=num_dims) const
+        {
+            assert(axis <= num_dims);
+
+            typename tensor<elem_type, new_num_dims>::const_view_type view;
+            view.data = data.data();
+
+            size_t j = 0;
+            for (size_t i = 0; i < new_num_dims; i++)
+            {
+                if (i != axis)
+                {
+                    view.stride[i] = stride[j];
+                    view.shape[i] = shape[j];
+                    j++;
+                }
+                else
+                {
+                    view.stride[i] = 0;
+                    view.shape[i] = 1;
+                }
+            }
+
             return view;
         }
 
