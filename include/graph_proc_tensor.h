@@ -98,7 +98,7 @@ namespace coalsack
                 this_type::assign(data, shape, stride, f);
             }
 
-            std::tuple<tensor, tensor<uint64_t, num_dims>> topk(size_t k, size_t axis=0) const
+            std::tuple<tensor, tensor<uint64_t, num_dims>> topk(uint32_t k, size_t axis=0) const
             {
                 assert(axis < num_dims);
                 static_assert(num_dims >= 1);
@@ -106,91 +106,60 @@ namespace coalsack
 
                 using value_index_type = std::pair<float, size_t>;
 
-                if constexpr(num_dims == 1)
+                std::array<uint32_t, num_dims> new_shape = shape;
+                new_shape[axis] = k;
+
+                tensor<elem_type, num_dims> values(new_shape);
+                tensor<uint64_t, num_dims> indexes(new_shape);
+
+                std::array<uint32_t, 1> block_shape = {shape[axis]};
+                std::array<uint32_t, 1> block_stride1 = {stride[axis]};
+                std::array<uint32_t, 1> block_stride2 = {values.stride[axis]};
+                std::array<uint32_t, 1> block_stride3 = {indexes.stride[axis]};
+
+                std::array<uint32_t, num_dims - 1> access_stride1 = {};
+                std::array<uint32_t, num_dims - 1> access_stride2 = {};
+                std::array<uint32_t, num_dims - 1> access_stride3 = {};
+                std::array<uint32_t, num_dims - 1> access_shape = {};
+
+                size_t j = 0;
+                for (size_t i = 0; i < num_dims; i++)
                 {
-                    auto data = contiguous();
-                    std::vector<value_index_type> value_indexes(data.data.size());
+                    if (i != axis)
+                    {
+                        access_stride1[j] = stride[i];
+                        access_stride2[j] = values.stride[i];
+                        access_stride3[j] = indexes.stride[i];
+                        access_shape[j] = shape[i];
+                        ++j;
+                    }
+                }
+
+                auto&& datas = std::make_tuple(data, values.data.begin(), indexes.data.begin());
+                auto&& strides = std::make_tuple(access_stride1, access_stride2, access_stride3);
+                auto&& block_strides = std::make_tuple(block_stride1, block_stride2, block_stride3);
+
+                coalsack::transform_block<num_dims - 1, 1, num_dims - 2>(datas, access_shape, strides, block_shape, block_strides, [k](auto &data, const auto &shape, const auto &stride, auto...) {
+                    auto& [src_data, values_data, indexes_data] = data;
+                    const auto& [src_stride, values_stride, indexes_stride] = stride;
+
+                    std::vector<value_index_type> value_indexes(shape.at(0));
                     for (size_t i = 0; i < value_indexes.size(); i++)
                     {
-                        value_indexes[i].first = data.data[i];
+                        value_indexes[i].first = *(src_data + src_stride.at(0) * i);
                         value_indexes[i].second = i;
                     }
                     std::nth_element(value_indexes.begin(), value_indexes.begin() + k, value_indexes.end(),
                         [](const value_index_type& a, const value_index_type& b) { return a.first > b.first; });
 
-                    tensor values({k});
-                    this_type::assign(values.data.begin(), values.shape, values.stride, 
-                    [&](const float value, const size_t x)
+                    for (size_t i = 0; i < k; i++)
                     {
-                        return value_indexes.at(x).first;
-                    });
-
-                    tensor<uint64_t, num_dims> indexes({k});
-                    this_type::assign(indexes.data.begin(), indexes.shape, indexes.stride, 
-                    [&](const uint64_t value, const size_t x)
-                    {
-                        return value_indexes.at(x).second;
-                    });
-
-                    return std::forward_as_tuple(values, indexes);
-                }
-                else
-                {
-                    std::array<uint32_t, num_dims> new_shape = shape;
-                    new_shape[axis] = k;
-
-                    tensor<elem_type, num_dims> values(new_shape);
-                    tensor<uint64_t, num_dims> indexes(new_shape);
-
-                    std::array<uint32_t, 1> block_shape = {shape[axis]};
-                    std::array<uint32_t, 1> block_stride1 = {stride[axis]};
-                    std::array<uint32_t, 1> block_stride2 = {values.stride[axis]};
-                    std::array<uint32_t, 1> block_stride3 = {indexes.stride[axis]};
-
-                    std::array<uint32_t, num_dims - 1> access_stride1;
-                    std::array<uint32_t, num_dims - 1> access_stride2;
-                    std::array<uint32_t, num_dims - 1> access_stride3;
-                    std::array<uint32_t, num_dims - 1> access_shape;
-
-                    size_t j = 0;
-                    for (size_t i = 0; i < num_dims; i++)
-                    {
-                        if (i != axis)
-                        {
-                            access_stride1[j] = stride[i];
-                            access_stride2[j] = values.stride[i];
-                            access_stride3[j] = indexes.stride[i];
-                            access_shape[j] = shape[i];
-                            ++j;
-                        }
+                        *(values_data + values_stride.at(0) * i) = value_indexes.at(i).first;
+                        *(indexes_data + indexes_stride.at(0) * i) = value_indexes.at(i).second;
                     }
+                });
 
-                    auto&& datas = std::make_tuple(data, values.data.begin(), indexes.data.begin());
-                    auto&& strides = std::make_tuple(access_stride1, access_stride2, access_stride3);
-                    auto&& block_strides = std::make_tuple(block_stride1, block_stride2, block_stride3);
-
-                    coalsack::transform_block<num_dims - 1, 1, num_dims - 2>(datas, access_shape, strides, block_shape, block_strides, [k](auto &data, const auto &shape, const auto &stride, auto...) {
-                        auto& [src_data, values_data, indexes_data] = data;
-                        const auto& [src_stride, values_stride, indexes_stride] = stride;
-
-                        std::vector<value_index_type> value_indexes(shape.at(0));
-                        for (size_t i = 0; i < value_indexes.size(); i++)
-                        {
-                            value_indexes[i].first = *(src_data + src_stride.at(0) * i);
-                            value_indexes[i].second = i;
-                        }
-                        std::nth_element(value_indexes.begin(), value_indexes.begin() + k, value_indexes.end(),
-                            [](const value_index_type& a, const value_index_type& b) { return a.first > b.first; });
-
-                        for (size_t i = 0; i < k; i++)
-                        {
-                            *(values_data + values_stride.at(0) * i) = value_indexes.at(i).first;
-                            *(indexes_data + indexes_stride.at(0) * i) = value_indexes.at(i).second;
-                        }
-                    });
-
-                    return std::forward_as_tuple(values, indexes);
-                }
+                return std::forward_as_tuple(values, indexes);
             }
 
             template <typename Func>
