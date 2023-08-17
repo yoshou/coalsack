@@ -49,7 +49,7 @@ ExternalProject_Add (libjpeg-turbo
 ExternalProject_Add (lz4
     PREFIX lz4
     GIT_REPOSITORY "https://github.com/lz4/lz4.git"
-    GIT_TAG "dev"
+    GIT_TAG "v1.9.4"
     SOURCE_SUBDIR "build/cmake"
     SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/lz4"
     CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/lz4"
@@ -77,8 +77,8 @@ ExternalProject_Add(json
 )
 
 include_directories(
-    SYSTEM ${CMAKE_BINARY_DIR}/third-party/libjpeg-turbo/include
-    SYSTEM ${CMAKE_BINARY_DIR}/third-party/lz4/include
+    SYSTEM ${CMAKE_BINARY_DIR}/libjpeg-turbo/include
+    SYSTEM ${CMAKE_BINARY_DIR}/lz4/include
     SYSTEM ${CMAKE_BINARY_DIR}/third-party/fmt/include
     SYSTEM ${CMAKE_BINARY_DIR}/third-party/json/include
 )
