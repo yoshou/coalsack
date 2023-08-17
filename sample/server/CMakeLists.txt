@@ -6,6 +6,7 @@ add_dependencies(graph_proc_server
     cereal
     spdlog
     libjpeg-turbo
+    lz4
 )
 
 target_include_directories(graph_proc_server PUBLIC
