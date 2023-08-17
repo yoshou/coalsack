@@ -505,20 +505,14 @@ namespace coalsack
 
         virtual void run() override
         {
-            std::vector<std::string> streams;
-            for (const auto& [name, input]: get_inputs())
-            {
-                streams.push_back(name);
-            }
-
-            syncer.start(std::make_shared<typename syncer_type::callback_type>([this](const std::map<std::string, graph_message_ptr> &frames)
-                                                                               {
-            auto msg = std::make_shared<object_message>();
-            for (auto frame : frames)
-            {
-                msg->add_field(frame.first, frame.second);
-            }
-            output->send(msg); }), streams);
+            syncer.start(std::make_shared<typename syncer_type::callback_type>([this](const std::map<std::string, graph_message_ptr> &frames) {
+                auto msg = std::make_shared<object_message>();
+                for (auto frame : frames)
+                {
+                    msg->add_field(frame.first, frame.second);
+                }
+                output->send(msg);
+            }));
         }
 
         virtual void process(std::string input_name, graph_message_ptr message) override
