@@ -937,13 +937,13 @@ namespace coalsack
                 {
                     for (size_t i = 0; i < shape[0]; i++)
                     {
-                        int64_t start_u = i * stride - padding;
-                        int64_t start_v = j * stride - padding;
-                        int64_t start_w = k * stride - padding;
+                        auto start_u = static_cast<int64_t>(i * stride) - static_cast<int64_t>(padding);
+                        auto start_v = static_cast<int64_t>(j * stride) - static_cast<int64_t>(padding);
+                        auto start_w = static_cast<int64_t>(k * stride) - static_cast<int64_t>(padding);
 
-                        int64_t end_u = std::min(start_u + (kernel_size - 1) * dilation + 1, static_cast<size_t>(shape[0]));
-                        int64_t end_v = std::min(start_v + (kernel_size - 1) * dilation + 1, static_cast<size_t>(shape[1]));
-                        int64_t end_w = std::min(start_w + (kernel_size - 1) * dilation + 1, static_cast<size_t>(shape[2]));
+                        const auto end_u = std::min(static_cast<int64_t>(start_u + (kernel_size - 1) * dilation + 1), static_cast<int64_t>(shape[0]));
+                        const auto end_v = std::min(static_cast<int64_t>(start_v + (kernel_size - 1) * dilation + 1), static_cast<int64_t>(shape[1]));
+                        const auto end_w = std::min(static_cast<int64_t>(start_w + (kernel_size - 1) * dilation + 1), static_cast<int64_t>(shape[2]));
 
                         while (start_u < 0)
                         {
