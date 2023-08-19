@@ -2563,7 +2563,7 @@ try
 
     std::vector<uint8_t> backbone_model_data;
     {
-        const auto model_path = "../sample/faster-voxelpose/data/backbone.onnx";
+        const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/backbone.onnx";
         std::vector<uint8_t> data;
         load_model(model_path, data);
 
@@ -2572,7 +2572,7 @@ try
 
     std::vector<uint8_t> pose_center_net_model_data;
     {
-        const auto model_path = "../sample/faster-voxelpose/data/pose_center_net.onnx";
+        const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/pose_center_net.onnx";
         std::vector<uint8_t> data;
         load_model(model_path, data);
 
@@ -2581,7 +2581,7 @@ try
 
     std::vector<uint8_t> pose_c2c_net_model_data;
     {
-        const auto model_path = "../sample/faster-voxelpose/data/pose_c2c_net.onnx";
+        const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/pose_c2c_net.onnx";
         std::vector<uint8_t> data;
         load_model(model_path, data);
 
@@ -2590,7 +2590,7 @@ try
 
     std::vector<uint8_t> joint_conv_net_model_data;
     {
-        const auto model_path = "../sample/faster-voxelpose/data/joint_conv_net.onnx";
+        const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/joint_conv_net.onnx";
         std::vector<uint8_t> data;
         load_model(model_path, data);
 
@@ -2599,7 +2599,7 @@ try
 
     std::vector<uint8_t> joint_weight_net_model_data;
     {
-        const auto model_path = "../sample/faster-voxelpose/data/joint_weight_net.onnx";
+        const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/joint_weight_net.onnx";
         std::vector<uint8_t> data;
         load_model(model_path, data);
 

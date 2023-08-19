@@ -1374,7 +1374,7 @@ try
 
     std::vector<uint8_t> transformer_model_data;
     {
-        const auto model_path = "../sample/mvp/data/model.onnx";
+        const auto model_path = "../sample/mvp/data/mvp/model.onnx";
         std::vector<uint8_t> data;
         load_model(model_path, data);
 

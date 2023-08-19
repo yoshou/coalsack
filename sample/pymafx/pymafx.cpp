@@ -2197,10 +2197,10 @@ try
     std::unordered_map<std::string, std::vector<uint8_t>> encoder_model_data;
 
     std::unordered_map<std::string, std::string> encode_model_files = {
-        {"body", "../sample/pymafx/data/body_encoder.onnx"},
-        {"lhand", "../sample/pymafx/data/hand_encoder.onnx"},
-        {"rhand", "../sample/pymafx/data/hand_encoder.onnx"},
-        {"face", "../sample/pymafx/data/face_encoder.onnx"},
+        {"body", "../sample/pymafx/data/pymafx/body_encoder.onnx"},
+        {"lhand", "../sample/pymafx/data/pymafx/hand_encoder.onnx"},
+        {"rhand", "../sample/pymafx/data/pymafx/hand_encoder.onnx"},
+        {"face", "../sample/pymafx/data/pymafx/face_encoder.onnx"},
     };
 
     for (const auto &[part, model_path] : encode_model_files)
@@ -2269,7 +2269,7 @@ try
     {
         std::vector<uint8_t> body_grid_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_grid_feature_encoder0.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_grid_feature_encoder0.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2278,7 +2278,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_hmr0.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_hmr0.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2316,7 +2316,7 @@ try
     {
         std::vector<uint8_t> face_grid_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_grid_feature_encoder0.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_grid_feature_encoder0.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2325,7 +2325,7 @@ try
 
         std::vector<uint8_t> face_hmr0_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_hmr0.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_hmr0.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2367,7 +2367,7 @@ try
     {
         std::vector<uint8_t> hand_grid_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_grid_feature_encoder0.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_grid_feature_encoder0.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2376,7 +2376,7 @@ try
 
         std::vector<uint8_t> hand_hmr0_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_hmr0.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_hmr0.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2436,7 +2436,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2473,7 +2473,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2507,7 +2507,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2533,7 +2533,7 @@ try
     {
         std::vector<uint8_t> mesh_aligned_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_mesh_aligned_feature_encoder1.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_mesh_aligned_feature_encoder1.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2542,7 +2542,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_hmr1.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_hmr1.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2588,7 +2588,7 @@ try
     {
         std::vector<uint8_t> mesh_aligned_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_mesh_aligned_feature_encoder1.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_mesh_aligned_feature_encoder1.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2597,7 +2597,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_hmr1.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_hmr1.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2668,7 +2668,7 @@ try
     {
         std::vector<uint8_t> mesh_aligned_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_mesh_aligned_feature_encoder1.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_mesh_aligned_feature_encoder1.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2677,7 +2677,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_hmr1.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_hmr1.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2766,7 +2766,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2807,7 +2807,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2845,7 +2845,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2871,7 +2871,7 @@ try
     {
         std::vector<uint8_t> mesh_aligned_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_mesh_aligned_feature_encoder2.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_mesh_aligned_feature_encoder2.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2880,7 +2880,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_hmr2.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_hmr2.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2926,7 +2926,7 @@ try
     {
         std::vector<uint8_t> mesh_aligned_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_mesh_aligned_feature_encoder2.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_mesh_aligned_feature_encoder2.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -2935,7 +2935,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_hmr2.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_hmr2.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -3006,7 +3006,7 @@ try
     {
         std::vector<uint8_t> mesh_aligned_feature_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_mesh_aligned_feature_encoder2.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_mesh_aligned_feature_encoder2.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -3015,7 +3015,7 @@ try
 
         std::vector<uint8_t> hmr_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_hmr2.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_hmr2.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -3107,7 +3107,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/body_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/body_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -3146,7 +3146,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/face_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/face_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
@@ -3180,7 +3180,7 @@ try
 
         std::vector<uint8_t> mesh_model_data;
         {
-            const auto model_path = "../sample/pymafx/data/hand_mesh.onnx";
+            const auto model_path = "../sample/pymafx/data/pymafx/hand_mesh.onnx";
             std::vector<uint8_t> data;
             load_model(model_path, data);
 
