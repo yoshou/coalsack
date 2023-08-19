@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.8)
 project(coalsack)
 
 find_package(OpenCV 4.0 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS program_options)
+find_package(Boost REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
