@@ -1054,7 +1054,7 @@ namespace coalsack
                                      {
             cv::VideoCapture capture;
             capture.open(0);
-            if (stream == stream_type::INFRERED)
+            if (stream == stream_type::INFRARED)
             {
                 capture.set(cv::CAP_PROP_CONVERT_RGB, 0);
             }
@@ -1093,7 +1093,7 @@ namespace coalsack
             {
                 return;
             }
-            if (stream == stream_type::INFRERED)
+            if (stream == stream_type::INFRARED)
             {
                 cv::extractChannel(frame, frame, 0);
             }

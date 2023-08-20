@@ -169,7 +169,7 @@ namespace coalsack
         ANY,
         DEPTH,
         COLOR,
-        INFRERED,
+        INFRARED,
     };
 
     enum class stream_format
