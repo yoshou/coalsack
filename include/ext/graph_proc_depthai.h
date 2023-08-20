@@ -163,8 +163,6 @@ namespace coalsack
                     stream_fmt = stream_format::BGRA8;
                 }
 
-                std::cout << frame_number << ", " << (uint64_t)timestamp << std::endl;
-
                 msg->set_data(std::move(img));
                 msg->set_profile(std::make_shared<stream_profile>(
                     stream_type::COLOR,
