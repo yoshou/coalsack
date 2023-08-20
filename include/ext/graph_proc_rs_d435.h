@@ -12,19 +12,68 @@
 
 namespace coalsack
 {
-    using stream_index_pair = std::tuple<rs2_stream, int>;
+    enum class rs2_stream_type : std::uint32_t
+    {
+        ANY,
+        DEPTH,
+        COLOR,
+        INFRARED,
+        FISHEYE,
+        GYRO,
+        ACCEL,
+        GPIO,
+        POSE,
+        CONFIDENCE,
+    };
 
-    const stream_index_pair COLOR = {RS2_STREAM_COLOR, 0};
-    const stream_index_pair DEPTH = {RS2_STREAM_DEPTH, 0};
-    const stream_index_pair INFRA0 = {RS2_STREAM_INFRARED, 0};
-    const stream_index_pair INFRA1 = {RS2_STREAM_INFRARED, 1};
-    const stream_index_pair INFRA2 = {RS2_STREAM_INFRARED, 2};
-    const stream_index_pair FISHEYE = {RS2_STREAM_FISHEYE, 0};
-    const stream_index_pair FISHEYE1 = {RS2_STREAM_FISHEYE, 1};
-    const stream_index_pair FISHEYE2 = {RS2_STREAM_FISHEYE, 2};
-    const stream_index_pair GYRO = {RS2_STREAM_GYRO, 0};
-    const stream_index_pair ACCEL = {RS2_STREAM_ACCEL, 0};
-    const stream_index_pair POSE = {RS2_STREAM_POSE, 0};
+    enum class rs2_format_type : std::uint32_t
+    {
+        ANY,
+        Z16,
+        DISPARITY16,
+        XYZ32F,
+        YUYV,
+        RGB8,
+        BGR8,
+        RGBA8,
+        BGRA8,
+        Y8,
+        Y16,
+        RAW10,
+        RAW16,
+        RAW8,
+        UYVY,
+        MOTION_RAW,
+        MOTION_XYZ32F,
+        GPIO_RAW,
+        SIX_DOF,
+        DISPARITY32,
+        Y10BPACK,
+        DISTANCE,
+        MJPEG,
+        Y8I,
+        Y12I,
+        INZI,
+        INVI,
+        W10,
+        Z16H,
+        FG,
+        Y411,
+    };
+
+    using stream_index_pair = std::tuple<rs2_stream_type, int>;
+
+    const stream_index_pair COLOR = {rs2_stream_type::COLOR, 0};
+    const stream_index_pair DEPTH = {rs2_stream_type::DEPTH, 0};
+    const stream_index_pair INFRA0 = {rs2_stream_type::INFRARED, 0};
+    const stream_index_pair INFRA1 = {rs2_stream_type::INFRARED, 1};
+    const stream_index_pair INFRA2 = {rs2_stream_type::INFRARED, 2};
+    const stream_index_pair FISHEYE = {rs2_stream_type::FISHEYE, 0};
+    const stream_index_pair FISHEYE1 = {rs2_stream_type::FISHEYE, 1};
+    const stream_index_pair FISHEYE2 = {rs2_stream_type::FISHEYE, 2};
+    const stream_index_pair GYRO = {rs2_stream_type::GYRO, 0};
+    const stream_index_pair ACCEL = {rs2_stream_type::ACCEL, 0};
+    const stream_index_pair POSE = {rs2_stream_type::POSE, 0};
 
     const std::vector<stream_index_pair> IMAGE_STREAMS = {DEPTH, INFRA0, INFRA1, INFRA2,
                                                           COLOR,
@@ -33,14 +82,14 @@ namespace coalsack
 
     struct stream_profile_request
     {
-        stream_profile_request(rs2_format format = RS2_FORMAT_ANY, rs2_stream stream = RS2_STREAM_ANY,
+        stream_profile_request(rs2_format_type format = rs2_format_type::ANY, rs2_stream_type stream = rs2_stream_type::ANY,
                                int index = 0, uint32_t width = 0, uint32_t height = 0, uint32_t fps = 0)
             : format(format), stream(stream), index(index), width(width), height(height), fps(fps)
         {
         }
 
-        rs2_format format;
-        rs2_stream stream;
+        rs2_format_type format;
+        rs2_stream_type stream;
         int index;
         uint32_t width, height, fps;
 
@@ -72,7 +121,7 @@ namespace coalsack
         return lhs.stream < rhs.stream;
     }
 
-    stream_format convert_stream_format(rs2_format format)
+    static stream_format convert_stream_format(rs2_format format)
     {
         switch (format)
         {
@@ -99,7 +148,7 @@ namespace coalsack
         }
     }
 
-    image_format convert_image_format(rs2_format format)
+    static image_format convert_image_format(rs2_format format)
     {
         switch (format)
         {
@@ -126,7 +175,7 @@ namespace coalsack
         }
     }
 
-    stream_type convert_stream_type(rs2_stream type)
+    static stream_type convert_stream_type(rs2_stream type)
     {
         switch (type)
         {
@@ -135,7 +184,7 @@ namespace coalsack
         case RS2_STREAM_COLOR:
             return stream_type::COLOR;
         case RS2_STREAM_INFRARED:
-            return stream_type::INFRERED;
+            return stream_type::INFRARED;
         default:
             return stream_type::ANY;
         }
@@ -157,7 +206,10 @@ namespace coalsack
         {
             assert(profile.index >= 0);
 
-            return profile.stream * pow(10, 12) + profile.format * pow(10, 10) + profile.fps * pow(10, 8) +
+            const auto stream = convert_to_rs2_stream(profile.stream);
+            const auto format = convert_to_rs2_format(profile.format);
+
+            return stream * pow(10, 12) + format * pow(10, 10) + profile.fps * pow(10, 8) +
                    profile.width * pow(10, 4) + profile.height + (uint32_t)profile.index;
         }
 
@@ -172,6 +224,90 @@ namespace coalsack
                 key += video_profile.width() * pow(10, 4) + video_profile.height();
             }
             return key;
+        }
+
+        static rs2_stream convert_to_rs2_stream(rs2_stream_type type)
+        {
+            switch (type)
+            {
+            case rs2_stream_type::DEPTH:
+                return RS2_STREAM_DEPTH;
+            case rs2_stream_type::COLOR:
+                return RS2_STREAM_COLOR;
+            case rs2_stream_type::INFRARED:
+                return RS2_STREAM_INFRARED;
+            default:
+                throw std::runtime_error("Unsupported");
+            }
+        }
+
+        static rs2_stream_type convert_from_rs2_stream(rs2_stream type)
+        {
+            switch (type)
+            {
+            case RS2_STREAM_DEPTH:
+                return rs2_stream_type::DEPTH;
+            case  RS2_STREAM_COLOR:
+                return rs2_stream_type::COLOR;
+            case  RS2_STREAM_INFRARED:
+                return rs2_stream_type::INFRARED;
+            default:
+                throw std::runtime_error("Unsupported");
+            }
+        }
+
+        static rs2_format convert_to_rs2_format(rs2_format_type type)
+        {
+            switch (type)
+            {
+            case rs2_format_type::Z16:
+                return RS2_FORMAT_Z16;
+            case rs2_format_type::RGB8:
+                return RS2_FORMAT_RGB8;
+            case rs2_format_type::BGR8:
+                return RS2_FORMAT_BGR8;
+            case rs2_format_type::RGBA8:
+                return RS2_FORMAT_RGBA8;
+            case rs2_format_type::BGRA8:
+                return RS2_FORMAT_BGRA8;
+            case rs2_format_type::Y8:
+                return RS2_FORMAT_Y8;
+            case rs2_format_type::Y16:
+                return RS2_FORMAT_Y16;
+            case rs2_format_type::YUYV:
+                return RS2_FORMAT_YUYV;
+            case rs2_format_type::UYVY:
+                return RS2_FORMAT_UYVY;
+            default:
+                throw std::runtime_error("Unsupported");
+            }
+        }
+
+        static rs2_format_type convert_from_rs2_format(rs2_format type)
+        {
+            switch (type)
+            {
+            case RS2_FORMAT_Z16:
+                return rs2_format_type::Z16;
+            case RS2_FORMAT_RGB8:
+                return rs2_format_type::RGB8;
+            case RS2_FORMAT_BGR8:
+                return rs2_format_type::BGR8;
+            case RS2_FORMAT_RGBA8:
+                return rs2_format_type::RGBA8;
+            case RS2_FORMAT_BGRA8:
+                return rs2_format_type::BGRA8;
+            case RS2_FORMAT_Y8:
+                return rs2_format_type::Y8;
+            case RS2_FORMAT_Y16:
+                return rs2_format_type::Y16;
+            case RS2_FORMAT_YUYV:
+                return rs2_format_type::YUYV;
+            case RS2_FORMAT_UYVY:
+                return rs2_format_type::UYVY;
+            default:
+                throw std::runtime_error("Unsupported");
+            }
         }
 
     public:
@@ -195,22 +331,18 @@ namespace coalsack
             return serial_number;
         }
 
-        graph_edge_ptr get_output(stream_index_pair stream, int width, int height, rs2_format format = RS2_FORMAT_ANY, int fps = 0)
+        graph_edge_ptr get_output(stream_index_pair stream, int width, int height, rs2_format_type format = rs2_format_type::ANY, int fps = 0)
         {
-            rs2_stream stream_type;
-            int stream_index;
-            std::tie(stream_type, stream_index) = stream;
+            const auto [stream_type, stream_index] = stream;
             stream_profile_request profile(format, stream_type, stream_index, width, height, fps);
             std::string output_name = "stream" + std::to_string(get_stream_profile_request_id(profile));
 
             return graph_node::get_output(output_name);
         }
 
-        graph_edge_ptr add_output(stream_index_pair stream, int width = 0, int height = 0, rs2_format format = RS2_FORMAT_ANY, int fps = 0)
+        graph_edge_ptr add_output(stream_index_pair stream, int width = 0, int height = 0, rs2_format_type format = rs2_format_type::ANY, int fps = 0)
         {
-            rs2_stream stream_type;
-            int stream_index;
-            std::tie(stream_type, stream_index) = stream;
+            const auto [stream_type, stream_index] = stream;
             stream_profile_request profile(format, stream_type, stream_index, width, height, fps);
             std::string output_name = "stream" + std::to_string(get_stream_profile_request_id(profile));
 
@@ -245,7 +377,9 @@ namespace coalsack
             rs2::config config;
             for (auto profile : request_profiles)
             {
-                config.enable_stream(profile.stream, profile.index, profile.width, profile.height, profile.format, profile.fps);
+                const auto stream = convert_to_rs2_stream(profile.stream);
+                const auto format = convert_to_rs2_format(profile.format);
+                config.enable_stream(stream, profile.index, profile.width, profile.height, format, profile.fps);
             }
             config.enable_device(get_serial_number());
 
@@ -326,8 +460,11 @@ namespace coalsack
 
             if (auto video_profile = profile.as<rs2::video_stream_profile>())
             {
-                stream_index_pair sip = {profile.stream_type(), profile.stream_index()};
-                auto output = get_output(sip, video_profile.width(), video_profile.height(), profile.format(), profile.fps());
+                const auto stream = convert_from_rs2_stream(profile.stream_type());
+                const auto format = convert_from_rs2_format(profile.format());
+                
+                stream_index_pair sip = {stream, profile.stream_index()};
+                auto output = get_output(sip, video_profile.width(), video_profile.height(), format, profile.fps());
                 output->send(msg);
             }
         }
@@ -399,7 +536,8 @@ namespace coalsack
             {
                 for (auto &profile : sensor.get_stream_profiles())
                 {
-                    stream_index_pair sip(profile.stream_type(), profile.stream_index());
+                    const auto stream = convert_from_rs2_stream(profile.stream_type());
+                    stream_index_pair sip(stream, profile.stream_index());
                     if (sensors.find(sip) == sensors.end())
                     {
                         sensors[sip] = sensor;
