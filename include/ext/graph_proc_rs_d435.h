@@ -5,8 +5,10 @@
 #include <thread>
 #include <atomic>
 
+#if ENABLE_RS_D435_EXT
 #include <librealsense2/rs.hpp>
 #include <librealsense2/rsutil.h>
+#endif
 
 #include "graph_proc.h"
 
@@ -222,6 +224,7 @@ namespace coalsack
         return lhs.stream < rhs.stream;
     }
 
+#if ENABLE_RS_D435_EXT
     static stream_format convert_stream_format(rs2_format format)
     {
         switch (format)
@@ -290,6 +293,7 @@ namespace coalsack
             return stream_type::ANY;
         }
     }
+#endif
 
     class rs_d435_node : public graph_node
     {
@@ -297,6 +301,7 @@ namespace coalsack
         std::vector<std::tuple<stream_index_pair, rs2_option_type, float>> request_options;
         std::vector<stream_profile_request> request_profiles;
 
+#if ENABLE_RS_D435_EXT
         // Runtime objects
         rs2::device device;
         std::map<stream_index_pair, rs2::sensor> sensors;
@@ -429,6 +434,7 @@ namespace coalsack
                 throw std::runtime_error("Unsupported");
             }
         }
+#endif
 
     public:
         rs_d435_node()
@@ -484,6 +490,7 @@ namespace coalsack
             request_options.push_back(std::make_tuple(stream, option, value));
         }
 
+#if ENABLE_RS_D435_EXT
         virtual void run() override
         {
             if (request_profiles.size() == 0)
@@ -525,6 +532,16 @@ namespace coalsack
                 th->join();
             }
         }
+#else
+        virtual void run() override
+        {
+            throw std::runtime_error("Not implemented");
+        }
+        virtual void stop() override
+        {
+            throw std::runtime_error("Not implemented");
+        }
+#endif
 
         template <typename Archive>
         void save(Archive &archive) const
@@ -557,6 +574,7 @@ namespace coalsack
         }
 
     private:
+#if ENABLE_RS_D435_EXT
         void video_frame_callback(rs2::video_frame frame)
         {
             auto profile = frame.get_profile();
@@ -662,6 +680,7 @@ namespace coalsack
                 }
             }
         }
+#endif
     };
 }
 
