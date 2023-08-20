@@ -301,23 +301,23 @@ namespace coalsack
         std::vector<std::tuple<stream_index_pair, rs2_option_type, float>> request_options;
         std::vector<stream_profile_request> request_profiles;
 
+        static int64_t get_stream_profile_request_id(stream_profile_request profile)
+        {
+            assert(profile.index >= 0);
+
+            const auto stream = static_cast<uint32_t>(profile.stream);
+            const auto format = static_cast<uint32_t>(profile.format);
+
+            return stream * pow(10, 12) + format * pow(10, 10) + profile.fps * pow(10, 8) +
+                   profile.width * pow(10, 4) + profile.height + (uint32_t)profile.index;
+        }
+
 #if ENABLE_RS_D435_EXT
         // Runtime objects
         rs2::device device;
         std::map<stream_index_pair, rs2::sensor> sensors;
         std::shared_ptr<std::thread> th;
         std::atomic_bool running;
-
-        static int64_t get_stream_profile_request_id(stream_profile_request profile)
-        {
-            assert(profile.index >= 0);
-
-            const auto stream = convert_to_rs2_stream(profile.stream);
-            const auto format = convert_to_rs2_format(profile.format);
-
-            return stream * pow(10, 12) + format * pow(10, 10) + profile.fps * pow(10, 8) +
-                   profile.width * pow(10, 4) + profile.height + (uint32_t)profile.index;
-        }
 
         static rs2_stream convert_to_rs2_stream(rs2_stream_type type)
         {
