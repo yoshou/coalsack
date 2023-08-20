@@ -319,19 +319,6 @@ namespace coalsack
                    profile.width * pow(10, 4) + profile.height + (uint32_t)profile.index;
         }
 
-        static int64_t get_stream_profile_id(rs2::stream_profile profile)
-        {
-            assert(profile.stream_index() >= 0);
-
-            int64_t key = profile.stream_type() * pow(10, 12) + profile.format() * pow(10, 10) + profile.fps() * pow(10, 8) + profile.stream_index();
-            if (profile.is<rs2::video_stream_profile>())
-            {
-                rs2::video_stream_profile video_profile = profile.as<rs2::video_stream_profile>();
-                key += video_profile.width() * pow(10, 4) + video_profile.height();
-            }
-            return key;
-        }
-
         static rs2_stream convert_to_rs2_stream(rs2_stream_type type)
         {
             switch (type)
