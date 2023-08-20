@@ -16,7 +16,7 @@ else()
     set(ENABLE_LIBCAMERA_EXT 0)
 endif()
 
-find_package(depthai CONFIG REQUIRED COMPONENTS depthai::opencv depthai::core)
+find_package(depthai CONFIG COMPONENTS depthai::opencv depthai::core)
 
 if(${depthai_FOUND})
     set(ENABLE_DEPTHAI_EXT 1)
