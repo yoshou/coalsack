@@ -22,6 +22,9 @@
 #ifdef ENABLE_LIBCAMERA_EXT
 #include "ext/graph_proc_libcamera.h"
 #endif
+#ifdef ENABLE_DEPTHAI_EXT
+#include "ext/graph_proc_depthai.h"
+#endif
 #include "ext/graph_proc_jpeg.h"
 #include "ext/graph_proc_lz4.h"
 #include "ext/graph_proc_cv.h"
