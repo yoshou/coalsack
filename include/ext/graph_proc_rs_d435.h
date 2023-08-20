@@ -61,6 +61,107 @@ namespace coalsack
         Y411,
     };
 
+    enum class rs2_option_type
+    {
+        BACKLIGHT_COMPENSATION,                  
+        BRIGHTNESS,                              
+        CONTRAST,                                
+        EXPOSURE,                                
+        GAIN,                                    
+        GAMMA,                                   
+        HUE,                                     
+        SATURATION,                              
+        SHARPNESS,                               
+        WHITE_BALANCE,                           
+        ENABLE_AUTO_EXPOSURE,                    
+        ENABLE_AUTO_WHITE_BALANCE,               
+        VISUAL_PRESET,                           
+        LASER_POWER,                             
+        ACCURACY,                                
+        MOTION_RANGE,                            
+        FILTER_OPTION,                           
+        CONFIDENCE_THRESHOLD,                    
+        EMITTER_ENABLED,                         
+        FRAMES_QUEUE_SIZE,                       
+        TOTAL_FRAME_DROPS,                       
+        AUTO_EXPOSURE_MODE,                      
+        POWER_LINE_FREQUENCY,                    
+        ASIC_TEMPERATURE,                        
+        ERROR_POLLING_ENABLED,                   
+        PROJECTOR_TEMPERATURE,                   
+        OUTPUT_TRIGGER_ENABLED,                  
+        MOTION_MODULE_TEMPERATURE,               
+        DEPTH_UNITS,                             
+        ENABLE_MOTION_CORRECTION,                
+        AUTO_EXPOSURE_PRIORITY,                  
+        COLOR_SCHEME,                            
+        HISTOGRAM_EQUALIZATION_ENABLED,          
+        MIN_DISTANCE,                            
+        MAX_DISTANCE,                            
+        TEXTURE_SOURCE,                          
+        FILTER_MAGNITUDE,                        
+        FILTER_SMOOTH_ALPHA,                     
+        FILTER_SMOOTH_DELTA,                     
+        HOLES_FILL,                              
+        STEREO_BASELINE,                         
+        AUTO_EXPOSURE_CONVERGE_STEP,             
+        INTER_CAM_SYNC_MODE,                     
+        STREAM_FILTER,                           
+        STREAM_FORMAT_FILTER,                    
+        STREAM_INDEX_FILTER,                     
+        EMITTER_ON_OFF,                          
+        ZERO_ORDER_POINT_X,                      
+        ZERO_ORDER_POINT_Y,                      
+        LLD_TEMPERATURE,                         
+        MC_TEMPERATURE,                          
+        MA_TEMPERATURE,                          
+        HARDWARE_PRESET,                         
+        GLOBAL_TIME_ENABLED,                     
+        APD_TEMPERATURE,                         
+        ENABLE_MAPPING,                          
+        ENABLE_RELOCALIZATION,                   
+        ENABLE_POSE_JUMPING,                     
+        ENABLE_DYNAMIC_CALIBRATION,              
+        DEPTH_OFFSET,                            
+        LED_POWER,                               
+        ZERO_ORDER_ENABLED,                      
+        ENABLE_MAP_PRESERVATION,                 
+        FREEFALL_DETECTION_ENABLED,              
+        AVALANCHE_PHOTO_DIODE,                   
+        POST_PROCESSING_SHARPENING,              
+        PRE_PROCESSING_SHARPENING,               
+        NOISE_FILTERING,                         
+        INVALIDATION_BYPASS,                     
+        AMBIENT_LIGHT,                           
+        DIGITAL_GAIN, 
+        SENSOR_MODE,                             
+        EMITTER_ALWAYS_ON,                       
+        THERMAL_COMPENSATION,                    
+        TRIGGER_CAMERA_ACCURACY_HEALTH,          
+        RESET_CAMERA_ACCURACY_HEALTH,            
+        HOST_PERFORMANCE,                        
+        HDR_ENABLED,                             
+        SEQUENCE_NAME,                           
+        SEQUENCE_SIZE,                           
+        SEQUENCE_ID,                             
+        HUMIDITY_TEMPERATURE,                    
+        ENABLE_MAX_USABLE_RANGE,                 
+        ALTERNATE_IR,                            
+        NOISE_ESTIMATION,                        
+        ENABLE_IR_REFLECTIVITY,                  
+        AUTO_EXPOSURE_LIMIT,                     
+        AUTO_GAIN_LIMIT,                         
+        AUTO_RX_SENSITIVITY,                     
+        TRANSMITTER_FREQUENCY,                   
+        VERTICAL_BINNING,                        
+        RECEIVER_SENSITIVITY,                    
+        AUTO_EXPOSURE_LIMIT_TOGGLE,              
+        AUTO_GAIN_LIMIT_TOGGLE,                  
+        EMITTER_FREQUENCY,                       
+        DEPTH_AUTO_EXPOSURE_MODE,                
+        COUNT                                    
+    };
+
     using stream_index_pair = std::tuple<rs2_stream_type, int>;
 
     const stream_index_pair COLOR = {rs2_stream_type::COLOR, 0};
@@ -193,7 +294,7 @@ namespace coalsack
     class rs_d435_node : public graph_node
     {
         std::string serial_number;
-        std::vector<std::tuple<stream_index_pair, rs2_option, float>> request_options;
+        std::vector<std::tuple<stream_index_pair, rs2_option_type, float>> request_options;
         std::vector<stream_profile_request> request_profiles;
 
         // Runtime objects
@@ -283,6 +384,25 @@ namespace coalsack
             }
         }
 
+        static rs2_option convert_to_rs2_option(rs2_option_type type)
+        {
+            switch (type)
+            {
+            case rs2_option_type::GLOBAL_TIME_ENABLED:
+                return RS2_OPTION_GLOBAL_TIME_ENABLED;
+            case rs2_option_type::EXPOSURE:
+                return RS2_OPTION_EXPOSURE;
+            case rs2_option_type::GAIN:
+                return RS2_OPTION_GAIN;
+            case rs2_option_type::LASER_POWER:
+                return RS2_OPTION_LASER_POWER;
+            case rs2_option_type::EMITTER_ENABLED:
+                return RS2_OPTION_EMITTER_ENABLED;
+            default:
+                throw std::runtime_error("Unsupported");
+            }
+        }
+
         static rs2_format_type convert_from_rs2_format(rs2_format type)
         {
             switch (type)
@@ -359,7 +479,7 @@ namespace coalsack
             return it->second;
         }
 
-        void set_option(stream_index_pair stream, rs2_option option, float value)
+        void set_option(stream_index_pair stream, rs2_option_type option, float value)
         {
             request_options.push_back(std::make_tuple(stream, option, value));
         }
@@ -490,13 +610,10 @@ namespace coalsack
         {
             for (auto option_req : request_options)
             {
-                stream_index_pair sip;
-                rs2_option option;
-                float value;
-                std::tie(sip, option, value) = option_req;
+                const auto [sip, option, value] = option_req;
 
                 auto sensor = sensors[sip];
-                sensor.set_option(option, value);
+                sensor.set_option(convert_to_rs2_option(option), value);
             }
         }
 
