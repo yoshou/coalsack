@@ -70,6 +70,20 @@ RUN curl -L \
     -o /tmp/tensorflow-2.10.1.tar.gz \
     && tar -zxvf /tmp/tensorflow-2.10.1.tar.gz --strip-components 1 -C /tensorflow
 
+RUN curl -L \
+    https://github.com/luxonis/depthai-core/releases/download/v2.22.0/depthai-core-v2.22.0.tar.gz \
+    -o /tmp/depthai-core-v2.22.0.tar.gz \
+    && mkdir /tmp/depthai-core \
+    && tar -zxvf /tmp/depthai-core-v2.22.0.tar.gz --strip-components 1 -C /tmp/depthai-core \
+    && cd /tmp/depthai-core \
+    && cmake -S. -Bbuild -DOpenCV_DIR=${VCPKG_ROOT}/installed/x64-linux/share/opencv4/ -DDEPTHAI_OPENCV_SUPPORT=ON -DDEPTHAI_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && cmake --build build --target install
+
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get -y install --no-install-recommends usbutils udev
+
+RUN echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules
+
 ENV PATH $PATH:${VCPKG_ROOT}/installed/x64-linux
 ENV BOOST_ROOT /usr/local/vcpkg/installed/x64-linux
 ENV ONNXRUNTIME_ROOT /onnxruntime

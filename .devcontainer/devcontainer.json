@@ -20,7 +20,10 @@
 	],
 
 	"runArgs": [
-		"--runtime=nvidia"
+		"--runtime=nvidia",
+		"--privileged",
+		"-v",
+		"/dev/bus/usb:/dev/bus/usb"
 	],
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
