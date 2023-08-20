@@ -117,7 +117,7 @@ namespace coalsack
 
             while (iter_packet != nullptr)
             {
-                if ((iter_packet->timestamp - last_packet_timestamp) >= timeout)
+                if ((iter_packet->timestamp - last_packet_timestamp) * 100 / 1000 / 1000 >= timeout)
                 {
                     return true;
                 }
