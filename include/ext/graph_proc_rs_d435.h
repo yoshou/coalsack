@@ -323,14 +323,28 @@ namespace coalsack
         {
             switch (type)
             {
+            case rs2_stream_type::ANY:
+                return RS2_STREAM_ANY;
             case rs2_stream_type::DEPTH:
                 return RS2_STREAM_DEPTH;
             case rs2_stream_type::COLOR:
                 return RS2_STREAM_COLOR;
             case rs2_stream_type::INFRARED:
                 return RS2_STREAM_INFRARED;
+            case rs2_stream_type::FISHEYE:
+                return RS2_STREAM_FISHEYE;
+            case rs2_stream_type::GYRO:
+                return RS2_STREAM_GYRO;
+            case rs2_stream_type::ACCEL:
+                return RS2_STREAM_ACCEL;
+            case rs2_stream_type::GPIO:
+                return RS2_STREAM_GPIO;
+            case rs2_stream_type::POSE:
+                return RS2_STREAM_POSE;
+            case rs2_stream_type::CONFIDENCE:
+                return RS2_STREAM_CONFIDENCE;
             default:
-                throw std::runtime_error("Unsupported");
+                throw std::runtime_error("Invalid stream type");
             }
         }
 
@@ -338,14 +352,28 @@ namespace coalsack
         {
             switch (type)
             {
+            case RS2_STREAM_ANY:
+                return rs2_stream_type::ANY;
             case RS2_STREAM_DEPTH:
                 return rs2_stream_type::DEPTH;
-            case  RS2_STREAM_COLOR:
+            case RS2_STREAM_COLOR:
                 return rs2_stream_type::COLOR;
-            case  RS2_STREAM_INFRARED:
+            case RS2_STREAM_INFRARED:
                 return rs2_stream_type::INFRARED;
+            case RS2_STREAM_FISHEYE:
+                return rs2_stream_type::FISHEYE;
+            case RS2_STREAM_GYRO:
+                return rs2_stream_type::GYRO;
+            case RS2_STREAM_ACCEL:
+                return rs2_stream_type::ACCEL;
+            case RS2_STREAM_GPIO:
+                return rs2_stream_type::GPIO;
+            case RS2_STREAM_POSE:
+                return rs2_stream_type::POSE;
+            case RS2_STREAM_CONFIDENCE:
+                return rs2_stream_type::CONFIDENCE;
             default:
-                throw std::runtime_error("Unsupported");
+                throw std::runtime_error("Invalid stream type");
             }
         }
 
