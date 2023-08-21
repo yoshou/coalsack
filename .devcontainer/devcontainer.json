@@ -23,7 +23,11 @@
 		"--runtime=nvidia",
 		"--privileged",
 		"-v",
-		"/dev/bus/usb:/dev/bus/usb"
+		"/dev/:/dev/",
+		"-v",
+		"/run/udev:/run/udev",
+		"-v",
+		"/run/dbus/:/run/dbus"
 	],
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
