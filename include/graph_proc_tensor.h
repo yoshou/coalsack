@@ -407,6 +407,17 @@ namespace coalsack
             return std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
         }
 
+        static stride_type calculate_stride(const shape_type& shape)
+        {
+            stride_type stride;
+            stride[0] = 1;
+            for (size_t i = 1; i < num_dims; i++)
+            {
+                stride[i] = stride[i - 1] * shape[i - 1];
+            }
+            return stride;
+        }
+
         template <int dim = num_dims - 1, typename FromIter>
         static elem_type get(FromIter from, const shape_type &shape, const stride_type &from_stride, const index_type &index)
         {
@@ -652,13 +663,8 @@ namespace coalsack
         }
 
         tensor(const shape_type &shape)
-            : data(calculate_size(shape)), shape(shape)
+            : data(calculate_size(shape)), shape(shape), stride(calculate_stride(shape))
         {
-            stride[0] = 1;
-            for (size_t i = 1; i < num_dims; i++)
-            {
-                stride[i] = stride[i - 1] * shape[i - 1];
-            }
         }
 
         tensor(const shape_type &shape, const stride_type &stride)
@@ -1012,7 +1018,7 @@ namespace coalsack
             tensor<elem_type, new_num_dims> new_tensor;
             new_tensor.data = std::move(data);
             new_tensor.shape = shape;
-            new_tensor.stride = stride;
+            new_tensor.stride = tensor<elem_type, new_num_dims>::calculate_stride(new_tensor.shape);
 
             assert(new_tensor.get_size() == get_size());
             return new_tensor;
