@@ -6,10 +6,8 @@
 #include <cstdint>
 #include <string>
 #include <algorithm>
+#include <cmath>
 #include <cereal/types/array.hpp>
-
-#include "graph_proc.h"
-#include "graph_proc_img.h"
 
 namespace coalsack
 {
@@ -1006,6 +1004,18 @@ namespace coalsack
             return view;
         }
 
+        template <int new_num_dims>
+        tensor<elem_type, new_num_dims> reshape_move(const std::array<uint32_t, new_num_dims> &shape)
+        {
+            tensor<elem_type, new_num_dims> new_tensor;
+            new_tensor.data = std::move(data);
+            new_tensor.shape = shape;
+            new_tensor.stride = stride;
+
+            assert(new_tensor.get_size() == get_size());
+            return new_tensor;
+        }
+
         tensor softmax(size_t axis) const
         {
             return view().softmax(axis);
@@ -1235,7 +1245,7 @@ namespace coalsack
         stride_type stride;
     };
 
-    template <int num_dims, int dim = num_dims - 1, typename FromIter, typename ToIter>
+    template <int num_dims, int dim, typename FromIter, typename ToIter>
     static void copy(FromIter from, ToIter to, const std::array<uint32_t, num_dims> &shape, const std::array<uint32_t, num_dims> &from_stride, const std::array<uint32_t, num_dims> &to_stride)
     {
         if constexpr (dim < 0)
@@ -1311,7 +1321,7 @@ namespace coalsack
         }
     }
 
-    template <int num_dims, uint32_t concat_dim, int dim = num_dims - 1, typename FromIter, typename ToIter>
+    template <int num_dims, uint32_t concat_dim, int dim, typename FromIter, typename ToIter>
     static void concat(const std::vector<FromIter> &from, ToIter to, const std::vector<std::array<uint32_t, num_dims>> &shape, const std::vector<std::array<uint32_t, num_dims>> &from_stride, const std::array<uint32_t, num_dims> &to_stride)
     {
         if constexpr (dim == concat_dim)
