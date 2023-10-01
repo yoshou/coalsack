@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cereal/types/array.hpp>
 
+#include "graph_proc_img.h"
+
 namespace coalsack
 {
     template <size_t I, typename T>
