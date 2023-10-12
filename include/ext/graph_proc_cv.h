@@ -12,6 +12,8 @@
 #include "graph_proc_img.h"
 #include "blob_detector.h"
 #include <opencv2/features2d.hpp>
+#include <opencv2/aruco.hpp>
+#include <opencv2/aruco/charuco.hpp>
 
 namespace coalsack
 {
@@ -129,7 +131,129 @@ namespace coalsack
             archive(params.min_repeatability);
         }
     };
+
+    class charuco_detector_node : public graph_node
+    {
+    private:
+        graph_edge_ptr output;
+        cv::Size board_size;
+        float square_length;
+        float marker_length;
+        int dict_type;
+
+#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
+        cv::aruco::DetectorParameters detector_params;
+        cv::aruco::CharucoParameters charuco_params;
+        cv::Ptr<cv::aruco::CharucoDetector> detector;
+#else
+        cv::Ptr<cv::aruco::Dictionary> dictionary;
+        cv::Ptr<cv::aruco::CharucoBoard> board;
+        cv::Ptr<cv::aruco::DetectorParameters> params;
+#endif
+
+    public:
+        charuco_detector_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this))
+#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
+            , detector_params()
+            , charuco_params()
+#endif
+            , board_size(3, 5)
+            , square_length(0.0575f)
+            , marker_length(0.0575f * 0.75f)
+            , dict_type(cv::aruco::DICT_4X4_250)
+        {
+            set_output(output);
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "charuco_detector_node";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+        }
+
+        virtual void initialize() override
+        {
+#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
+            const auto dictionary = cv::aruco::getPredefinedDictionary(dict_type);
+            const auto board = cv::aruco::CharucoBoard(board_size, square_length, marker_length, dictionary);
+            detector = cv::makePtr<cv::aruco::CharucoDetector>(board, charuco_params, detector_params);
+#else
+            const auto dictionary = cv::aruco::getPredefinedDictionary(dict_type);
+            board = cv::aruco::CharucoBoard::create(board_size.width, board_size.height, square_length, marker_length, dictionary);
+            params = cv::aruco::DetectorParameters::create();
+#endif
+        }
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            const auto start = std::chrono::system_clock::now();
+            if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
+            {
+                std::vector<int> marker_ids;
+                std::vector<std::vector<cv::Point2f>> marker_corners;
+                std::vector<int> charuco_ids;
+                std::vector<cv::Point2f> charuco_corners;
+
+                const auto &src_image = image_msg->get_data();
+
+                int cv_type = convert_to_cv_type(src_image.get_format());
+
+                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type, (void *)src_image.get_data(), src_image.get_stride());
+
+                try
+                {
+#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
+                    detector->detectBoard(src_mat, charuco_corners, charuco_ids, marker_corners, marker_ids);
+#else
+                    cv::aruco::detectMarkers(src_mat, board->dictionary, marker_corners, marker_ids, params);
+                    if (marker_ids.size() > 0)
+                    {
+                        cv::aruco::interpolateCornersCharuco(marker_corners, marker_ids, src_mat, board, charuco_corners, charuco_ids);
+                    }
+#endif
+                }
+                catch (const cv::Exception &e)
+                {
+                    spdlog::error(e.what());
+                }
+
+                std::vector<keypoint> pts;
+                for (size_t i = 0; i < charuco_ids.size(); i++)
+                {
+                    keypoint pt;
+                    pt.pt_x = charuco_corners[i].x;
+                    pt.pt_y = charuco_corners[i].y;
+                    pt.size = 0;
+                    pt.class_id = charuco_ids[i];
+                    pts.push_back(pt);
+                }
+
+                std::cout << pts.size() << std::endl;
+
+                auto msg = std::make_shared<keypoint_frame_message>();
+
+                msg->set_data(std::move(pts));
+                msg->set_profile(image_msg->get_profile());
+                msg->set_timestamp(image_msg->get_timestamp());
+                msg->set_frame_number(image_msg->get_frame_number());
+
+                const auto end = std::chrono::system_clock::now();
+                double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+                std::cout << elapsed << std::endl;
+
+                output->send(msg);
+            }
+        }
+    };
 }
 
 CEREAL_REGISTER_TYPE(coalsack::fast_blob_detector_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::fast_blob_detector_node)
+
+CEREAL_REGISTER_TYPE(coalsack::charuco_detector_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::charuco_detector_node)
