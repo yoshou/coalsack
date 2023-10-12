@@ -42,7 +42,95 @@ namespace coalsack
     template <int num_dims, int dim = num_dims - 1, typename FromIter, typename ToIter>
     static void copy(FromIter from, ToIter to, const std::array<uint32_t, num_dims> &shape, const std::array<uint32_t, num_dims> &from_stride, const std::array<uint32_t, num_dims> &to_stride);
 
-    template <typename ElemType, int num_dims>
+    template <typename ElemType>
+    class storage
+    {
+        using elem_type = ElemType;
+
+        elem_type* data_;
+        size_t size_;
+
+    public:
+        storage()
+            : data_(nullptr), size_(0)
+        {}
+
+        storage(size_t size)
+            : data_(new elem_type[size]), size_(size)
+        {}
+
+        storage(const storage &other)
+            : storage(other.size_)
+        {
+            std::copy_n(other.data_, size_, data_);
+        }
+
+        storage(storage &&other)
+            : data_(other.data_), size_(other.size_)
+        {
+            other.data_ = nullptr;
+            other.size_ = 0;
+        }
+
+        ~storage()
+        {
+            if (data_)
+            {
+                delete[] data_;
+            }
+            data_ = nullptr;
+            size_ = 0;
+        }
+
+        storage& operator=(const storage& other)
+        {
+            data_ = new elem_type[other.size_];
+            size_ = other.size_;
+            std::copy_n(other.data_, size_, data_);
+            return *this;
+        }
+
+        storage& operator=(storage&& other)
+        {
+            data_ = other.data_;
+            size_ = other.size_;
+            other.data_ = nullptr;
+            other.size_ = 0;
+            return *this;
+        }
+
+        elem_type *data() { return data_; }
+        const elem_type *data() const { return data_; }
+        elem_type *begin() { return data_; }
+        const elem_type *begin() const { return data_; }
+        elem_type *end() { return data_ + size_; }
+        const elem_type *end() const { return data_ + size_; }
+        size_t size() const { return size_; }
+
+        template <typename Archive>
+        void save(Archive &archive) const
+        {
+            std::vector<elem_type> data(begin(), end());
+            archive(data);
+        }
+
+        template <typename Archive>
+        void load(Archive &archive)
+        {
+            std::vector<elem_type> data;
+            archive(data);
+
+            size_ = data.size();
+            if (data_)
+            {
+                delete[] data_;
+            }
+            data_ = new elem_type[size_];
+            std::copy_n(data.begin(), size_, data_);
+        }
+    };
+
+    template <typename ElemType, int num_dims, typename StorageType = storage<ElemType>>
     class tensor
     {
         static_assert(num_dims >= 1);
@@ -53,6 +141,7 @@ namespace coalsack
         using stride_type = std::array<uint32_t, num_dims>;
         using index_type = std::array<uint32_t, num_dims>;
         using this_type = tensor<elem_type, num_dims>;
+        using storage_type = StorageType;
 
         template <typename DataType>
         class view_type_base
@@ -61,7 +150,20 @@ namespace coalsack
             DataType data;
             shape_type shape;
             stride_type stride;
-            
+
+            size_t get_size() const
+            {
+                return calculate_size(shape);
+            }
+            const elem_type *get_data() const
+            {
+                return data;
+            }
+            elem_type *get_data()
+            {
+                return data;
+            }
+
             tensor contiguous() const
             {
                 tensor new_tensor(shape);
@@ -861,7 +963,7 @@ namespace coalsack
                 }
             }
 
-            reduced_tensor new_tensor(new_tensor_shape);
+            auto new_tensor = reduced_tensor::zeros(new_tensor_shape);
             stride_type new_tensor_assign_stride;
 
             for (size_t i = 0, j = 0; i < num_dims; i++)
@@ -1248,7 +1350,7 @@ namespace coalsack
         }
 
     public:
-        std::vector<elem_type> data;
+        storage_type data;
         shape_type shape;
         stride_type stride;
     };
