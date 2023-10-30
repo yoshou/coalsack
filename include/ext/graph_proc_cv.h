@@ -12,8 +12,14 @@
 #include "graph_proc_img.h"
 #include "blob_detector.h"
 #include <opencv2/features2d.hpp>
+
+#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
+#include <opencv2/objdetect/aruco_detector.hpp>
+#include <opencv2/objdetect/aruco_board.hpp>
+#else
 #include <opencv2/aruco.hpp>
 #include <opencv2/aruco/charuco.hpp>
+#endif
 
 namespace coalsack
 {
