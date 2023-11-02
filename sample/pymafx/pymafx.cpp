@@ -21,10 +21,13 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <onnxruntime_cxx_api.h>
+
+#ifdef ENABLE_TFLITE_EXT
 #include <tensorflow/lite/interpreter.h>
 #include <tensorflow/lite/kernels/register.h>
 #include <tensorflow/lite/model.h>
 #include <tensorflow/lite/optional_debug_tools.h>
+#endif
 
 namespace fs = std::filesystem;
 

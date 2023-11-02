@@ -20,10 +20,13 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <onnxruntime_cxx_api.h>
+
+#ifdef ENABLE_TFLITE_EXT
 #include <tensorflow/lite/interpreter.h>
 #include <tensorflow/lite/kernels/register.h>
 #include <tensorflow/lite/model.h>
 #include <tensorflow/lite/optional_debug_tools.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -885,6 +888,7 @@ onnx_runtime_session_pool onnx_runtime_node::sessions;
 CEREAL_REGISTER_TYPE(onnx_runtime_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, onnx_runtime_node)
 
+#ifdef ENABLE_TFLITE_EXT
 #define TFLITE_MINIMAL_CHECK(x)                                  \
     if (!(x))                                                    \
     {                                                            \
@@ -1105,6 +1109,7 @@ public:
 
 CEREAL_REGISTER_TYPE(tensorflow_lite_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, tensorflow_lite_node)
+#endif
 
 class pre_project_whole_node : public graph_node
 {
