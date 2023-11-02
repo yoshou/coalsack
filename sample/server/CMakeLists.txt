@@ -14,6 +14,10 @@ target_include_directories(graph_proc_server PUBLIC
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:${LIBCAMERA_INCLUDE_DIRS}>
 )
 
+if(${ENABLE_LIBCAMERA_EXT})
+    set(LIBCAMERA_LIBRARIES ${LIBCAMERA_LINK_LIBRARIES})
+endif()
+
 target_link_libraries(graph_proc_server
     ${OpenCV_LIBS}
     coalsack
@@ -23,8 +27,7 @@ target_link_libraries(graph_proc_server
     $<$<BOOL:${ENABLE_TFLITE_EXT}>:depthai::core>
     $<$<BOOL:${ENABLE_TFLITE_EXT}>:depthai::opencv>
     $<$<BOOL:${ENABLE_RS_D435_EXT}>:realsense2::realsense2>
-    $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:camera>
-    $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:camera-base>
+    ${LIBCAMERA_LIBRARIES}
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:${ONNXRUNTIME_LIBS}>
     $<$<BOOL:${ENABLE_TFLITE_EXT}>:tensorflow-lite>
 )
