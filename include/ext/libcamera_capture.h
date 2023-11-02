@@ -259,6 +259,8 @@ namespace coalsack
                 crop.translateBy(sensor_area.topLeft());
                 controls.set(libcamera::controls::ScalerCrop, crop);
             }
+            const auto f = camera->controls().at(&libcamera::controls::LensPosition).def().get<float>();
+            controls.set(libcamera::controls::LensPosition, f);
         }
 
         void make_requests()
