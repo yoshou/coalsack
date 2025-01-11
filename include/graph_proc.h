@@ -543,6 +543,142 @@ namespace coalsack
         PROCESS = 5,
     };
 
+    class graph_proc
+    {
+        std::shared_ptr<subgraph> g;
+        std::shared_ptr<resource_list> resources;
+
+    public:
+        graph_proc(const std::shared_ptr<resource_list> &resources = std::make_shared<resource_list>())
+            : g(new subgraph()), resources(resources)
+        {
+        }
+
+        std::shared_ptr<subgraph> get_graph() const
+        {
+            return g;
+        }
+
+        std::shared_ptr<resource_list> get_resources() const
+        {
+            return resources;
+        }
+        
+        void deploy(const std::shared_ptr<subgraph> &g)
+        {
+            this->g = g;
+        }
+
+        void run()
+        {
+            initialize();
+            run(g.get());
+        }
+
+        void stop()
+        {
+            stop(g.get());
+            finalize();
+        }
+
+        void process(const graph_node *node, const graph_message_ptr &message)
+        {
+            process(node, "default", message);
+        }
+
+        void process(const graph_node *node, const std::string &input_name, const graph_message_ptr &message)
+        {
+            auto g = node->get_parent();
+            auto node_idx = node->get_parent()->get_node_id(node) - 1;
+
+            if (node_idx >= 0 && node_idx < g->get_node_count())
+            {
+                auto node = g->get_node(node_idx);
+                node->process(input_name, message);
+            }
+        }
+
+    private:
+        template <typename T>
+        void dfs(graph_node *node, std::unordered_set<graph_node *> &visited, T callback)
+        {
+            if (visited.find(node) != visited.end())
+            {
+                return;
+            }
+
+            visited.insert(node);
+
+            std::string input_name;
+            graph_edge_ptr input_edge;
+            for (auto input : node->get_inputs())
+            {
+                std::tie(input_name, input_edge) = input;
+                dfs(input_edge->get_source(), visited, callback);
+            }
+
+            callback(node);
+        }
+
+        void topological_sort(std::vector<graph_node *> &nodes)
+        {
+            std::unordered_set<graph_node *> visited;
+            std::vector<graph_node *> result;
+            for (auto node : nodes)
+            {
+                dfs(node, visited, [&result](graph_node *node)
+                    { result.push_back(node); });
+            }
+            std::reverse(result.begin(), result.end());
+            nodes = result;
+        }
+
+        void initialize()
+        {
+            std::vector<graph_node *> nodes;
+            for (uint32_t i = 0; i < g->get_node_count(); i++)
+            {
+                auto node = g->get_node(i);
+                nodes.push_back(node.get());
+            }
+
+            topological_sort(nodes);
+
+            for (auto node : nodes)
+            {
+                node->set_resources(resources);
+                node->initialize();
+            }
+        }
+
+        void finalize()
+        {
+            for (uint32_t i = 0; i < g->get_node_count(); i++)
+            {
+                auto node = g->get_node(i);
+                node->finalize();
+            }
+        }
+
+        void run(subgraph *g)
+        {
+            for (uint32_t i = 0; i < g->get_node_count(); i++)
+            {
+                auto node = g->get_node(i);
+                node->run();
+            }
+        }
+
+        void stop(subgraph *g)
+        {
+            for (uint32_t i = 0; i < g->get_node_count(); i++)
+            {
+                auto node = g->get_node(i);
+                node->stop();
+            }
+        }
+    };
+
     class graph_proc_server
     {
         rpc_server rpc_server_;
@@ -551,7 +687,7 @@ namespace coalsack
         std::mutex mtx;
 
     public:
-        graph_proc_server(boost::asio::io_service &io_service, std::string address, uint16_t port, const std::shared_ptr<resource_list> &resources = nullptr)
+        graph_proc_server(boost::asio::io_service &io_service, std::string address, uint16_t port, const std::shared_ptr<resource_list> &resources = std::make_shared<resource_list>())
             : rpc_server_(io_service, address, port), resources_(resources)
         {
             rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::DEPLOY, [this](uint32_t session, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res) -> uint32_t
@@ -768,6 +904,11 @@ namespace coalsack
             }
 
             finalize();
+        }
+
+        void process(const graph_node *node, const graph_message_ptr &message)
+        {
+            process(node, "default", message);
         }
 
         void process(const graph_node *node, const std::string &input_name, const graph_message_ptr &message)
@@ -2016,6 +2157,7 @@ namespace coalsack
 
                 if (messages.size() >= max_size)
                 {
+                    std::cout << "Fifo overflow" << std::endl;
                     spdlog::error("Fifo overflow");
                 }
                 else
