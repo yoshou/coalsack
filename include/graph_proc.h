@@ -336,6 +336,25 @@ namespace coalsack
     };
 
     using graph_node_ptr = std::shared_ptr<graph_node>;
+        
+    template <typename T>
+    static void dfs_postorder(graph_node *node, std::unordered_set<graph_node *> &visited, T callback)
+    {
+        if (visited.find(node) != visited.end())
+        {
+            return;
+        }
+
+        visited.insert(node);
+
+        for (auto input : node->get_inputs())
+        {
+            const auto &[input_name, input_edge] = input;
+            dfs_postorder(input_edge->get_source(), visited, callback);
+        }
+
+        callback(node);
+    }
 
     class subgraph
     {
@@ -494,7 +513,15 @@ namespace coalsack
 
         void run()
         {
-            for (auto node : nodes)
+            std::unordered_set<graph_node *> visited;
+            std::vector<graph_node *> ordered_nodes;
+            for (auto& node : nodes)
+            {
+                dfs_postorder(node.get(), visited, [&ordered_nodes](graph_node *node)
+                              { ordered_nodes.push_back(node); });
+            }
+            std::reverse(ordered_nodes.begin(), ordered_nodes.end());
+            for (auto node : ordered_nodes)
             {
                 node->run();
             }
@@ -599,35 +626,14 @@ namespace coalsack
         }
 
     private:
-        template <typename T>
-        void dfs(graph_node *node, std::unordered_set<graph_node *> &visited, T callback)
-        {
-            if (visited.find(node) != visited.end())
-            {
-                return;
-            }
-
-            visited.insert(node);
-
-            std::string input_name;
-            graph_edge_ptr input_edge;
-            for (auto input : node->get_inputs())
-            {
-                std::tie(input_name, input_edge) = input;
-                dfs(input_edge->get_source(), visited, callback);
-            }
-
-            callback(node);
-        }
-
         void topological_sort(std::vector<graph_node *> &nodes)
         {
             std::unordered_set<graph_node *> visited;
             std::vector<graph_node *> result;
             for (auto node : nodes)
             {
-                dfs(node, visited, [&result](graph_node *node)
-                    { result.push_back(node); });
+                dfs_postorder(node, visited, [&result](graph_node *node)
+                              { result.push_back(node); });
             }
             std::reverse(result.begin(), result.end());
             nodes = result;
@@ -920,35 +926,14 @@ namespace coalsack
         }
 
     private:
-        template <typename T>
-        void dfs(graph_node *node, std::unordered_set<graph_node *> &visited, T callback)
-        {
-            if (visited.find(node) != visited.end())
-            {
-                return;
-            }
-
-            visited.insert(node);
-
-            std::string input_name;
-            graph_edge_ptr input_edge;
-            for (auto input : node->get_inputs())
-            {
-                std::tie(input_name, input_edge) = input;
-                dfs(input_edge->get_source(), visited, callback);
-            }
-
-            callback(node);
-        }
-
         void topological_sort(std::vector<graph_node *> &nodes)
         {
             std::unordered_set<graph_node *> visited;
             std::vector<graph_node *> result;
             for (auto node : nodes)
             {
-                dfs(node, visited, [&result](graph_node *node)
-                    { result.push_back(node); });
+                dfs_postorder(node, visited, [&result](graph_node *node)
+                              { result.push_back(node); });
             }
             std::reverse(result.begin(), result.end());
             nodes = result;
@@ -1777,14 +1762,14 @@ namespace coalsack
 
         virtual void run() override
         {
+            running = true;
             th.reset(new std::thread([this]()
                                      {
-            running.store(true);
-            while (running.load())
-            {
-                tick();
-                std::this_thread::sleep_for(std::chrono::milliseconds(interval));
-            } }));
+                while (running.load())
+                {
+                    tick();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(interval));
+                } }));
         }
 
         virtual void stop() override
@@ -2170,25 +2155,25 @@ namespace coalsack
 
         virtual void run() override
         {
+            running = true;
             th.reset(new std::thread([this]()
                                      {
-            running.store(true);
-            while (running.load())
-            {
-                std::unique_lock<std::mutex> lock(mtx);
-                cv.wait(lock, [&] { return !messages.empty() || !running; });
+                while (running.load())
+                {
+                    std::unique_lock<std::mutex> lock(mtx);
+                    cv.wait(lock, [&] { return !messages.empty() || !running; });
 
-                if (!running)
-                {
-                    break;
-                }
-                if (!messages.empty())
-                {
-                    const auto message = messages.front();
-                    messages.pop_front();
-                    output->send(message);
-                }
-            } }));
+                    if (!running)
+                    {
+                        break;
+                    }
+                    if (!messages.empty())
+                    {
+                        const auto message = messages.front();
+                        messages.pop_front();
+                        output->send(message);
+                    }
+                } }));
         }
 
         virtual void stop() override

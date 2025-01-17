@@ -158,9 +158,9 @@ namespace coalsack
                 }
             }
 
+            running = true;
             th.reset(new std::thread([this]()
                                      {
-            running.store(true);
             while (running.load())
             {
                 libcamera_capture::buffer buffer;

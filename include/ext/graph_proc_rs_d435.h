@@ -525,9 +525,9 @@ namespace coalsack
             }
             config.enable_device(get_serial_number());
 
+            running = true;
             th.reset(new std::thread([this, config]()
                                      {
-            running.store(true);
 
             rs2::pipeline pipeline;
             auto pipeline_profile = pipeline.start(config);

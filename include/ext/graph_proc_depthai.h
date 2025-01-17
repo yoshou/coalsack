@@ -66,9 +66,9 @@ namespace coalsack
 
         virtual void run() override
         {
+            running = true;
             th.reset(new std::thread([this]()
                                      {
-            running.store(true);
 
 #ifdef ENABLE_DEPTHAI_EXT
             dai::Pipeline pipeline;
