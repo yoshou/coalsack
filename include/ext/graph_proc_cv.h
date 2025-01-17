@@ -162,14 +162,14 @@ namespace coalsack
     public:
         charuco_detector_node()
             : graph_node(), output(std::make_shared<graph_edge>(this))
-#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
-            , detector_params()
-            , charuco_params()
-#endif
             , board_size(3, 5)
             , square_length(0.0575f)
             , marker_length(0.0575f * 0.75f)
             , dict_type(cv::aruco::DICT_4X4_250)
+#if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
+            , detector_params()
+            , charuco_params()
+#endif
         {
             set_output(output);
         }

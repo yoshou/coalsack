@@ -430,7 +430,6 @@ namespace coalsack
                     {
                         node_port target_port((uint32_t)i, target_input_name);
 
-                        auto source = target_input->get_source();
                         auto source_output_name = target_input->get_name();
 
                         node_port source_port((uint32_t)-1, source_output_name);
@@ -616,11 +615,11 @@ namespace coalsack
         void process(const graph_node *node, const std::string &input_name, const graph_message_ptr &message)
         {
             auto g = node->get_parent();
-            auto node_idx = node->get_parent()->get_node_id(node) - 1;
+            auto node_id = node->get_parent()->get_node_id(node);
 
-            if (node_idx >= 0 && node_idx < g->get_node_count())
+            if (node_id > 0 && node_id <= g->get_node_count())
             {
-                auto node = g->get_node(node_idx);
+                auto node = g->get_node(node_id - 1);
                 node->process(input_name, message);
             }
         }

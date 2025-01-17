@@ -218,7 +218,6 @@ namespace coalsack
         {
             const auto kernel_x = std::make_unique<float[]>(kernel_width);
             const auto kernel_y = std::make_unique<float[]>(kernel_height);
-            const auto radius_x = kernel_width / 2;
             const auto radius_y = kernel_height / 2;
 
             create_gaussian_kernel(kernel_x.get(), kernel_width, sigma_x);

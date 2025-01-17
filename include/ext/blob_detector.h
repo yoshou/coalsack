@@ -367,9 +367,6 @@ namespace coalsack
 
                 for (; j < lower_row_points_end; j += 2)
                 {
-                    auto &lower_segment_start = points[j];
-                    auto &lower_segment_end = points[j + 1];
-
                     if (connecting_line != CONNECTING_LINE::NONE)
                     {
                         // Terminate link
@@ -385,7 +382,6 @@ namespace coalsack
 
                 for (; i < upper_row_points_end; i += 2)
                 {
-                    auto &upper_segment_start = points[i];
                     auto &upper_segment_end = points[i + 1];
 
                     if (connecting_line != CONNECTING_LINE::NONE)
@@ -624,7 +620,6 @@ namespace coalsack
             for (std::size_t layer = 0; layer < thresholds.size(); layer++)
             {
                 const auto &connector = connectors.at(layer);
-                const auto threshold = thresholds.at(layer);
                 traverse_contours(connector, contours.at(layer));
             }
         }
@@ -827,8 +822,6 @@ namespace coalsack
     float compute_arc_length(const std::vector<u32vec2> &contour)
     {
         float perimeter = 0;
-
-        int i;
 
         if (contour.size() < 2)
         {
