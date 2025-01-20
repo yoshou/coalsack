@@ -327,7 +327,6 @@ namespace coalsack
 
             if (reordering.detect_lost_packet())
             {
-                spdlog::warn("Packet lost {2} {0}:{1}", remote_endpoint_.address().to_string(), remote_endpoint_.port(), reordering.get_next_counter());
                 for (auto &p : sessions)
                 {
                     auto session = p.second;
