@@ -25,25 +25,69 @@ namespace coalsack
         uint16_t counter = 0;
         uint16_t flags = 0;
         uint16_t size = 0;
-
-        packet_data *next;
     };
 
     using packet_data_ptr = std::shared_ptr<packet_data>;
 
-    class reordering_packet_buffer
+    class packet_buffer_pool
     {
         std::vector<std::shared_ptr<packet_data>> allocated_packets;
-        packet_data *free_packets;
-        packet_data *ordered_packets;
-        uint16_t next_counter;
-        double timeout;
-        double last_packet_timestamp;
+
         std::mutex free_packets_mtx;
+        std::stack<packet_data *> free_packets;
 
     public:
-        reordering_packet_buffer(double timeout = 100.0)
-            : free_packets(nullptr), ordered_packets(nullptr), next_counter(0), timeout(timeout), last_packet_timestamp(0), free_packets_mtx()
+
+        packet_buffer_pool(size_t prepare_size = 10000)
+        {
+            for (size_t i = 0; i < prepare_size; i++)
+            {
+                const auto packet = std::make_shared<packet_data>();
+                allocated_packets.push_back(packet);
+                free_packets.push(packet.get());
+            }
+        }
+
+        packet_data *obtain_packet()
+        {
+            {
+                std::lock_guard<std::mutex> lock(free_packets_mtx);
+                if (free_packets.size() > 0)
+                {
+                    const auto packet = free_packets.top();
+                    free_packets.pop();
+
+                    return packet;
+                }
+            }
+
+            const auto new_packet = std::make_shared<packet_data>();
+            allocated_packets.push_back(new_packet);
+            return new_packet.get();
+        }
+
+        void release_packets(const std::vector<packet_data *> &packets)
+        {
+            std::lock_guard<std::mutex> lock(free_packets_mtx);
+            for (auto packet : packets)
+            {
+                free_packets.push(packet);
+            }
+        }
+    };
+
+    class reordering_packet_buffer
+    {
+        size_t max_size;
+        uint16_t next_counter;
+
+
+        std::mutex ordered_packets_mtx;
+        std::unordered_map<uint16_t, packet_data *> ordered_packets;
+
+    public:
+        reordering_packet_buffer(size_t max_size = 10)
+            : max_size(max_size), next_counter(0)
         {
         }
 
@@ -52,128 +96,55 @@ namespace coalsack
             next_counter = value;
         }
 
-        packet_data *obtain_packet()
+        uint16_t get_next_counter() const
         {
-            std::lock_guard<std::mutex> lock(free_packets_mtx);
-
-            if (free_packets == nullptr)
-            {
-                auto new_packet = std::make_shared<packet_data>();
-                allocated_packets.push_back(new_packet);
-                return new_packet.get();
-            }
-
-            auto packet = free_packets;
-            free_packets = free_packets->next;
-            packet->next = nullptr;
-            return packet;
-        }
-
-        uint32_t get_comparable_couter(uint16_t counter)
-        {
-            if (counter < next_counter)
-            {
-                return counter + 65536;
-            }
-            return counter;
+            return next_counter;
         }
 
         void commit_packet(packet_data *packet)
         {
-            assert(packet->next == nullptr);
-
-            if (ordered_packets == nullptr || get_comparable_couter(packet->counter) < get_comparable_couter(ordered_packets->counter))
-            {
-                packet->next = ordered_packets;
-                ordered_packets = packet;
-                return;
-            }
-
-            packet_data *iter_packet = ordered_packets;
-
-            while (iter_packet->next != nullptr)
-            {
-                if (get_comparable_couter(packet->counter) > get_comparable_couter(iter_packet->counter))
-                {
-                    break;
-                }
-
-                iter_packet = iter_packet->next;
-            }
-
-            auto temp_next = iter_packet->next;
-            iter_packet->next = packet;
-            packet->next = temp_next;
+            std::lock_guard<std::mutex> lock(ordered_packets_mtx);
+            ordered_packets[packet->counter] = packet;
         }
 
         bool detect_lost_packet()
         {
-            if (ordered_packets == nullptr)
-            {
-                return false;
-            }
+            std::lock_guard<std::mutex> lock(ordered_packets_mtx);
 
-            packet_data *iter_packet = ordered_packets;
-
-            while (iter_packet != nullptr)
+            if (ordered_packets.size() > 10)
             {
-                if ((iter_packet->timestamp - last_packet_timestamp) * 100 / 1000 / 1000 >= timeout)
-                {
-                    return true;
-                }
-                iter_packet = iter_packet->next;
+                return true;
             }
             return false;
         }
 
         packet_data *receive_packet()
         {
-            if (ordered_packets == nullptr)
-            {
-                return nullptr;
-            }
+            std::lock_guard<std::mutex> lock(ordered_packets_mtx);
 
-            if (ordered_packets->counter == next_counter)
+            if (ordered_packets.find(next_counter) != ordered_packets.end())
             {
-                auto packet = ordered_packets;
-                ordered_packets = ordered_packets->next;
-                packet->next = nullptr;
-
+                auto packet = ordered_packets[next_counter];
+                ordered_packets.erase(next_counter);
                 next_counter = (uint16_t)(((uint32_t)next_counter + 1) % 65536);
-                last_packet_timestamp = packet->timestamp;
-
                 return packet;
             }
 
             return nullptr;
         }
 
-        void reset()
+        std::vector<packet_data*> reset()
         {
-            if (ordered_packets == nullptr)
+            std::lock_guard<std::mutex> lock(ordered_packets_mtx);
+            std::vector<packet_data *> packets;
+
+            for (const auto& [key, packet] : ordered_packets)
             {
-                return;
+                packets.push_back(packet);
             }
+            ordered_packets.clear();
 
-            while (ordered_packets != nullptr)
-            {
-                auto packet = ordered_packets;
-                ordered_packets = ordered_packets->next;
-                packet->next = nullptr;
-
-                next_counter = (uint16_t)(((uint32_t)packet->counter + 1) % 65536);
-
-                free_packet(packet);
-            }
-        }
-
-        void free_packet(packet_data *packet)
-        {
-            std::lock_guard<std::mutex> lock(free_packets_mtx);
-
-            assert(packet->next == nullptr);
-            packet->next = free_packets;
-            free_packets = packet;
+            return packets;
         }
     };
 
@@ -195,17 +166,20 @@ namespace coalsack
         udp::socket socket_;
         udp::endpoint remote_endpoint_;
         reordering_packet_buffer reordering;
+        packet_buffer_pool packet_pool;
         std::map<source_identifier, std::shared_ptr<session>> sessions;
         on_receive_func on_receive;
-        std::atomic_bool started;
+        std::atomic_bool running;
         std::shared_ptr<std::thread> handling_thread;
         std::shared_ptr<std::thread> io_thread;
         std::queue<packet_data *> packet_queue;
         std::mutex mtx;
+        std::condition_variable cv;
 
     public:
+
         data_stream_receiver(udp::endpoint endpoint, bool enable_broadcast = false)
-            : io_service(), socket_(io_service, endpoint), started(false), mtx()
+            : io_service(), socket_(io_service, endpoint), running(false), mtx()
         {
             if (enable_broadcast)
             {
@@ -213,8 +187,9 @@ namespace coalsack
                     boost::asio::ip::udp::socket::broadcast(true));
             }
         }
+
         data_stream_receiver(udp::endpoint endpoint, std::string multicast_address)
-            : io_service(), socket_(io_service), started(false), mtx()
+            : io_service(), socket_(io_service), running(false), mtx()
         {
             socket_.open(endpoint.protocol());
             socket_.set_option(boost::asio::ip::udp::socket::reuse_address(true));
@@ -236,7 +211,8 @@ namespace coalsack
         void start(on_receive_func on_receive)
         {
             this->on_receive = on_receive;
-            this->started = true;
+
+            running = true;
 
             start_receive();
 
@@ -245,7 +221,7 @@ namespace coalsack
 
             handling_thread.reset(new std::thread([&]()
                                                   {
-            while (started.load())
+            while (running.load())
             {
                 handle_receive();
             } }));
@@ -258,7 +234,8 @@ namespace coalsack
             {
                 io_thread->join();
             }
-            this->started = false;
+            running = false;
+            cv.notify_one();
             if (handling_thread && handling_thread->joinable())
             {
                 handling_thread->join();
@@ -267,7 +244,7 @@ namespace coalsack
 
         void start_receive()
         {
-            packet_data *packet = reordering.obtain_packet();
+            packet_data *packet = packet_pool.obtain_packet();
 
             socket_.async_receive_from(
                 boost::asio::buffer(packet->recv_buf),
@@ -282,6 +259,7 @@ namespace coalsack
                             std::lock_guard<std::mutex> lock(mtx);
                             packet_queue.push(packet);
                         }
+                        cv.notify_one();
                     }
                 });
         }
@@ -290,12 +268,16 @@ namespace coalsack
         {
             packet_data *packet;
 
-            if (packet_queue.empty())
             {
-                return;
-            }
-            {
-                std::lock_guard<std::mutex> lock(mtx);
+                std::unique_lock<std::mutex> lock(mtx);
+
+                cv.wait(lock, [this]
+                        { return !packet_queue.empty() || !running; });
+
+                if (!running)
+                {
+                    return;
+                }
 
                 packet = packet_queue.front();
                 packet_queue.pop();
@@ -312,7 +294,9 @@ namespace coalsack
 
             reordering.commit_packet(packet);
 
-            while ((packet = reordering.receive_packet()) != nullptr)
+            std::vector<packet_data *> completed_packets;
+
+            for (packet_data * packet = nullptr; (packet = reordering.receive_packet()) != nullptr;)
             {
                 auto it = sessions.find(packet->id);
                 if (it == sessions.end())
@@ -338,20 +322,28 @@ namespace coalsack
                     session.buffer.consume(session.buffer.size());
                     session.lost_packet = false;
                 }
-                reordering.free_packet(packet);
+                completed_packets.push_back(packet);
             }
 
             if (reordering.detect_lost_packet())
             {
+                spdlog::warn("Packet lost {2} {0}:{1}", remote_endpoint_.address().to_string(), remote_endpoint_.port(), reordering.get_next_counter());
                 for (auto &p : sessions)
                 {
                     auto session = p.second;
                     session->lost_packet = true;
                 }
 
-                reordering.reset();
+                const auto packets = reordering.reset();
+                for (auto packet : packets)
+                {
+                    completed_packets.push_back(packet);
+                }
+                reordering.set_next_counter(((uint32_t)packet->counter + 1) % 65536);
                 spdlog::warn("Packet lost");
             }
+
+            packet_pool.release_packets(completed_packets);
         }
     };
 }

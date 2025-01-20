@@ -340,6 +340,10 @@ namespace coalsack
     template <typename T>
     static void dfs_postorder(graph_node *node, std::unordered_set<graph_node *> &visited, T callback)
     {
+        if (node == nullptr)
+        {
+            return;
+        }
         if (visited.find(node) != visited.end())
         {
             return;
