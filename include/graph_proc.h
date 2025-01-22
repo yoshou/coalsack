@@ -1436,6 +1436,97 @@ namespace coalsack
         }
     };
 
+    class p2p_tcp_talker_node : public graph_node
+    {
+        graph_edge_ptr output;
+        std::shared_ptr<data_stream_tcp_transmitter> transmitter;
+        boost::asio::io_service io_service;
+        std::shared_ptr<std::thread> th;
+        std::atomic_bool running;
+
+    public:
+
+        p2p_tcp_talker_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)), transmitter()
+        {
+            set_output(output);
+        }
+
+        virtual ~p2p_tcp_talker_node()
+        {
+            finalize();
+        }
+
+        virtual void finalize() override
+        {
+            if (transmitter)
+            {
+                transmitter->close();
+                transmitter.reset();
+            }
+        }
+
+        virtual void initialize() override
+        {
+            const auto output_req = get_output()->request;
+            const auto data = output_req.get_data();
+            std::stringstream ss(std::string(data.begin(), data.end()));
+
+            const auto address = read_string(ss);
+            const auto port = read_uint16(ss);
+
+            transmitter.reset(new data_stream_tcp_transmitter(io_service));
+            transmitter->open(address, port);
+        }
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            source_identifier id{0, 0};
+            std::stringstream ss;
+            {
+                cereal::BinaryOutputArchive oarchive(ss);
+                oarchive(message);
+            }
+            std::string str = ss.str();
+
+            auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+            transmitter->send(id, (double)(ns / 100), (uint8_t *)str.data(), str.size());
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "data_tcp_talker";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+        }
+
+        virtual void run() override
+        {
+            running = true;
+            th.reset(new std::thread([&]()
+                                     { io_service.run(); }));
+        }
+
+        virtual void stop() override
+        {
+            if (running.load())
+            {
+                running.store(false);
+                io_service.stop();
+                if (th && th->joinable())
+                {
+                    th->join();
+                }
+            }
+        }
+    };
+
     class p2p_listener_node : public graph_node
     {
         graph_edge_ptr output;
@@ -1487,6 +1578,106 @@ namespace coalsack
 
             subscribe_request req;
             auto input = get_input();
+            req.set_proc_name(get_proc_name());
+            req.set_msg_type(text_message::get_type());
+            req.set_data(data);
+            input->request = req;
+        }
+
+        virtual void run() override
+        {
+            receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream)
+                            { this->on_receive_handler(timestamp, id, stream); });
+        }
+
+        virtual void stop() override
+        {
+            receiver->stop();
+        }
+
+        void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream)
+        {
+            if (id.data_id == 0)
+            {
+                on_receive_data_handler(timestamp, id, stream);
+            }
+            else
+            {
+                spdlog::error("Received unknown data");
+            }
+        }
+
+        void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream)
+        {
+            if (stream.size() < sizeof(int))
+            {
+                return;
+            }
+
+            std::string str(boost::asio::buffers_begin(stream.data()), boost::asio::buffers_end(stream.data()));
+            std::stringstream ss(str);
+
+            std::shared_ptr<graph_message> msg;
+            {
+                cereal::BinaryInputArchive iarchive(ss);
+                iarchive(msg);
+            }
+
+            output->send(msg);
+        }
+    };
+
+    class p2p_tcp_listener_node : public graph_node
+    {
+        graph_edge_ptr output;
+        std::shared_ptr<data_stream_tcp_receiver> receiver;
+        std::string address;
+        uint16_t port;
+
+    public:
+        p2p_tcp_listener_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this))
+        {
+            set_output(output);
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "data_tcp_listener";
+        }
+
+        void set_endpoint(std::string address, uint16_t port)
+        {
+            this->address = address;
+            this->port = port;
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(address);
+            archive(port);
+        }
+
+        virtual void initialize() override
+        {
+            receiver.reset(new data_stream_tcp_receiver(tcp::endpoint(asio::ip::address_v4::from_string(address), port)));
+
+            const source_identifier id{0, 0};
+            receiver->add_session(id);
+
+            const auto bind_port = receiver->local_endpoint().port();
+            const auto bind_address = receiver->local_endpoint().address().to_string();
+
+            std::stringstream ss;
+            write_string(ss, address);
+            write_uint16(ss, bind_port);
+
+            const auto str = ss.str();
+            const std::vector<uint8_t> data(str.begin(), str.end());
+
+            subscribe_request req;
+            const auto input = get_input();
             req.set_proc_name(get_proc_name());
             req.set_msg_type(text_message::get_type());
             req.set_data(data);
@@ -2215,8 +2406,14 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::passthrough
 CEREAL_REGISTER_TYPE(coalsack::p2p_talker_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_talker_node)
 
+CEREAL_REGISTER_TYPE(coalsack::p2p_tcp_talker_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_tcp_talker_node)
+
 CEREAL_REGISTER_TYPE(coalsack::p2p_listener_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_listener_node)
+
+CEREAL_REGISTER_TYPE(coalsack::p2p_tcp_listener_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_tcp_listener_node)
 
 CEREAL_REGISTER_TYPE(coalsack::broadcast_talker_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_talker_node)

@@ -345,4 +345,240 @@ namespace coalsack
             packet_pool.release_packets(completed_packets);
         }
     };
+
+    class data_stream_tcp_receiver
+    {
+        asio::io_service io_service;
+
+        struct session
+        {
+            asio::streambuf buffer;
+            bool lost_packet;
+
+            session()
+                : lost_packet(true)
+            {
+            }
+        };
+        
+        typedef std::function<void(double, source_identifier, asio::streambuf &)> on_receive_func;
+        tcp::socket socket_;
+        tcp::acceptor acceptor_;
+        tcp::endpoint remote_endpoint_;
+        asio::streambuf receive_buff_;
+        reordering_packet_buffer reordering;
+        packet_buffer_pool packet_pool;
+        std::map<source_identifier, std::shared_ptr<session>> sessions;
+        on_receive_func on_receive;
+        std::atomic_bool running;
+        std::shared_ptr<std::thread> handling_thread;
+        std::shared_ptr<std::thread> io_thread;
+        std::queue<packet_data *> packet_queue;
+        std::mutex mtx;
+        std::condition_variable cv;
+
+    public:
+        data_stream_tcp_receiver(tcp::endpoint endpoint, bool enable_broadcast = false)
+            : io_service(), socket_(io_service), acceptor_(io_service, endpoint), running(false), mtx()
+        {
+        }
+
+        tcp::endpoint local_endpoint() const
+        {
+            return acceptor_.local_endpoint();
+        }
+
+        void add_session(source_identifier key)
+        {
+            sessions.insert(std::make_pair(key, std::make_shared<session>()));
+        }
+
+        void start(on_receive_func on_receive)
+        {
+            this->on_receive = on_receive;
+
+            running = true;
+
+            start_accept();
+
+            io_thread.reset(new std::thread([&]()
+                                            { io_service.run(); }));
+
+            handling_thread.reset(new std::thread([&]()
+                                                  {
+            while (running.load())
+            {
+                handle_receive();
+            } }));
+        }
+
+        void stop()
+        {
+            io_service.stop();
+            if (io_thread && io_thread->joinable())
+            {
+                io_thread->join();
+            }
+            running = false;
+            cv.notify_one();
+            if (handling_thread && handling_thread->joinable())
+            {
+                handling_thread->join();
+            }
+        }
+
+        void start_accept()
+        {
+            acceptor_.async_accept(
+                socket_,
+                [this](const boost::system::error_code &ec)
+                {
+                    if (ec)
+                    {
+                        spdlog::error("Accept failed: {}", ec.message());
+                        return;
+                    }
+
+                    start_receive();
+                });
+        }
+
+        void start_receive_data(packet_data *packet)
+        {
+            constexpr auto header_size = 26;
+
+            boost::asio::async_read(
+                socket_,
+                receive_buff_,
+                asio::transfer_exactly(packet->size - header_size),
+                [packet, this](const boost::system::error_code& ec, std::size_t length)
+                {
+                    if (!ec)
+                    {
+                        const uint8_t *data = asio::buffer_cast<const uint8_t *>(receive_buff_.data());
+
+                        std::copy_n(data, length, packet->recv_buf.begin() + header_size);
+
+                        receive_buff_.consume(length);
+
+                        start_receive();
+
+                        {
+                            std::lock_guard<std::mutex> lock(mtx);
+                            packet_queue.push(packet);
+                        }
+                        cv.notify_one();
+                    }
+                });
+        }
+
+        void start_receive()
+        {
+            constexpr auto header_size = 26;
+            packet_data *packet = packet_pool.obtain_packet();
+
+            boost::asio::async_read(
+                socket_,
+                receive_buff_,
+                asio::transfer_exactly(header_size),
+                [packet, this](const boost::system::error_code& ec, std::size_t length)
+                {
+                    if (!ec)
+                    {
+                        const uint8_t *data = asio::buffer_cast<const uint8_t *>(receive_buff_.data());
+
+                        const auto payload_size = (uint32_t)data[24] | ((uint32_t)data[25] << 8);
+                        
+                        packet->size = header_size + payload_size;
+
+                        std::copy_n(data, length, packet->recv_buf.begin());
+
+                        receive_buff_.consume(length);
+
+                        start_receive_data(packet);
+                    }
+                });
+        }
+
+        void handle_receive()
+        {
+            packet_data *packet;
+
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+
+                cv.wait(lock, [this]
+                        { return !packet_queue.empty() || !running; });
+
+                if (!running)
+                {
+                    return;
+                }
+
+                packet = packet_queue.front();
+                packet_queue.pop();
+            }
+
+            size_t receive_size = packet->size;
+
+            std::stringstream ss(std::string(packet->recv_buf.data(), receive_size));
+            ss.read((char *)&packet->flags, sizeof(packet->flags));
+            ss.read((char *)&packet->counter, sizeof(packet->counter));
+            ss.read((char *)&packet->timestamp, sizeof(packet->timestamp));
+            ss.read((char *)&packet->id.stream_unique_id, sizeof(packet->id.stream_unique_id));
+            ss.read((char *)&packet->id.data_id, sizeof(packet->id.data_id));
+
+            reordering.commit_packet(packet);
+
+            std::vector<packet_data *> completed_packets;
+
+            for (packet_data *packet = nullptr; (packet = reordering.receive_packet()) != nullptr;)
+            {
+                auto it = sessions.find(packet->id);
+                if (it == sessions.end())
+                {
+                    continue;
+                }
+
+                const size_t header_size = 26;
+                const size_t payload_size = packet->size - header_size;
+
+                auto &session = *it->second;
+                session.buffer.commit(boost::asio::buffer_copy(
+                    session.buffer.prepare(payload_size),
+                    boost::asio::buffer(packet->recv_buf.data() + header_size, payload_size)));
+
+                bool completed = packet->flags & 0x1;
+                if (completed)
+                {
+                    if (!session.lost_packet)
+                    {
+                        on_receive(packet->timestamp, packet->id, session.buffer);
+                    }
+                    session.buffer.consume(session.buffer.size());
+                    session.lost_packet = false;
+                }
+                completed_packets.push_back(packet);
+            }
+
+            if (reordering.detect_lost_packet())
+            {
+                for (auto &p : sessions)
+                {
+                    auto session = p.second;
+                    session->lost_packet = true;
+                }
+
+                const auto packets = reordering.reset();
+                for (auto packet : packets)
+                {
+                    completed_packets.push_back(packet);
+                }
+                reordering.set_next_counter(((uint32_t)packet->counter + 1) % 65536);
+                spdlog::warn("Packet lost");
+            }
+
+            packet_pool.release_packets(completed_packets);
+        }
+    };
 }
