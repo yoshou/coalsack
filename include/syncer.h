@@ -61,7 +61,7 @@ namespace coalsack
             {
                 return false;
             }
-            if (std::abs(expect_time.get_timestamp() - get_timestamp()) < (10 * interval))
+            if (std::abs(expect_time.get_timestamp() - get_timestamp()) < (100 * interval))
             {
                 return false;
             }
