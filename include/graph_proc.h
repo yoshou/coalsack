@@ -2135,7 +2135,11 @@ namespace coalsack
 
         virtual void tick() override
         {
-            std::lock_guard<std::mutex> lock(mtx);
+            graph_message_ptr message;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                message = this->message;
+            }
             output->send(message);
         }
     };
@@ -2176,15 +2180,19 @@ namespace coalsack
 
         virtual void process(std::string input_name, graph_message_ptr message) override
         {
-            std::lock_guard<std::mutex> lock(mtx);
-
             if (input_name == "default")
             {
+                std::lock_guard<std::mutex> lock(mtx);
                 this->message = message;
             }
             else if (input_name == "clock")
             {
-                output->send(this->message);
+                graph_message_ptr message;
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    message = this->message;
+                }
+                output->send(message);
             }
         }
     };
@@ -2354,17 +2362,23 @@ namespace coalsack
                                      {
                 while (running.load())
                 {
-                    std::unique_lock<std::mutex> lock(mtx);
-                    cv.wait(lock, [&] { return !messages.empty() || !running; });
+                    graph_message_ptr message;
+                    {
+                        std::unique_lock<std::mutex> lock(mtx);
+                        cv.wait(lock, [&]
+                                { return !messages.empty() || !running; });
 
-                    if (!running)
-                    {
-                        break;
-                    }
-                    if (!messages.empty())
-                    {
-                        const auto message = messages.front();
+                        if (!running)
+                        {
+                            break;
+                        }
+
+                        message = messages.front();
                         messages.pop_front();
+                    }
+
+                    if (message)
+                    {
                         output->send(message);
                     }
                 } }));
