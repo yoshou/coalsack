@@ -11,6 +11,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
+#include <opencv2/calib3d.hpp>
 
 #ifdef __ARM_NEON
 #include <arm_neon.h>
@@ -1019,6 +1020,183 @@ namespace coalsack
         }
     };
 
+    struct simple_blob_detector_params
+    {
+        float threshold_step = 10;
+        float min_threshold = 50;
+        float max_threshold = 220;
+        size_t min_repeatability = 2;
+        float min_dist_between_blobs = 10;
+
+        bool filter_by_color = true;
+        uint8_t blob_color = 0;
+
+        bool filter_by_area = true;
+        float min_area = 25;
+        float max_area = 5000;
+
+        bool filter_by_circularity = false;
+        float min_circularity = 0.8f;
+        float max_circularity = std::numeric_limits<float>::max();
+
+        bool filter_by_inertia = true;
+        float min_inertia_ratio = 0.1f;
+        float max_inertia_ratio = std::numeric_limits<float>::max();
+
+        bool filter_by_convexity = true;
+        float min_convexity = 0.95f;
+        float max_convexity = std::numeric_limits<float>::max();
+
+        bool collect_contours = false;
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(threshold_step, min_threshold, max_threshold, min_repeatability, min_dist_between_blobs,
+                    filter_by_color, blob_color, filter_by_area, min_area, max_area,
+                    filter_by_circularity, min_circularity, max_circularity,
+                    filter_by_inertia, min_inertia_ratio, max_inertia_ratio,
+                    filter_by_convexity, min_convexity, max_convexity,
+                    collect_contours);
+        }
+    };
+
+    class detect_circle_grid_node : public graph_node
+    {
+        graph_edge_ptr output;
+        simple_blob_detector_params params;
+        int num_circles_per_row = 2;
+        int num_circles_per_column = 9;
+        int flags = cv::CALIB_CB_ASYMMETRIC_GRID + cv::CALIB_CB_CLUSTERING;
+        cv::Ptr<cv::SimpleBlobDetector> detector;
+
+    public:
+        detect_circle_grid_node()
+            : graph_node(), output(std::make_shared<graph_edge>(this)), params(), detector()
+        {
+            set_output(output);
+        }
+
+        void set_parameters(const simple_blob_detector_params &params)
+        {
+            this->params = params;
+        }
+        const simple_blob_detector_params &get_parameters() const
+        {
+            return params;
+        }
+        simple_blob_detector_params &get_parameters()
+        {
+            return params;
+        }
+
+        void set_num_circles_per_row(int value)
+        {
+            num_circles_per_row = value;
+        }
+        int get_num_circles_per_row() const
+        {
+            return num_circles_per_row;
+        }
+
+        void set_num_circles_per_column(int value)
+        {
+            num_circles_per_column = value;
+        }
+        int get_num_circles_per_column() const
+        {
+            return num_circles_per_column;
+        }
+
+        void set_flags(int value)
+        {
+            flags = value;
+        }
+        int get_flags() const
+        {
+            return flags;
+        }
+
+        virtual std::string get_proc_name() const override
+        {
+            return "detect_circle_grid";
+        }
+
+        template <typename Archive>
+        void serialize(Archive &archive)
+        {
+            archive(params, num_circles_per_row, num_circles_per_column, flags);
+        }
+
+        virtual void initialize() override
+        {
+            auto params = cv::SimpleBlobDetector::Params();
+
+            params.minThreshold = this->params.min_threshold;
+            params.maxThreshold = this->params.max_threshold;
+            params.thresholdStep = this->params.threshold_step;
+            params.minRepeatability = this->params.min_repeatability;
+            params.minDistBetweenBlobs = this->params.min_dist_between_blobs;
+            params.filterByColor = this->params.filter_by_color;
+            params.blobColor = this->params.blob_color;
+            params.filterByArea = this->params.filter_by_area;
+            params.minArea = this->params.min_area;
+            params.maxArea = this->params.max_area;
+            params.filterByCircularity = this->params.filter_by_circularity;
+            params.minCircularity = this->params.min_circularity;
+            params.maxCircularity = this->params.max_circularity;
+            params.filterByInertia = this->params.filter_by_inertia;
+            params.minInertiaRatio = this->params.min_inertia_ratio;
+            params.maxInertiaRatio = this->params.max_inertia_ratio;
+            params.filterByConvexity = this->params.filter_by_convexity;
+            params.minConvexity = this->params.min_convexity;
+            params.maxConvexity = this->params.max_convexity;
+
+            detector = cv::SimpleBlobDetector::create(params);
+        }
+
+        virtual void finalize() override
+        {
+            detector.release();
+        }
+
+        virtual void process(std::string input_name, graph_message_ptr message) override
+        {
+            if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message))
+            {
+                const auto &src_image = image_msg->get_data();
+                cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), convert_to_cv_type(src_image.get_format()), (void *)src_image.get_data(), src_image.get_stride());
+
+                const cv::Size pattern_size(num_circles_per_row, num_circles_per_column);
+
+                std::vector<cv::Point2f> centers;
+                cv::findCirclesGrid(src_mat, pattern_size, centers, flags, detector);
+
+                std::vector<keypoint> keypoints;
+                for (const auto &corner : centers)
+                {
+                    keypoint kp;
+                    kp.pt_x = corner.x;
+                    kp.pt_y = corner.y;
+                    kp.size = 0;
+                    kp.angle = 0;
+                    kp.response = 0;
+                    kp.octave = 0;
+                    kp.class_id = 0;
+                    keypoints.push_back(kp);
+                }
+
+                auto msg = std::make_shared<keypoint_frame_message>();
+                msg->set_data(std::move(keypoints));
+                msg->set_profile(image_msg->get_profile());
+                msg->set_timestamp(image_msg->get_timestamp());
+                msg->set_frame_number(image_msg->get_frame_number());
+
+                output->send(msg);
+            }
+        }
+    };
+
     class video_capture_node : public graph_node
     {
         std::shared_ptr<std::thread> th;
@@ -1206,6 +1384,9 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::orb_detecto
 
 CEREAL_REGISTER_TYPE(coalsack::simple_blob_detector_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::simple_blob_detector_node)
+
+CEREAL_REGISTER_TYPE(coalsack::detect_circle_grid_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::detect_circle_grid_node)
 
 CEREAL_REGISTER_TYPE(coalsack::video_capture_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::video_capture_node)
