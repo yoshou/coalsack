@@ -1170,7 +1170,12 @@ namespace coalsack
                 const cv::Size pattern_size(num_circles_per_row, num_circles_per_column);
 
                 std::vector<cv::Point2f> centers;
-                cv::findCirclesGrid(src_mat, pattern_size, centers, flags, detector);
+                const auto found = cv::findCirclesGrid(src_mat, pattern_size, centers, flags, detector);
+
+                if (!found)
+                {
+                    centers.clear();
+                }
 
                 std::vector<keypoint> keypoints;
                 for (const auto &corner : centers)
