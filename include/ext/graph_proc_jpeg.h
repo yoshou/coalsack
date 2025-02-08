@@ -245,17 +245,8 @@ namespace coalsack
                 auto src_size = image_msg->get_data().size();
                 auto format = image_msg->get_profile()->get_format();
 
-                uint32_t header{}, res{};
+                uint32_t res{};
                 jpeg_mem_src(&dinfo, src_buf, src_size);
-                if (src_buf != nullptr)
-                {
-                    memcpy(&header, src_buf, sizeof(header));
-                }
-                if (header != 0xE0FFD8FF)
-                {
-                    spdlog::error("Invalid header");
-                    return;
-                }
                 res = jpeg_read_header(&dinfo, TRUE);
                 if (!res)
                 {
