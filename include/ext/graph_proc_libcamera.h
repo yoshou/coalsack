@@ -283,7 +283,10 @@ namespace coalsack
                 return;
             }
 
-            running = false;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                running = false;
+            }
             cv.notify_all();
             if (th && th->joinable())
             {

@@ -2388,7 +2388,10 @@ namespace coalsack
         {
             if (running.load())
             {
-                running.store(false);
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    running = false;
+                }
                 cv.notify_one();
                 if (th && th->joinable())
                 {

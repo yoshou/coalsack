@@ -234,7 +234,10 @@ namespace coalsack
             {
                 io_thread->join();
             }
-            running = false;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                running = false;
+            }
             cv.notify_one();
             if (handling_thread && handling_thread->joinable())
             {
@@ -419,7 +422,10 @@ namespace coalsack
             {
                 io_thread->join();
             }
-            running = false;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                running = false;
+            }
             cv.notify_one();
             if (handling_thread && handling_thread->joinable())
             {

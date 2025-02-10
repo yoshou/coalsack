@@ -455,7 +455,11 @@ namespace coalsack
             {
                 return;
             }
-            running.store(false);
+            
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                running = false;
+            }
             {
                 std::lock_guard<std::mutex> lock(camera_stop_mutex);
 
