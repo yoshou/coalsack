@@ -1,11 +1,11 @@
-ARG BASE_IMAGE=debian:bullseye
+ARG BASE_IMAGE=debian:bookworm
 
 #################################
 #   Librealsense Builder Stage  #
 #################################
 FROM $BASE_IMAGE as librealsense-builder
 
-ARG LIBRS_VERSION=2.54.1
+ARG LIBRS_VERSION=2.55.1
 # Make sure that we have a version number of librealsense as argument
 RUN test -n "$LIBRS_VERSION"
 
@@ -84,7 +84,7 @@ RUN apt-get update && \
     apt-get -y --purge autoremove && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --upgrade pip && pip install meson
+RUN pip3 install --upgrade pip --break-system-packages && pip3 install meson --break-system-packages
 
 ENV CC=/usr/bin/gcc \
     CXX=/usr/bin/g++
@@ -103,7 +103,7 @@ RUN git clone https://github.com/RPi-Distro/raspi-gpio.git && \
 
 WORKDIR /app
 
-COPY . /app/coalsack
+RUN git clone https://github.com/yoshou/coalsack /app/coalsack
 
 WORKDIR /app/coalsack/build
 
