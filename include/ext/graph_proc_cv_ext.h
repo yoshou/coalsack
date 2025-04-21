@@ -9,6 +9,7 @@
 #include <iostream>
 #include <chrono>
 
+#include "graph_proc_cv.h"
 #include "graph_proc_img.h"
 #include "blob_detector.h"
 #include <opencv2/features2d.hpp>

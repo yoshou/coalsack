@@ -27,7 +27,7 @@
 #endif
 #include "ext/graph_proc_jpeg.h"
 #include "ext/graph_proc_lz4.h"
-#include "ext/graph_proc_cv.h"
+#include "ext/graph_proc_cv_ext.h"
 
 using namespace coalsack;
 
