@@ -38,7 +38,7 @@ try
 {
     signal(SIGINT, sigint_handler);
     
-    asio::io_service io_service;
+    asio::io_context io_context;
 
     std::shared_ptr<subgraph> g1(new subgraph());
     std::shared_ptr<subgraph> g2(new subgraph());
@@ -70,16 +70,16 @@ try
     g2->add_node(n6);
 
     graph_proc_client client;
-    client.deploy(io_service, "127.0.0.1", 31400, g1);
-    client.deploy(io_service, "127.0.0.1", 31400, g2);
+    client.deploy(io_context, "127.0.0.1", 31400, g1);
+    client.deploy(io_context, "127.0.0.1", 31400, g2);
 
     client.run();
 
-    on_shutdown_handlers.push_back([&io_service] {
-        io_service.stop();
+    on_shutdown_handlers.push_back([&io_context] {
+        io_context.stop();
     });
 
-    io_service.run();
+    io_context.run();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 

@@ -24,8 +24,8 @@ namespace coalsack
         boost::array<char, PACKET_PAYLOAD_SIZE> buffer_;
 
     public:
-        data_stream_transmitter(asio::io_service &io_service)
-            : socket_(io_service), counter_(0)
+        data_stream_transmitter(asio::io_context &io_context)
+            : socket_(io_context), counter_(0)
         {
         }
 
@@ -33,7 +33,7 @@ namespace coalsack
         {
             counter_ = 0;
             socket_.open(udp::v4());
-            remote_endpoint_ = udp::endpoint(asio::ip::address_v4::from_string(address), port);
+            remote_endpoint_ = udp::endpoint(asio::ip::make_address(address), port);
         }
         void open_broadcast(uint16_t port)
         {
@@ -108,15 +108,15 @@ namespace coalsack
         boost::array<char, PACKET_PAYLOAD_SIZE> buffer_;
 
     public:
-        data_stream_tcp_transmitter(asio::io_service &io_service)
-            : socket_(io_service), counter_(0)
+        data_stream_tcp_transmitter(asio::io_context &io_context)
+            : socket_(io_context), counter_(0)
         {
         }
 
         void open(std::string address, uint16_t port)
         {
             counter_ = 0;
-            remote_endpoint_ = tcp::endpoint(asio::ip::address_v4::from_string(address), port);
+            remote_endpoint_ = tcp::endpoint(asio::ip::make_address(address), port);
 
             boost::system::error_code error;
             socket_.connect(remote_endpoint_, error);

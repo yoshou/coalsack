@@ -150,7 +150,7 @@ namespace coalsack
 
     class data_stream_receiver
     {
-        asio::io_service io_service;
+        asio::io_context io_context;
 
         struct session
         {
@@ -179,7 +179,7 @@ namespace coalsack
     public:
 
         data_stream_receiver(udp::endpoint endpoint, bool enable_broadcast = false)
-            : io_service(), socket_(io_service, endpoint), running(false), mtx()
+            : io_context(), socket_(io_context, endpoint), running(false), mtx()
         {
             if (enable_broadcast)
             {
@@ -189,13 +189,13 @@ namespace coalsack
         }
 
         data_stream_receiver(udp::endpoint endpoint, std::string multicast_address)
-            : io_service(), socket_(io_service), running(false), mtx()
+            : io_context(), socket_(io_context), running(false), mtx()
         {
             socket_.open(endpoint.protocol());
             socket_.set_option(boost::asio::ip::udp::socket::reuse_address(true));
             socket_.bind(endpoint);
             socket_.set_option(
-                boost::asio::ip::multicast::join_group(asio::ip::address_v4::from_string(multicast_address)));
+                boost::asio::ip::multicast::join_group(asio::ip::make_address(multicast_address)));
         }
 
         udp::endpoint local_endpoint() const
@@ -217,7 +217,7 @@ namespace coalsack
             start_receive();
 
             io_thread.reset(new std::thread([&]()
-                                            { io_service.run(); }));
+                                            { io_context.run(); }));
 
             handling_thread.reset(new std::thread([&]()
                                                   {
@@ -229,7 +229,7 @@ namespace coalsack
 
         void stop()
         {
-            io_service.stop();
+            io_context.stop();
             if (io_thread && io_thread->joinable())
             {
                 io_thread->join();
@@ -351,7 +351,7 @@ namespace coalsack
 
     class data_stream_tcp_receiver
     {
-        asio::io_service io_service;
+        asio::io_context io_context;
 
         struct session
         {
@@ -382,7 +382,7 @@ namespace coalsack
 
     public:
         data_stream_tcp_receiver(tcp::endpoint endpoint, bool enable_broadcast = false)
-            : io_service(), socket_(io_service), acceptor_(io_service, endpoint), running(false), mtx()
+            : io_context(), socket_(io_context), acceptor_(io_context, endpoint), running(false), mtx()
         {
         }
 
@@ -405,7 +405,7 @@ namespace coalsack
             start_accept();
 
             io_thread.reset(new std::thread([&]()
-                                            { io_service.run(); }));
+                                            { io_context.run(); }));
 
             handling_thread.reset(new std::thread([&]()
                                                   {
@@ -417,7 +417,7 @@ namespace coalsack
 
         void stop()
         {
-            io_service.stop();
+            io_context.stop();
             if (io_thread && io_thread->joinable())
             {
                 io_thread->join();
@@ -461,7 +461,7 @@ namespace coalsack
                 {
                     if (!ec)
                     {
-                        const uint8_t *data = asio::buffer_cast<const uint8_t *>(receive_buff_.data());
+                        const uint8_t *data = static_cast<const uint8_t *>(receive_buff_.data().data());
 
                         std::copy_n(data, length, packet->recv_buf.begin() + header_size);
 
@@ -491,7 +491,7 @@ namespace coalsack
                 {
                     if (!ec)
                     {
-                        const uint8_t *data = asio::buffer_cast<const uint8_t *>(receive_buff_.data());
+                        const uint8_t *data = static_cast<const uint8_t *>(receive_buff_.data().data());
 
                         const auto payload_size = (uint32_t)data[24] | ((uint32_t)data[25] << 8);
                         

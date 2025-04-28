@@ -54,15 +54,15 @@ try
 
     spdlog::set_level(spdlog::level::debug);
     
-    asio::io_service io_service;
+    asio::io_context io_context;
 
-    graph_proc_server server(io_service, "0.0.0.0", 31400);
+    graph_proc_server server(io_context, "0.0.0.0", 31400);
 
-    on_shutdown_handlers.push_back([&io_service] {
-        io_service.stop();
+    on_shutdown_handlers.push_back([&io_context] {
+        io_context.stop();
     });
 
-    io_service.run();
+    io_context.run();
 
     return 0;
 }

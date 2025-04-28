@@ -696,8 +696,8 @@ namespace coalsack
         std::mutex mtx;
 
     public:
-        graph_proc_server(boost::asio::io_service &io_service, std::string address, uint16_t port, const std::shared_ptr<resource_list> &resources = std::make_shared<resource_list>())
-            : rpc_server_(io_service, address, port), resources_(resources)
+        graph_proc_server(boost::asio::io_context &io_context, std::string address, uint16_t port, const std::shared_ptr<resource_list> &resources = std::make_shared<resource_list>())
+            : rpc_server_(io_context, address, port), resources_(resources)
         {
             rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::DEPLOY, [this](uint32_t session, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res) -> uint32_t
                                          {
@@ -883,11 +883,11 @@ namespace coalsack
         std::unordered_map<subgraph *, std::shared_ptr<rpc_client>> rpcs_;
 
     public:
-        void deploy(asio::io_service &io_service, std::string ipaddress, uint16_t port, std::shared_ptr<subgraph> g)
+        void deploy(asio::io_context &io_context, std::string ipaddress, uint16_t port, std::shared_ptr<subgraph> g)
         {
             g->validate();
 
-            std::shared_ptr<rpc_client> rpc(new rpc_client(io_service));
+            std::shared_ptr<rpc_client> rpc(new rpc_client(io_context));
             graphs_.push_back(g);
             rpcs_.insert(std::make_pair(g.get(), rpc));
 
@@ -1350,13 +1350,13 @@ namespace coalsack
     {
         graph_edge_ptr output;
         std::shared_ptr<data_stream_transmitter> transmitter;
-        boost::asio::io_service io_service;
+        boost::asio::io_context io_context;
         std::shared_ptr<std::thread> th;
         std::atomic_bool running;
 
     public:
         p2p_talker_node()
-            : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)), transmitter(), io_service(), th(), running(false)
+            : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)), transmitter(), io_context(), th(), running(false)
         {
             set_output(output);
         }
@@ -1384,7 +1384,7 @@ namespace coalsack
             auto remote_address = read_string(ss);
             auto remote_port = read_uint16(ss);
 
-            transmitter.reset(new data_stream_transmitter(io_service));
+            transmitter.reset(new data_stream_transmitter(io_context));
             transmitter->open(remote_address, remote_port);
         }
 
@@ -1419,7 +1419,7 @@ namespace coalsack
         {
             running = true;
             th.reset(new std::thread([&]()
-                                     { io_service.run(); }));
+                                     { io_context.run(); }));
         }
 
         virtual void stop() override
@@ -1427,7 +1427,7 @@ namespace coalsack
             if (running.load())
             {
                 running.store(false);
-                io_service.stop();
+                io_context.stop();
                 if (th && th->joinable())
                 {
                     th->join();
@@ -1440,7 +1440,7 @@ namespace coalsack
     {
         graph_edge_ptr output;
         std::shared_ptr<data_stream_tcp_transmitter> transmitter;
-        boost::asio::io_service io_service;
+        boost::asio::io_context io_context;
         std::shared_ptr<std::thread> th;
         std::atomic_bool running;
 
@@ -1475,7 +1475,7 @@ namespace coalsack
             const auto address = read_string(ss);
             const auto port = read_uint16(ss);
 
-            transmitter.reset(new data_stream_tcp_transmitter(io_service));
+            transmitter.reset(new data_stream_tcp_transmitter(io_context));
             transmitter->open(address, port);
         }
 
@@ -1510,7 +1510,7 @@ namespace coalsack
         {
             running = true;
             th.reset(new std::thread([&]()
-                                     { io_service.run(); }));
+                                     { io_context.run(); }));
         }
 
         virtual void stop() override
@@ -1518,7 +1518,7 @@ namespace coalsack
             if (running.load())
             {
                 running.store(false);
-                io_service.stop();
+                io_context.stop();
                 if (th && th->joinable())
                 {
                     th->join();
@@ -1661,7 +1661,7 @@ namespace coalsack
 
         virtual void initialize() override
         {
-            receiver.reset(new data_stream_tcp_receiver(tcp::endpoint(asio::ip::address_v4::from_string(address), port)));
+            receiver.reset(new data_stream_tcp_receiver(tcp::endpoint(asio::ip::make_address(address), port)));
 
             const source_identifier id{0, 0};
             receiver->add_session(id);
@@ -1731,7 +1731,7 @@ namespace coalsack
     {
         graph_edge_ptr output;
         std::shared_ptr<data_stream_transmitter> transmitter;
-        boost::asio::io_service io_service;
+        boost::asio::io_context io_context;
         std::shared_ptr<std::thread> th;
         std::atomic_bool running;
         std::string address;
@@ -1739,7 +1739,7 @@ namespace coalsack
 
     public:
         broadcast_talker_node()
-            : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)), transmitter(), io_service(), th(), running(false)
+            : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)), transmitter(), io_context(), th(), running(false)
         {
             set_output(output);
         }
@@ -1766,9 +1766,9 @@ namespace coalsack
 
         virtual void initialize() override
         {
-            transmitter.reset(new data_stream_transmitter(io_service));
+            transmitter.reset(new data_stream_transmitter(io_context));
 
-            if (asio::ip::address_v4::from_string(address).is_multicast())
+            if (asio::ip::make_address(address).is_multicast())
             {
                 transmitter->open(address, port);
             }
@@ -1811,7 +1811,7 @@ namespace coalsack
         {
             running = true;
             th.reset(new std::thread([&]()
-                                     { io_service.run(); }));
+                                     { io_context.run(); }));
         }
 
         virtual void stop() override
@@ -1819,7 +1819,7 @@ namespace coalsack
             if (running.load())
             {
                 running.store(false);
-                io_service.stop();
+                io_context.stop();
                 if (th && th->joinable())
                 {
                     th->join();

@@ -1254,14 +1254,14 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, post_inference_node)
 
 class local_server
 {
-    asio::io_service io_service;
+    asio::io_context io_context;
     std::shared_ptr<graph_proc_server> server;
     std::shared_ptr<std::thread> th;
     std::atomic_bool running;
 
 public:
     local_server()
-        : io_service(), server(std::make_shared<graph_proc_server>(io_service, "0.0.0.0", 31400)), th(), running(false)
+        : io_context(), server(std::make_shared<graph_proc_server>(io_context, "0.0.0.0", 31400)), th(), running(false)
     {
     }
 
@@ -1269,7 +1269,7 @@ public:
     {
         running = true;
         th.reset(new std::thread([this]
-                                 { io_service.run(); }));
+                                 { io_context.run(); }));
     }
 
     void stop()
@@ -1277,7 +1277,7 @@ public:
         if (running.load())
         {
             running.store(false);
-            io_service.stop();
+            io_context.stop();
             if (th && th->joinable())
             {
                 th->join();
@@ -1325,7 +1325,7 @@ try
     local_server server;
     server.run();
 
-    asio::io_service io_service;
+    asio::io_context io_context;
 
     std::shared_ptr<subgraph> g(new subgraph());
 
@@ -1404,15 +1404,15 @@ try
     g->add_node(post_inference);
 
     graph_proc_client client;
-    client.deploy(io_service, "127.0.0.1", 31400, g);
+    client.deploy(io_context, "127.0.0.1", 31400, g);
 
     on_shutdown_handlers.push_back([&client, &server]
                                    {
         client.stop();
         server.stop(); });
 
-    std::thread io_thread([&io_service]
-                          { io_service.run(); });
+    std::thread io_thread([&io_context]
+                          { io_context.run(); });
 
     client.run();
 

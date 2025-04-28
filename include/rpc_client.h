@@ -21,15 +21,15 @@ namespace coalsack
             return socket.local_endpoint();
         }
 
-        rpc_client(asio::io_service &io_service)
-            : socket(io_service)
+        rpc_client(asio::io_context &io_context)
+            : socket(io_context)
         {
         }
 
         void connect(std::string ip, unsigned short port)
         {
             boost::system::error_code error;
-            socket.connect(tcp::endpoint(asio::ip::address::from_string(ip), port), error);
+            socket.connect(tcp::endpoint(asio::ip::make_address(ip), port), error);
 
             if (error)
             {
@@ -58,14 +58,14 @@ namespace coalsack
                 return -1;
             }
 
-            response_t response = *asio::buffer_cast<const response_t *>(receive_buffer.data());
+            response_t response = *static_cast<const response_t *>(receive_buffer.data().data());
             receive_buffer.consume(sizeof(response_t));
 
             if (response.length > 0)
             {
                 asio::read(socket, receive_buffer, asio::transfer_exactly(response.length), error);
 
-                const char *data = asio::buffer_cast<const char *>(receive_buffer.data());
+                const char *data = static_cast<const char *>(receive_buffer.data().data());
                 std::copy(data, data + response.length, std::back_inserter(res));
                 receive_buffer.consume(response.length);
             }

@@ -50,13 +50,13 @@ int main(int argc, char *argv[])
     n6->set_input(n5->get_output());
     g2->add_node(n6);
 
-    asio::io_service io_service;
+    asio::io_context io_context;
     graph_proc_client client;
-    client.deploy(io_service, "127.0.0.1", 31400, g1);
-    client.deploy(io_service, "127.0.0.1", 31400, g2);
+    client.deploy(io_context, "127.0.0.1", 31400, g1);
+    client.deploy(io_context, "127.0.0.1", 31400, g2);
 
     client.run();
-    io_service.run();
+    io_context.run();
 
     return 0;
 }

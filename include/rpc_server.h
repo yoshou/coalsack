@@ -132,8 +132,8 @@ namespace coalsack
     {
 
     public:
-        rpc_server(boost::asio::io_service &io_service, std::string address, uint16_t port)
-            : acceptor_(io_service, tcp::endpoint(asio::ip::address_v4::from_string(address), port)), socket_(io_service), next_session_id(1), disconnect_handler(nullptr)
+        rpc_server(boost::asio::io_context &io_context, std::string address, uint16_t port)
+            : acceptor_(io_context, tcp::endpoint(asio::ip::make_address(address), port)), socket_(io_context), next_session_id(1), disconnect_handler(nullptr)
         {
             do_accept();
         }
