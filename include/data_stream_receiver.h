@@ -89,7 +89,7 @@ class reordering_packet_buffer {
   bool detect_lost_packet() {
     std::lock_guard<std::mutex> lock(ordered_packets_mtx);
 
-    if (ordered_packets.size() > 10) {
+    if (ordered_packets.size() > max_size) {
       return true;
     }
     return false;
