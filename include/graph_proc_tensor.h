@@ -634,7 +634,6 @@ class tensor {
     std::vector<std::array<uint32_t, num_dims + 1>> strides;
     std::vector<std::array<uint32_t, num_dims + 1>> shapes;
 
-    uint32_t concat_dim_size = 0;
     for (const auto &value : values) {
       data.push_back(value.data.data());
 
