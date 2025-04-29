@@ -477,6 +477,56 @@ class timestamp_node : public graph_node {
     }
   }
 };
+
+class frame_demux_node : public graph_node {
+ public:
+ frame_demux_node() : graph_node() {}
+
+  graph_edge_ptr add_output(std::string name) {
+    auto outputs = get_outputs();
+    auto it = outputs.find(name);
+    if (it == outputs.end()) {
+      auto output = std::make_shared<graph_edge>(this);
+      set_output(output, name);
+      return output;
+    }
+    return it->second;
+  }
+
+  virtual std::string get_proc_name() const override { return "frame_demux_node"; }
+
+  template <typename Archive>
+  void save(Archive &archive) const {
+    std::vector<std::string> output_names;
+    auto outputs = get_outputs();
+    for (auto output : outputs) {
+      output_names.push_back(output.first);
+    }
+    archive(output_names);
+  }
+
+  template <typename Archive>
+  void load(Archive &archive) {
+    std::vector<std::string> output_names;
+    archive(output_names);
+    for (auto output_name : output_names) {
+      set_output(std::make_shared<graph_edge>(this), output_name);
+    }
+  }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (auto frame_msg = std::dynamic_pointer_cast<frame_message<object_message>>(message)) {
+      const auto& obj_msg = frame_msg->get_data();
+      for (auto field : obj_msg.get_fields()) {
+        try {
+          get_output(field.first)->send(field.second);
+        } catch (const std::invalid_argument &e) {
+          spdlog::warn(e.what());
+        }
+      }
+    }
+  }
+};
 }  // namespace coalsack
 
 CEREAL_REGISTER_TYPE(coalsack::image_message)
@@ -505,3 +555,6 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::tiling_node
 
 CEREAL_REGISTER_TYPE(coalsack::timestamp_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::timestamp_node)
+
+CEREAL_REGISTER_TYPE(coalsack::frame_demux_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_demux_node)
