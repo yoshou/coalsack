@@ -1371,7 +1371,6 @@ class p2p_tcp_listener_node : public graph_node {
 };
 
 class broadcast_talker_node : public graph_node {
-  graph_edge_ptr output;
   std::shared_ptr<data_stream_transmitter> transmitter;
   boost::asio::io_context io_context;
   std::shared_ptr<std::thread> th;
@@ -1380,15 +1379,7 @@ class broadcast_talker_node : public graph_node {
   std::uint16_t port;
 
  public:
-  broadcast_talker_node()
-      : graph_node(),
-        output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)),
-        transmitter(),
-        io_context(),
-        th(),
-        running(false) {
-    set_output(output);
-  }
+  broadcast_talker_node() : graph_node(), transmitter(), io_context(), th(), running(false) {}
 
   void set_endpoint(std::string address, uint16_t port) {
     this->address = address;
