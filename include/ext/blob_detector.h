@@ -44,18 +44,18 @@ struct f32vec2 {
   }
 };
 
-static f32vec2 operator+(const f32vec2 &left, const f32vec2 &right) {
+inline f32vec2 operator+(const f32vec2 &left, const f32vec2 &right) {
   return f32vec2{left.x + right.x, left.y + right.y};
 }
-static f32vec2 operator-(const f32vec2 &left, const f32vec2 &right) {
+inline f32vec2 operator-(const f32vec2 &left, const f32vec2 &right) {
   return f32vec2{left.x - right.x, left.y - right.y};
 }
-static f32vec2 operator*(const f32vec2 &left, const f32vec2 &right) {
+inline f32vec2 operator*(const f32vec2 &left, const f32vec2 &right) {
   return f32vec2{left.x * right.x, left.y * right.y};
 }
-static f32vec2 operator*(const f32vec2 &v, float s) { return f32vec2{v.x * s, v.y * s}; }
+inline f32vec2 operator*(const f32vec2 &v, float s) { return f32vec2{v.x * s, v.y * s}; }
 
-static float norm(const f32vec2 &v) { return std::sqrt(v.x * v.x + v.y * v.y); }
+inline float norm(const f32vec2 &v) { return std::sqrt(v.x * v.x + v.y * v.y); }
 
 class contours_detector {
   const std::uint8_t *image;
@@ -75,19 +75,16 @@ class contours_detector {
 #if USE_NEON
     const uint8x16_t v_threshold = vdupq_n_u8(threshold);
 #if 0
-            constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
-            if (length >= num_vector_lanes)
-            {
-                for (; x <= length - num_vector_lanes; x += num_vector_lanes)
-                {
-                    const uint8x16_t v_src = vld1q_u8(image + x);
-                    const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
-                    if (vmaxvq_u8(v_mask) != 0)
-                    {
-                        break;
-                    }
-                }
-            }
+    constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
+    if (length >= num_vector_lanes) {
+      for (; x <= length - num_vector_lanes; x += num_vector_lanes) {
+        const uint8x16_t v_src = vld1q_u8(image + x);
+        const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+        if (vmaxvq_u8(v_mask) != 0) {
+          break;
+        }
+      }
+    }
 #elif 1
     constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
     if (length >= num_vector_lanes) {
@@ -121,16 +118,14 @@ class contours_detector {
 #if USE_NEON
     const uint8x16_t v_threshold = vdupq_n_u8(threshold);
 #if 0
-            constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
-            for (; x <= length - num_vector_lanes; x += num_vector_lanes)
-            {
-                const uint8x16_t v_src = vld1q_u8(image + x);
-                const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
-                if (vminvq_u8(v_mask) == 0)
-                {
-                    break;
-                }
-            }
+    constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
+    for (; x <= length - num_vector_lanes; x += num_vector_lanes) {
+      const uint8x16_t v_src = vld1q_u8(image + x);
+      const uint8x16_t v_mask = vcgtq_u8(v_src, v_threshold);
+      if (vminvq_u8(v_mask) == 0) {
+        break;
+      }
+    }
 #elif 1
     constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
     for (; x <= length - num_vector_lanes; x += num_vector_lanes) {
@@ -528,7 +523,7 @@ class contours_detector {
   }
 };
 
-static void threshold(const std::uint8_t *__restrict src, std::size_t length,
+inline void threshold(const std::uint8_t *__restrict src, std::size_t length,
                       std::uint8_t threshold, std::uint8_t max_value,
                       std::uint8_t *__restrict dst) {
   std::size_t x = 0;
@@ -578,7 +573,7 @@ struct moments_t {
   double nu03;
 };
 
-static void update_central_moments(moments_t &moments) {
+inline void update_central_moments(moments_t &moments) {
   double cx = 0;
   double cy = 0;
   double mu20;
@@ -624,7 +619,7 @@ static void update_central_moments(moments_t &moments) {
   moments.nu03 = moments.mu03 * s3;
 }
 
-static inline moments_t compute_contour_moments(const std::vector<u32vec2> &contour) {
+inline moments_t compute_contour_moments(const std::vector<u32vec2> &contour) {
   moments_t m = {};
 
   if (contour.size() == 0) {
@@ -782,12 +777,11 @@ class blob_detector {
     std::vector<std::vector<std::vector<u32vec2>>> contours_list(threshs.size());
     contours_detector detector(image, width, height, stride);
 #if 0
-	        for (std::size_t layer = 0; layer < threshs.size(); layer++)
-            {
-                const auto thresh = threshs.at(layer);
-                auto& contours = contours_list.at(layer);
-                detector.detect(thresh, contours);
-	        }
+    for (std::size_t layer = 0; layer < threshs.size(); layer++) {
+      const auto thresh = threshs.at(layer);
+      auto &contours = contours_list.at(layer);
+      detector.detect(thresh, contours);
+    }
 #else
     detector.detect_multi_layer(threshs, contours_list);
 #endif
