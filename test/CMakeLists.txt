@@ -17,3 +17,7 @@ target_link_libraries(tests
     ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
     pthread
 )
+
+target_compile_definitions(tests PUBLIC
+    FMT_HEADER_ONLY
+)

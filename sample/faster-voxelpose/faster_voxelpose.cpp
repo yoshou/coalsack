@@ -1169,16 +1169,16 @@ class project_whole_node : public graph_node {
                              const std::vector<roi_data> &rois,
                              const std::array<float, 3> &grid_center) const {
     const auto num_bins =
-        std::accumulate(cube_size.begin(), cube_size.end(), 1, std::multiplies<int32_t>());
+        std::accumulate(cube_size.begin(), cube_size.end(), 1u, std::multiplies<uint32_t>());
     const auto num_joints = heatmaps.at(0).shape[2];
-    const auto num_cameras = heatmaps.size();
+    const auto num_cameras = static_cast<uint32_t>(heatmaps.size());
     const auto w = heatmaps.at(0).shape[0];
     const auto h = heatmaps.at(0).shape[1];
     const auto grid = compute_grid(grid_center);
 
     auto cubes = tensor<float, 4>::zeros({num_cameras, num_bins, 1, num_joints});
 
-    for (size_t c = 0; c < num_cameras; c++) {
+    for (uint32_t c = 0; c < num_cameras; c++) {
       const auto &roi = rois.at(c);
       const auto &&image_size = cv::Size2f(960, 512);
       const auto center = cv::Point2f(roi.center[0], roi.center[1]);
@@ -1233,7 +1233,10 @@ class project_whole_node : public graph_node {
         });
 
     const auto output_cubes =
-        merged_cubes.view<4>({cube_size[2], cube_size[1], cube_size[0], num_joints}).contiguous();
+        merged_cubes
+            .view<4>({static_cast<uint32_t>(cube_size[2]), static_cast<uint32_t>(cube_size[1]),
+                      static_cast<uint32_t>(cube_size[0]), num_joints})
+            .contiguous();
     return output_cubes;
   }
 
@@ -1364,8 +1367,10 @@ class center_decode_node : public graph_node {
 
       tensor<float, 2> topk_size({2, topk_2d_flatten_index.shape[0]});
       for (uint32_t i = 0; i < topk_2d_flatten_index.shape[0]; i++) {
-        topk_size.set({0, i}, flatten_size.get({topk_2d_flatten_index.get({i}), 0}));
-        topk_size.set({1, i}, flatten_size.get({topk_2d_flatten_index.get({i}), 1}));
+        topk_size.set({0, i},
+                      flatten_size.get({static_cast<uint32_t>(topk_2d_flatten_index.get({i})), 0}));
+        topk_size.set({1, i},
+                      flatten_size.get({static_cast<uint32_t>(topk_2d_flatten_index.get({i})), 1}));
       }
 
       const auto flatten_feats =
@@ -1375,7 +1380,9 @@ class center_decode_node : public graph_node {
       for (uint32_t i = 0; i < topk_2d_flatten_index.shape[0]; i++) {
         for (uint32_t j = 0; j < feats.shape[0]; j++) {
           for (uint32_t k = 0; k < feats.shape[3]; k++) {
-            topk_feats.set({j, k, i}, flatten_feats.get({j, topk_2d_flatten_index.get({i}), k}));
+            topk_feats.set(
+                {j, k, i},
+                flatten_feats.get({j, static_cast<uint32_t>(topk_2d_flatten_index.get({i})), k}));
           }
         }
       }
@@ -1724,13 +1731,14 @@ class project_individual_node : public graph_node {
     const auto num_bins = std::accumulate(fine_cube_size.begin(), fine_cube_size.end(), 1,
                                           std::multiplies<int32_t>());
     const auto num_joints = heatmaps.at(0).shape[2];
-    const auto num_cameras = heatmaps.size();
+    const auto num_cameras = static_cast<uint32_t>(heatmaps.size());
     const auto w = heatmaps.at(0).shape[0];
     const auto h = heatmaps.at(0).shape[1];
     const auto grid = compute_grid(grid_size, grid_center, fine_cube_size);
 
-    auto cubes = tensor<float, 5>::zeros(
-        {num_cameras, cube_size[2], cube_size[1], cube_size[0], num_joints});
+    auto cubes = tensor<float, 5>::zeros({num_cameras, static_cast<uint32_t>(cube_size[2]),
+                                          static_cast<uint32_t>(cube_size[1]),
+                                          static_cast<uint32_t>(cube_size[0]), num_joints});
 
     std::array<float, 3> scale, bias;
     for (size_t i = 0; i < 3; i++) {
@@ -1808,13 +1816,17 @@ class project_individual_node : public graph_node {
         }
       }
 
-      const auto cube =
-          grid_sample(heatmaps[c], individual_sample_grid, true)
-              .view<4>({end[2] - start[2], end[1] - start[1], end[0] - start[0], num_joints});
+      const auto cube = grid_sample(heatmaps[c], individual_sample_grid, true)
+                            .view<4>({static_cast<uint32_t>(end[2] - start[2]),
+                                      static_cast<uint32_t>(end[1] - start[1]),
+                                      static_cast<uint32_t>(end[0] - start[0]), num_joints});
 
       auto camera_cubes = cubes.view<4>(
-          {0, end[2] - start[2], end[1] - start[1], end[0] - start[0], num_joints},
-          {c, start[2] - center_tl[2], start[1] - center_tl[1], start[0] - center_tl[0], 0});
+          {0, static_cast<uint32_t>(end[2] - start[2]), static_cast<uint32_t>(end[1] - start[1]),
+           static_cast<uint32_t>(end[0] - start[0]), num_joints},
+          {static_cast<uint32_t>(c), static_cast<uint32_t>(start[2] - center_tl[2]),
+           static_cast<uint32_t>(start[1] - center_tl[1]),
+           static_cast<uint32_t>(start[0] - center_tl[0]), 0});
 
       camera_cubes.assign(
           cube, [](const float value1, const float value2, auto...) { return value1 + value2; });
@@ -1826,7 +1838,10 @@ class project_individual_node : public graph_node {
         });
 
     const auto output_cubes =
-        merged_cubes.view<4>({cube_size[2], cube_size[1], cube_size[0], num_joints}).contiguous();
+        merged_cubes
+            .view<4>({static_cast<uint32_t>(cube_size[2]), static_cast<uint32_t>(cube_size[1]),
+                      static_cast<uint32_t>(cube_size[0]), num_joints})
+            .contiguous();
     return std::forward_as_tuple(output_cubes, offset);
   }
 
@@ -1875,7 +1890,9 @@ class project_individual_node : public graph_node {
 
       const auto grid = compute_grid(individual_grid_size, grid_center, cube_size);
 
-      std::array<uint32_t, 4> grid_shape = {3, cube_size[2], cube_size[1], cube_size[0]};
+      std::array<uint32_t, 4> grid_shape = {3, static_cast<uint32_t>(cube_size[2]),
+                                            static_cast<uint32_t>(cube_size[1]),
+                                            static_cast<uint32_t>(cube_size[0])};
       std::array<uint32_t, 4> grid_stride = {1};
       for (size_t i = 1; i < grid_shape.size(); i++) {
         grid_stride[i] = grid_stride[i - 1] * grid_shape[i - 1];
@@ -2137,7 +2154,7 @@ class fusion_node : public graph_node {
         ofs << "POINTS " << num_points << std::endl;
         ofs << "DATA ascii" << std::endl;
 
-        for (size_t j = 0; j < num_points; j++) {
+        for (uint32_t j = 0; j < num_points; j++) {
           ofs << fused_pose_preds.get({0, j}) << " " << fused_pose_preds.get({1, j}) << " "
               << fused_pose_preds.get({2, j}) << " " << 16711680 << std::endl;
         }

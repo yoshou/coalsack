@@ -16,3 +16,7 @@ target_link_libraries(greeting
     ${CMAKE_BINARY_DIR}/libjpeg-turbo/lib/libturbojpeg.a
     $<$<BOOL:${ENABLE_RS_D435_EXT}>:realsense2::realsense2>
 )
+
+target_compile_definitions(greeting PUBLIC
+    FMT_HEADER_ONLY
+)

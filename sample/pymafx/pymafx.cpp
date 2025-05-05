@@ -614,20 +614,24 @@ onnx_runtime_session_pool onnx_runtime_node::sessions;
 CEREAL_REGISTER_TYPE(onnx_runtime_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, onnx_runtime_node)
 
-static auto l2norm(auto a, auto b, auto c) {
+template <typename T>
+static T l2norm(T a, T b, T c) {
   constexpr auto eps = 1e-12f;
   return std::max({std::sqrt(a * a + b * b + c * c), eps});
 };
 
-static auto dot(auto a0, auto a1, auto a2, auto b0, auto b1, auto b2) {
+template <typename T>
+static T dot(T a0, T a1, T a2, T b0, T b1, T b2) {
   return a0 * b0 + a1 * b1 + a2 * b2;
 };
 
-static auto cross(auto a0, auto a1, auto a2, auto b0, auto b1, auto b2) {
+template <typename T>
+static std::tuple<T, T, T> cross(T a0, T a1, T a2, T b0, T b1, T b2) {
   return std::make_tuple(a1 * b2 - a2 * b1, a2 * b0 - a0 * b2, a0 * b1 - a1 * b0);
 };
 
-static auto normalize(auto a, auto b, auto c) {
+template <typename T>
+static std::tuple<T, T, T> normalize(T a, T b, T c) {
   const auto norm = l2norm(a, b, c);
   return std::make_tuple(a / norm, b / norm, c / norm);
 };
@@ -1095,8 +1099,8 @@ class optimize_body_mesh_parameter_node : public graph_node {
 
     const auto rel_joints =
         tpose_joints.view({tpose_joints.shape[0], 21, tpose_joints.shape[2]}, {0, 1, 0})
-            .transform([&](const float value, const size_t i, const size_t j, auto...) {
-              return value - tpose_joints.get({i, parents.get({j + 1})});
+            .transform([&](const float value, const uint32_t i, const uint32_t j, auto...) {
+              return value - tpose_joints.get({i, static_cast<uint32_t>(parents.get({j + 1}))});
             });
 
     tensor<float, 4> transforms({4, 4, pose.shape[2] + 1, pose.shape[3]});
@@ -1133,8 +1137,9 @@ class optimize_body_mesh_parameter_node : public graph_node {
           for (uint32_t l = 0; l < 4; l++) {
             for (uint32_t m = 0; m < 4; m++) {
               abs_transform.set(
-                  {l, k}, abs_transform.get({l, k}) + transforms.get({m, k, parents.get({j}), i}) *
-                                                          transforms.get({l, m, j, i}));
+                  {l, k}, abs_transform.get({l, k}) +
+                              transforms.get({m, k, static_cast<uint32_t>(parents.get({j})), i}) *
+                                  transforms.get({l, m, j, i}));
             }
           }
         }
@@ -1452,8 +1457,8 @@ class optimize_body_mesh_parameter_node : public graph_node {
         }
       }
 
-      for (size_t m = 0; m < 3; m++) {
-        for (size_t n = 0; n < 3; n++) {
+      for (uint32_t m = 0; m < 3; m++) {
+        for (uint32_t n = 0; n < 3; n++) {
           result.set({n, m, i}, rot_mat[m][n]);
         }
       }
@@ -1604,12 +1609,12 @@ class optimize_body_mesh_parameter_node : public graph_node {
             });
 
         const auto lelbow_twist_angle_axis =
-            lelbow_twist_axis.transform([&](const float value, const size_t i, const size_t j) {
+            lelbow_twist_axis.transform([&](const float value, const uint32_t i, const uint32_t j) {
               return value * norm_lelbow_twist_angle.get({j});
             });
 
         const auto relbow_twist_angle_axis =
-            relbow_twist_axis.transform([&](const float value, const size_t i, const size_t j) {
+            relbow_twist_axis.transform([&](const float value, const uint32_t i, const uint32_t j) {
               return value * norm_relbow_twist_angle.get({j});
             });
 

@@ -24,5 +24,6 @@ target_link_libraries(depthai_color
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
+    FMT_HEADER_ONLY
     $<$<BOOL:${ENABLE_DEPTHAI_EXT}>:ENABLE_DEPTHAI_EXT>
 )

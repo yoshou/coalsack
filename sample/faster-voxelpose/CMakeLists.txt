@@ -28,6 +28,7 @@ target_link_libraries(faster_voxelpose
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
+    FMT_HEADER_ONLY
     $<$<BOOL:${ENABLE_RS_D435_EXT}>:ENABLE_RS_D435_EXT>
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:ENABLE_LIBCAMERA_EXT>
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:ENABLE_ONNXRUNTIME_EXT>

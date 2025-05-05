@@ -1038,9 +1038,9 @@ class project_node : public graph_node {
       const std::vector<tensor<float, 4>> &heatmaps, const std::vector<camera_data> &cameras,
       const std::vector<roi_data> &rois, const std::array<float, 3> &grid_center) const {
     const auto num_bins =
-        std::accumulate(cube_size.begin(), cube_size.end(), 1, std::multiplies<int32_t>());
+        std::accumulate(cube_size.begin(), cube_size.end(), 1u, std::multiplies<uint32_t>());
     const auto num_joints = heatmaps.at(0).shape[2];
-    const auto num_cameras = heatmaps.size();
+    const auto num_cameras = static_cast<uint32_t>(heatmaps.size());
     const auto w = heatmaps.at(0).shape[0];
     const auto h = heatmaps.at(0).shape[1];
     const auto grid = compute_grid(grid_center);
@@ -1048,7 +1048,7 @@ class project_node : public graph_node {
     auto cubes = tensor<float, 4>::zeros({num_cameras, num_bins, 1, num_joints});
     auto bounding = tensor<float, 4>::zeros({num_cameras, num_bins, 1, 1});
 
-    for (size_t c = 0; c < num_cameras; c++) {
+    for (uint32_t c = 0; c < num_cameras; c++) {
       const auto &roi = rois.at(c);
       const auto &&image_size = cv::Size2f(960, 512);
       const auto center = cv::Point2f(roi.center[0], roi.center[1]);
@@ -1114,7 +1114,10 @@ class project_node : public graph_node {
             });
 
     const auto output_cubes =
-        merged_cubes.view<4>({cube_size[2], cube_size[1], cube_size[0], num_joints}).contiguous();
+        merged_cubes
+            .view<4>({static_cast<uint32_t>(cube_size[2]), static_cast<uint32_t>(cube_size[1]),
+                      static_cast<uint32_t>(cube_size[0]), num_joints})
+            .contiguous();
     return std::forward_as_tuple(output_cubes, grid);
   }
 
