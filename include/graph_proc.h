@@ -11,6 +11,7 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/tuple.hpp>
 #include <cereal/types/vector.hpp>
+#include <cereal/types/atomic.hpp>
 #include <functional>
 #include <iostream>
 #include <map>

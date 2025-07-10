@@ -480,7 +480,7 @@ class timestamp_node : public graph_node {
 
 class frame_demux_node : public graph_node {
  public:
- frame_demux_node() : graph_node() {}
+  frame_demux_node() : graph_node() {}
 
   graph_edge_ptr add_output(std::string name) {
     auto outputs = get_outputs();
@@ -516,13 +516,243 @@ class frame_demux_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<object_message>>(message)) {
-      const auto& obj_msg = frame_msg->get_data();
+      const auto &obj_msg = frame_msg->get_data();
       for (auto field : obj_msg.get_fields()) {
         try {
           get_output(field.first)->send(field.second);
         } catch (const std::invalid_argument &e) {
           spdlog::warn(e.what());
         }
+      }
+    }
+  }
+};
+
+class frame_number_numbering_node : public graph_node {
+  uint64_t frame_number;
+  graph_edge_ptr output;
+
+ public:
+  frame_number_numbering_node()
+      : graph_node(), frame_number(0), output(std::make_shared<graph_edge>(this)) {
+    set_output(output);
+  }
+
+  virtual std::string get_proc_name() const override { return "frame_number_numbering_node"; }
+
+  template <typename Archive>
+  void serialize(Archive &archive) {
+    archive(frame_number);
+  }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
+      msg->set_frame_number(frame_number++);
+      output->send(msg);
+    }
+    if (auto msg = std::dynamic_pointer_cast<object_message>(message)) {
+      for (const auto &[name, field] : msg->get_fields()) {
+        if (auto frame_msg = std::dynamic_pointer_cast<frame_message_base>(field)) {
+          frame_msg->set_frame_number(frame_number);
+        }
+      }
+      frame_number++;
+      output->send(msg);
+    }
+  }
+};
+
+template <typename Task>
+class task_queue {
+  const uint32_t thread_count;
+  std::unique_ptr<std::thread[]> threads;
+  std::queue<Task> tasks{};
+  std::mutex tasks_mutex;
+  std::condition_variable condition;
+  std::atomic_bool running{true};
+
+  void worker() {
+    for (;;) {
+      Task task;
+
+      {
+        std::unique_lock<std::mutex> lock(tasks_mutex);
+        condition.wait(lock, [&] { return !tasks.empty() || !running; });
+        if (!running) {
+          return;
+        }
+
+        task = std::move(tasks.front());
+        tasks.pop();
+      }
+
+      task();
+    }
+  }
+
+ public:
+  task_queue(const uint32_t thread_count = std::thread::hardware_concurrency())
+      : thread_count(thread_count), threads(std::make_unique<std::thread[]>(thread_count)) {
+    for (uint32_t i = 0; i < thread_count; ++i) {
+      threads[i] = std::thread(&task_queue::worker, this);
+    }
+  }
+
+  void push_task(const Task &task) {
+    {
+      const std::lock_guard<std::mutex> lock(tasks_mutex);
+
+      if (!running) {
+        throw std::runtime_error("Cannot schedule new task after shutdown.");
+      }
+
+      tasks.push(task);
+    }
+
+    condition.notify_one();
+  }
+  ~task_queue() {
+    {
+      std::lock_guard<std::mutex> lock(tasks_mutex);
+      running = false;
+    }
+
+    condition.notify_all();
+
+    for (uint32_t i = 0; i < thread_count; ++i) {
+      threads[i].join();
+    }
+  }
+  size_t size() const { return tasks.size(); }
+};
+
+class parallel_queue_node : public graph_node {
+  std::unique_ptr<task_queue<std::function<void()>>> workers;
+  graph_edge_ptr output;
+
+  uint32_t num_threads;
+
+ public:
+  parallel_queue_node()
+      : graph_node(),
+        workers(),
+        output(std::make_shared<graph_edge>(this)),
+        num_threads(std::thread::hardware_concurrency()) {
+    set_output(output);
+  }
+
+  virtual std::string get_proc_name() const override { return "parallel_queue_node"; }
+
+  void set_num_threads(uint32_t value) { num_threads = value; }
+  uint32_t get_num_threads() const { return num_threads; }
+
+  template <typename Archive>
+  void serialize(Archive &archive) {
+    archive(num_threads);
+  }
+
+  virtual void run() override { workers.reset(new task_queue<std::function<void()>>(num_threads)); }
+
+  virtual void stop() override { workers.reset(); }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
+      workers->push_task([this, msg]() { output->send(msg); });
+    }
+  }
+};
+
+class greater_graph_message_ptr {
+ public:
+  bool operator()(const graph_message_ptr &lhs, const graph_message_ptr &rhs) const {
+    return std::dynamic_pointer_cast<frame_message_base>(lhs)->get_frame_number() >
+           std::dynamic_pointer_cast<frame_message_base>(rhs)->get_frame_number();
+  }
+};
+
+class frame_number_ordering_node : public graph_node {
+  graph_edge_ptr output;
+  std::mutex mtx;
+
+  std::priority_queue<graph_message_ptr, std::deque<graph_message_ptr>, greater_graph_message_ptr>
+      messages;
+
+  std::shared_ptr<std::thread> th;
+  std::atomic_bool running;
+  std::condition_variable cv;
+  std::uint32_t max_size;
+  std::atomic_ullong frame_number;
+
+ public:
+  frame_number_ordering_node()
+      : graph_node(), output(std::make_shared<graph_edge>(this)), max_size(100), frame_number(0) {
+    set_output(output);
+  }
+
+  virtual std::string get_proc_name() const override { return "frame_number_ordering_node"; }
+
+  void set_max_size(std::uint32_t value) { max_size = value; }
+  std::uint32_t get_max_size() const { return max_size; }
+
+  template <typename Archive>
+  void serialize(Archive &archive) {
+    archive(max_size, frame_number);
+  }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (!running) {
+      return;
+    }
+
+    if (input_name == "default") {
+      std::lock_guard<std::mutex> lock(mtx);
+
+      if (messages.size() >= max_size) {
+        std::cout << "Fifo overflow" << std::endl;
+        spdlog::error("Fifo overflow");
+      } else {
+        messages.push(message);
+        cv.notify_one();
+      }
+    }
+  }
+
+  virtual void run() override {
+    running = true;
+    th.reset(new std::thread([this]() {
+      while (running.load()) {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [&] {
+          return (!messages.empty() && std::dynamic_pointer_cast<frame_message_base>(messages.top())
+                                               ->get_frame_number() == frame_number) ||
+                 !running;
+        });
+
+        if (!running) {
+          break;
+        }
+        if (!messages.empty() &&
+            std::dynamic_pointer_cast<frame_message_base>(messages.top())->get_frame_number() ==
+                frame_number) {
+          const auto message = messages.top();
+          messages.pop();
+          output->send(message);
+
+          frame_number++;
+        }
+      }
+    }));
+  }
+
+  virtual void stop() override {
+    if (running.load()) {
+      {
+        std::lock_guard<std::mutex> lock(mtx);
+        running.store(false);
+      }
+      cv.notify_one();
+      if (th && th->joinable()) {
+        th->join();
       }
     }
   }
@@ -558,3 +788,12 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::timestamp_n
 
 CEREAL_REGISTER_TYPE(coalsack::frame_demux_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_demux_node)
+
+CEREAL_REGISTER_TYPE(coalsack::frame_number_numbering_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_number_numbering_node)
+
+CEREAL_REGISTER_TYPE(coalsack::parallel_queue_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::parallel_queue_node)
+
+CEREAL_REGISTER_TYPE(coalsack::frame_number_ordering_node)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_number_ordering_node)
