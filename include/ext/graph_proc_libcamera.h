@@ -286,11 +286,19 @@ class video_time_sync_control_node : public graph_node {
   graph_edge_ptr output;
   double gain;
   double interval;
+  double min_interval;
+  double max_interval;
   std::atomic<double> ref_timestamp;
 
  public:
   video_time_sync_control_node()
-      : graph_node(), output(std::make_shared<graph_edge>(this)), gain(0) {
+      : graph_node(),
+        output(std::make_shared<graph_edge>(this)),
+        gain(0),
+        interval(1000.0 / 30),
+        min_interval(1000.0 / 40),
+        max_interval(1000.0 / 20),
+        ref_timestamp(0) {
     set_output(output);
   }
 
@@ -302,6 +310,10 @@ class video_time_sync_control_node : public graph_node {
   void set_gain(double value) { gain = value; }
   double get_interval() const { return interval; }
   void set_interval(double value) { interval = value; }
+  double get_min_interval() const { return min_interval; }
+  void set_min_interval(double value) { min_interval = value; }
+  double get_max_interval() const { return max_interval; }
+  void set_max_interval(double value) { max_interval = value; }
 
   double calc_interval_ref(double timestamp) const {
     const auto diff = std::fmod(timestamp - ref_timestamp, interval);
@@ -311,7 +323,7 @@ class video_time_sync_control_node : public graph_node {
       const auto sign = diff > 0 ? -1.0 : 1.0;
       adj_diff = sign * (interval - std::abs(diff));
     }
-    double interval_ref = std::min(std::max(interval - adj_diff * gain, 1000.0 / 100), 1000.0 / 80);
+    double interval_ref = std::min(std::max(interval - adj_diff * gain, min_interval), max_interval);
     spdlog::debug("Video timing diff: {0} [ms], Interval ref: {1}", adj_diff, interval_ref);
     return interval_ref;
   }
@@ -339,6 +351,8 @@ class video_time_sync_control_node : public graph_node {
   void serialize(Archive &archive) {
     archive(gain);
     archive(interval);
+    archive(min_interval);
+    archive(max_interval);
   }
 };
 }  // namespace coalsack
