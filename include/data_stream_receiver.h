@@ -314,7 +314,7 @@ class data_stream_tcp_receiver {
   std::condition_variable cv;
 
  public:
-  data_stream_tcp_receiver(tcp::endpoint endpoint, bool enable_broadcast = false)
+  data_stream_tcp_receiver(tcp::endpoint endpoint)
       : io_context(), socket_(io_context), acceptor_(io_context, endpoint), running(false), mtx() {}
 
   tcp::endpoint local_endpoint() const { return acceptor_.local_endpoint(); }
