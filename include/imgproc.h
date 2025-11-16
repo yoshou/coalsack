@@ -19,7 +19,7 @@ static void create_gaussian_kernel(float *kernel, int size, float sigma) {
 
 static inline void filter_row(const std::uint8_t *__restrict src, const std::size_t width,
                               const float *__restrict kernel, const std::size_t kernel_width,
-                              float *__restrict dst, bool symmetric = true) {
+                              float *__restrict dst) {
   const std::size_t radius_x = kernel_width / 2;
   std::size_t x = 0;
   for (; x < radius_x; x++) {
@@ -117,7 +117,7 @@ static inline void filter_row(const std::uint8_t *__restrict src, const std::siz
 
 static inline void filter_col(const float **__restrict src, const std::size_t width,
                               const float *__restrict kernel, const std::size_t kernel_height,
-                              std::uint8_t *__restrict dst, bool symmetric = true) {
+                              std::uint8_t *__restrict dst) {
   std::size_t x = 0;
 #if USE_NEON
   const float32x4_t v_coeff0 = vdupq_n_f32(kernel[0]);

@@ -54,9 +54,9 @@ class depthai_color_camera_node : public graph_node {
 
   virtual void run() override {
     running = true;
-    th.reset(new std::thread([this]() {
 
 #ifdef ENABLE_DEPTHAI_EXT
+    th.reset(new std::thread([this]() {
       dai::Pipeline pipeline;
 
       auto camera = pipeline.create<dai::node::ColorCamera>();
@@ -145,8 +145,8 @@ class depthai_color_camera_node : public graph_node {
 
         output->send(msg);
       }
-#endif
     }));
+#endif
   }
 
   virtual void stop() override {

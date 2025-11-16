@@ -290,9 +290,6 @@ struct frame_number_sync_config {
   sync_info create_sync_info(std::shared_ptr<frame_message_base> message) {
     return frame_number(message->get_frame_number());
   }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
 };
 
 template <typename Config = approximate_time_sync_config>
@@ -409,7 +406,7 @@ class tiling_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
       std::vector<const image *> images;
       std::shared_ptr<stream_profile> profile;
@@ -466,10 +463,7 @@ class timestamp_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "timestamp_node"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (const auto frame_msg = std::dynamic_pointer_cast<image_frame_message>(message)) {
       auto msg = std::make_shared<number_message>();
       msg->set_value(frame_msg->get_timestamp());
@@ -514,7 +508,7 @@ class frame_demux_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<object_message>>(message)) {
       const auto &obj_msg = frame_msg->get_data();
       for (auto field : obj_msg.get_fields()) {
@@ -545,7 +539,7 @@ class frame_number_numbering_node : public graph_node {
     archive(frame_number);
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
       msg->set_frame_number(frame_number++);
       output->send(msg);
@@ -655,7 +649,7 @@ class parallel_queue_node : public graph_node {
 
   virtual void stop() override { workers.reset(); }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
       workers->push_task([this, msg]() { output->send(msg); });
     }

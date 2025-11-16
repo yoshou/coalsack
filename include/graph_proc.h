@@ -1185,9 +1185,6 @@ class p2p_tcp_talker_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "data_tcp_talker"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
   virtual void run() override {
     running = true;
     th.reset(new std::thread([&]() { io_context.run(); }));
@@ -1597,14 +1594,11 @@ class console_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "console"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
   virtual void run() override {}
 
   virtual void stop() override {}
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto text = std::dynamic_pointer_cast<text_message>(message)) {
       (*output) << text->get_text();
     }
@@ -1628,7 +1622,7 @@ class buffer_node : public heartbeat_node {
     archive(cereal::base_class<heartbeat_node>(this));
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     std::lock_guard<std::mutex> lock(mtx);
 
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
@@ -1687,9 +1681,6 @@ class clock_buffer_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "clock_buffer"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (input_name == "default") {
       std::lock_guard<std::mutex> lock(mtx);
@@ -1712,9 +1703,6 @@ class mux_node : public graph_node {
   mux_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
   virtual std::string get_proc_name() const override { return "mux_node"; }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     auto msg = std::make_shared<object_message>();
@@ -1759,7 +1747,7 @@ class demux_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
       for (auto field : obj_msg->get_fields()) {
         try {

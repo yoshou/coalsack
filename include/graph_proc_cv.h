@@ -71,7 +71,7 @@ class image_viz_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<image_message>(message)) {
       this->image_msg = image_msg;
     }
@@ -97,7 +97,7 @@ class image_write_node : public graph_node {
 
   virtual void run() override {}
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<image_message>(message)) {
       const auto &image = image_msg->get_image();
       cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data(),
@@ -208,7 +208,7 @@ class video_viz_node : public graph_node {
 
   virtual void stop() override {}
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
       const auto &image = image_msg->get_data();
 
@@ -259,7 +259,7 @@ class image_transform_node : public graph_node {
 
   virtual void transform(const image &src_image, image &dst_image) = 0;
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
       const auto &src_image = image_msg->get_data();
 
@@ -276,9 +276,6 @@ class image_transform_node : public graph_node {
       output->send(msg);
     }
   }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
 };
 
 class threshold_node : public image_transform_node {
@@ -621,7 +618,7 @@ class orb_detector_node : public graph_node {
 
   cv::Ptr<cv::ORB> get_detector() const { return detector; }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
       const auto &src_image = image_msg->get_data();
       int cv_type = convert_to_cv_type(src_image.get_format());
@@ -717,7 +714,7 @@ class simple_blob_detector_node : public graph_node {
   cv::SimpleBlobDetector::Params &get_parameters() { return params; }
   void set_parameters(const cv::SimpleBlobDetector::Params &params) { this->params = params; }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
       const auto &src_image = image_msg->get_data();
       int cv_type = convert_to_cv_type(src_image.get_format());
@@ -876,7 +873,7 @@ class detect_circle_grid_node : public graph_node {
 
   virtual void finalize() override { detector.release(); }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
       const auto &src_image = image_msg->get_data();
       cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(),
