@@ -1151,7 +1151,7 @@ class tensor {
   static tensor zeros(const shape_type &shape) {
     tensor new_tensor(shape);
     assign(new_tensor.data.begin(), new_tensor.shape, new_tensor.stride,
-           [](const float value, auto...) { return static_cast<elem_type>(0); });
+           [](auto...) { return static_cast<elem_type>(0); });
     return new_tensor;
   }
 

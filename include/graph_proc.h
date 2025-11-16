@@ -37,7 +37,7 @@ class graph_message {
   virtual ~graph_message() = default;
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize([[maybe_unused]] Archive &archive) {}
 };
 
 using graph_message_ptr = std::shared_ptr<graph_message>;
@@ -211,7 +211,7 @@ class graph_node {
   }
   const std::unordered_map<std::string, graph_edge_ptr> &get_inputs() const { return inputs; }
 
-  virtual void process(std::string input_name, graph_message_ptr message) {}
+  virtual void process([[maybe_unused]] std::string input_name, [[maybe_unused]] graph_message_ptr message) {}
 
   void set_parent(subgraph *g) { this->g = g; }
 
@@ -1049,10 +1049,7 @@ class passthrough_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "passthrough"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     output->send(message);
   }
 };
@@ -1113,9 +1110,6 @@ class p2p_talker_node : public graph_node {
   }
 
   virtual std::string get_proc_name() const override { return "data_talker"; }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
 
   virtual void run() override {
     running = true;
