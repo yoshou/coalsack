@@ -287,7 +287,7 @@ class threshold_node : public image_transform_node {
   threshold_node()
       : image_transform_node(), thresh(0), maxval(255), thresh_type(cv::THRESH_BINARY) {}
 
-  virtual std::string get_proc_name() const override { return "threshold_node"; }
+  virtual std::string get_proc_name() const override { return "threshold"; }
 
   double get_threshold() const { return thresh; }
   void set_threshold(double value) { thresh = value; }
@@ -327,7 +327,7 @@ class mask_node : public image_transform_node {
  public:
   mask_node() : image_transform_node(), mask() {}
 
-  virtual std::string get_proc_name() const override { return "mask_node"; }
+  virtual std::string get_proc_name() const override { return "mask"; }
 
   void set_mask(const image &value) { mask = value; }
 
@@ -380,7 +380,7 @@ class gaussian_blur_node : public image_transform_node {
   gaussian_blur_node()
       : image_transform_node(), kernel_width(1), kernel_height(1), sigma_x(1.0), sigma_y(1.0) {}
 
-  virtual std::string get_proc_name() const override { return "gaussian_blur_node"; }
+  virtual std::string get_proc_name() const override { return "gaussian_blur"; }
 
   void set_kernel_width(int value) { kernel_width = value; }
   int get_kernel_width() const { return kernel_width; }
@@ -426,7 +426,7 @@ class resize_node : public image_transform_node {
  public:
   resize_node() : width(0), height(0), interpolation(cv::INTER_LINEAR) {}
 
-  virtual std::string get_proc_name() const override { return "resize_node"; }
+  virtual std::string get_proc_name() const override { return "resize"; }
 
   std::uint32_t get_width() const { return width; }
   void set_width(std::uint32_t value) { width = value; }
@@ -464,7 +464,7 @@ class scale_abs_node : public image_transform_node {
  public:
   scale_abs_node() : image_transform_node(), alpha(1.0), beta(0.0) {}
 
-  virtual std::string get_proc_name() const override { return "scale_abs_node"; }
+  virtual std::string get_proc_name() const override { return "scale_abs"; }
 
   double get_alpha() const { return alpha; }
   void set_alpha(double value) { alpha = value; }
@@ -501,7 +501,7 @@ class scale_node : public image_transform_node {
  public:
   scale_node() : image_transform_node(), alpha(1.0), beta(0.0) {}
 
-  virtual std::string get_proc_name() const override { return "scale_node"; }
+  virtual std::string get_proc_name() const override { return "scale"; }
 
   double get_alpha() const { return alpha; }
   void set_alpha(double value) { alpha = value; }
@@ -614,7 +614,7 @@ class orb_detector_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "orb_detector_node"; }
+  virtual std::string get_proc_name() const override { return "orb_detector"; }
 
   cv::Ptr<cv::ORB> get_detector() const { return detector; }
 
@@ -708,7 +708,7 @@ class simple_blob_detector_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "simple_blob_detector_node"; }
+  virtual std::string get_proc_name() const override { return "simple_blob_detector"; }
 
   const cv::SimpleBlobDetector::Params &get_parameters() const { return params; }
   cv::SimpleBlobDetector::Params &get_parameters() { return params; }

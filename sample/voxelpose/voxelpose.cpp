@@ -159,7 +159,7 @@ class panoptic_data_loader_node : public graph_node {
     camera_list = value;
   }
 
-  virtual std::string get_proc_name() const override { return "panoptic_data_loader_node"; }
+  virtual std::string get_proc_name() const override { return "panoptic_data_loader"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -349,7 +349,7 @@ class object_map_node : public graph_node {
  public:
   object_map_node() : graph_node() {}
 
-  virtual std::string get_proc_name() const override { return "object_map_node"; }
+  virtual std::string get_proc_name() const override { return "object_map"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -412,7 +412,7 @@ class normalize_node : public graph_node {
 
   void set_std(const std::vector<float> &value) { std = value; }
 
-  virtual std::string get_proc_name() const override { return "normalize_node"; }
+  virtual std::string get_proc_name() const override { return "normalize"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -457,7 +457,7 @@ class onnx_runtime_node : public graph_node {
 
   void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
 
-  virtual std::string get_proc_name() const override { return "onnx_runtime_node"; }
+  virtual std::string get_proc_name() const override { return "onnx_runtime"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -642,7 +642,7 @@ class tensorflow_lite_node : public graph_node {
 
   void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
 
-  virtual std::string get_proc_name() const override { return "tensorflow_lite_node"; }
+  virtual std::string get_proc_name() const override { return "tensorflow_lite"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -829,7 +829,7 @@ class pre_project_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "pre_project_node"; }
+  virtual std::string get_proc_name() const override { return "pre_project"; }
 
   std::array<float, 3> get_grid_center() const { return grid_center; }
   void set_grid_center(const std::array<float, 3> &value) { grid_center = value; }
@@ -907,7 +907,7 @@ class project_node : public graph_node {
  public:
   project_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
-  virtual std::string get_proc_name() const override { return "project_node"; }
+  virtual std::string get_proc_name() const override { return "project"; }
 
   std::array<float, 3> get_grid_size() const { return grid_size; }
   void set_grid_size(const std::array<float, 3> &value) { grid_size = value; }
@@ -1194,7 +1194,7 @@ class proposal_node : public graph_node {
  public:
   proposal_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
-  virtual std::string get_proc_name() const override { return "proposal_node"; }
+  virtual std::string get_proc_name() const override { return "proposal"; }
 
   void set_max_num(uint32_t value) { max_num = value; }
   void set_threshold(float value) { threshold = value; }
@@ -1287,7 +1287,7 @@ class iterate_proposal_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "iterate_proposal_node"; }
+  virtual std::string get_proc_name() const override { return "iterate_proposal"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -1355,7 +1355,7 @@ class soft_argmax_node : public graph_node {
 
   void set_beta(float value) { beta = value; }
 
-  virtual std::string get_proc_name() const override { return "soft_argmax_node"; }
+  virtual std::string get_proc_name() const override { return "soft_argmax"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {

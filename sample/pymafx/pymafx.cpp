@@ -157,7 +157,7 @@ class image_loader_node : public heartbeat_node {
   const std::string &get_filename() const { return filename; }
   void set_flip(bool value) { flip = value; }
 
-  virtual std::string get_proc_name() const override { return "image_loader_node"; }
+  virtual std::string get_proc_name() const override { return "image_loader"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -215,7 +215,7 @@ class parameter_loader_node : public graph_node {
 
   const std::string &get_filename() const { return filename; }
 
-  virtual std::string get_proc_name() const override { return "parameter_loader_node"; }
+  virtual std::string get_proc_name() const override { return "parameter_loader"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -280,7 +280,7 @@ class normalize_node : public graph_node {
 
   void set_std(const std::vector<float> &value) { std = value; }
 
-  virtual std::string get_proc_name() const override { return "normalize_node"; }
+  virtual std::string get_proc_name() const override { return "normalize"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -399,7 +399,7 @@ class onnx_runtime_node : public graph_node {
 
   void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
 
-  virtual std::string get_proc_name() const override { return "onnx_runtime_node"; }
+  virtual std::string get_proc_name() const override { return "onnx_runtime"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -717,7 +717,7 @@ class prepare_body_mesh_parameter_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "prepare_body_mesh_parameter_node"; }
+  virtual std::string get_proc_name() const override { return "prepare_body_mesh_parameter"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -820,7 +820,7 @@ class prepare_face_mesh_parameter_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "prepare_face_mesh_parameter_node"; }
+  virtual std::string get_proc_name() const override { return "prepare_face_mesh_parameter"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -904,7 +904,7 @@ class prepare_hand_mesh_parameter_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "prepare_hand_mesh_parameter_node"; }
+  virtual std::string get_proc_name() const override { return "prepare_hand_mesh_parameter"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -979,7 +979,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
 
   const std::string &get_filename() const { return filename; }
 
-  virtual std::string get_proc_name() const override { return "optimize_body_mesh_parameter_node"; }
+  virtual std::string get_proc_name() const override { return "optimize_body_mesh_parameter"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -1724,7 +1724,7 @@ class object_map_node : public graph_node {
  public:
   object_map_node() : graph_node() {}
 
-  virtual std::string get_proc_name() const override { return "object_map_node"; }
+  virtual std::string get_proc_name() const override { return "object_map"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -1779,7 +1779,7 @@ class render_node : public graph_node {
  public:
   render_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
-  virtual std::string get_proc_name() const override { return "render_node"; }
+  virtual std::string get_proc_name() const override { return "render"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -1801,7 +1801,7 @@ class project_joint_iwp_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "project_joint_iwp_node"; }
+  virtual std::string get_proc_name() const override { return "project_joint_iwp"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -1922,7 +1922,7 @@ class extract_point_2d_node : public graph_node {
 
   void set_index(uint32_t value) { index = value; }
 
-  virtual std::string get_proc_name() const override { return "extract_point_2d_node"; }
+  virtual std::string get_proc_name() const override { return "extract_point_2d"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {

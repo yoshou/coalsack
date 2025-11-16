@@ -307,7 +307,7 @@ class sync_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "sync_node"; }
+  virtual std::string get_proc_name() const override { return "sync"; }
 
   void set_config(sync_config config) { this->config = config; }
   const sync_config &get_config() const { return config; }
@@ -351,7 +351,7 @@ class tiling_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "tiling_node"; }
+  virtual std::string get_proc_name() const override { return "tiling"; }
 
   void set_num_rows(std::uint32_t value) { num_rows = value; }
   void set_num_cols(std::uint32_t value) { num_cols = value; }
@@ -461,7 +461,7 @@ class timestamp_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "timestamp_node"; }
+  virtual std::string get_proc_name() const override { return "timestamp"; }
 
   virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (const auto frame_msg = std::dynamic_pointer_cast<image_frame_message>(message)) {
@@ -487,7 +487,7 @@ class frame_demux_node : public graph_node {
     return it->second;
   }
 
-  virtual std::string get_proc_name() const override { return "frame_demux_node"; }
+  virtual std::string get_proc_name() const override { return "frame_demux"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -532,7 +532,7 @@ class frame_number_numbering_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "frame_number_numbering_node"; }
+  virtual std::string get_proc_name() const override { return "frame_number_numbering"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -635,7 +635,7 @@ class parallel_queue_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "parallel_queue_node"; }
+  virtual std::string get_proc_name() const override { return "parallel_queue"; }
 
   void set_num_threads(uint32_t value) { num_threads = value; }
   uint32_t get_num_threads() const { return num_threads; }
@@ -683,7 +683,7 @@ class frame_number_ordering_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "frame_number_ordering_node"; }
+  virtual std::string get_proc_name() const override { return "frame_number_ordering"; }
 
   void set_max_size(std::uint32_t value) { max_size = value; }
   std::uint32_t get_max_size() const { return max_size; }

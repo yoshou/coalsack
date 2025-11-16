@@ -1696,7 +1696,7 @@ class mux_node : public graph_node {
  public:
   mux_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
-  virtual std::string get_proc_name() const override { return "mux_node"; }
+  virtual std::string get_proc_name() const override { return "mux"; }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     auto msg = std::make_shared<object_message>();
@@ -1720,7 +1720,7 @@ class demux_node : public graph_node {
     return it->second;
   }
 
-  virtual std::string get_proc_name() const override { return "demux_node"; }
+  virtual std::string get_proc_name() const override { return "demux"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -1768,7 +1768,7 @@ class fifo_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "fifo_node"; }
+  virtual std::string get_proc_name() const override { return "fifo"; }
 
   void set_max_size(std::uint32_t value) { max_size = value; }
   std::uint32_t get_max_size() const { return max_size; }

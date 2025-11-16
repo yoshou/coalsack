@@ -60,7 +60,7 @@ class fast_blob_detector_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "fast_blob_detector_node"; }
+  virtual std::string get_proc_name() const override { return "fast_blob_detector"; }
 
   const blob_detector_params &get_parameters() const { return params; }
   blob_detector_params &get_parameters() { return params; }
@@ -154,7 +154,7 @@ class charuco_detector_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "charuco_detector_node"; }
+  virtual std::string get_proc_name() const override { return "charuco_detector"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}

@@ -162,7 +162,7 @@ class panoptic_data_loader_node : public graph_node {
     camera_list = value;
   }
 
-  virtual std::string get_proc_name() const override { return "panoptic_data_loader_node"; }
+  virtual std::string get_proc_name() const override { return "panoptic_data_loader"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -352,7 +352,7 @@ class object_map_node : public graph_node {
  public:
   object_map_node() : graph_node() {}
 
-  virtual std::string get_proc_name() const override { return "object_map_node"; }
+  virtual std::string get_proc_name() const override { return "object_map"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -415,7 +415,7 @@ class normalize_node : public graph_node {
 
   void set_std(const std::vector<float> &value) { std = value; }
 
-  virtual std::string get_proc_name() const override { return "normalize_node"; }
+  virtual std::string get_proc_name() const override { return "normalize"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {
@@ -534,7 +534,7 @@ class onnx_runtime_node : public graph_node {
 
   void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
 
-  virtual std::string get_proc_name() const override { return "onnx_runtime_node"; }
+  virtual std::string get_proc_name() const override { return "onnx_runtime"; }
 
   template <typename Archive>
   void save(Archive &archive) const {
@@ -788,7 +788,7 @@ class pre_inference_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "pre_inference_node"; }
+  virtual std::string get_proc_name() const override { return "pre_inference"; }
 
   template <typename Archive>
   void serialize(Archive &archive) {}
@@ -962,7 +962,7 @@ class post_inference_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "post_inference_node"; }
+  virtual std::string get_proc_name() const override { return "post_inference"; }
 
   std::array<float, 3> get_grid_center() const { return grid_center; }
   void set_grid_center(const std::array<float, 3> &value) { grid_center = value; }
