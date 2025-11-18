@@ -139,6 +139,10 @@ class resource_list {
     resources.insert(std::make_pair(resource->get_name(), resource));
   }
 
+  void add(const std::shared_ptr<resource_base> &resource, const std::string &name) {
+    resources.insert(std::make_pair(name, resource));
+  }
+
   std::shared_ptr<resource_base> get(const std::string &name) const {
     const auto found = resources.find(name);
     if (found == resources.end()) {
@@ -241,6 +245,9 @@ static void dfs_postorder(graph_node *node, std::unordered_set<graph_node *> &vi
 
   for (auto input : node->get_inputs()) {
     const auto &[input_name, input_edge] = input;
+    if (input_edge->get_type() != EDGE_TYPE::DATAFLOW) {
+      continue;
+    }
     dfs_postorder(input_edge->get_source(), visited, callback);
   }
 
@@ -410,6 +417,113 @@ class subgraph {
           }
         }
       }
+    }
+  }
+};
+
+class subgraph_node : public graph_node {
+  std::shared_ptr<subgraph> g;
+  std::unordered_map<std::string, graph_edge_ptr> output_map;
+
+ public:
+  subgraph_node() : graph_node(), g(std::make_shared<subgraph>()) {}
+
+  subgraph& get_subgraph() const { return *g; }
+
+  virtual std::string get_proc_name() const override { return "subgraph"; }
+
+  void set_output(graph_edge_ptr output, std::string name) {
+    output_map[name] = output;
+    graph_node::set_output(output, name);
+  }
+
+  graph_edge_ptr get_output(std::string name) const {
+    if (output_map.find(name) == output_map.end()) {
+      throw std::invalid_argument("name");
+    }
+    return output_map.at(name);
+  }
+
+  graph_edge_ptr find_output(std::string name) const {
+    if (output_map.find(name) == output_map.end()) {
+      return nullptr;
+    }
+    return output_map.at(name);
+  }
+
+  virtual void initialize() override {
+    const auto outputs = get_outputs();
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->set_resources(resources);
+        node->initialize();
+      }
+    }
+  }
+
+  virtual void finalize() override {
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->finalize();
+      }
+    }
+  }
+
+  virtual void run() override {
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->run();
+      }
+    }
+  }
+
+  virtual void stop() override {
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->stop();
+      }
+    }
+  }
+
+  template <typename Archive>
+  void save(Archive& archive) const {
+    archive(g);
+
+    auto output_size = static_cast<uint32_t>(output_map.size());
+    archive(output_size);
+    for (const auto& [name, output] : output_map) {
+      archive(name);
+      uint32_t node_id = 0;
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        if (node.get() == output->get_source()) {
+          node_id = i + 1;
+          break;
+        }
+      }
+      archive(node_id);
+    }
+  }
+
+  template <class Archive>
+  void load(Archive& archive) {
+    archive(g);
+
+    uint32_t output_size = 0;
+    archive(output_size);
+    for (uint32_t i = 0; i < output_size; i++) {
+      std::string name;
+      uint32_t node_id = 0;
+      archive(name);
+      archive(node_id);
+      auto node = g->get_node(node_id - 1);
+      auto output = node->get_output();
+      output_map[name] = output;
+      graph_node::set_output(output, name);
     }
   }
 };
@@ -1511,6 +1625,96 @@ class broadcast_listener_node : public graph_node {
   }
 };
 
+class annonymous_callback_list : public resource_base {
+  using callback_func = std::function<void(std::string, graph_message_ptr)>;
+  std::vector<callback_func> callbacks;
+
+ public:
+  virtual std::string get_name() const { return "annonymous_callback_list"; }
+
+  void add(callback_func callback) { callbacks.push_back(callback); }
+
+  void invoke(std::string input_name, graph_message_ptr message) const {
+    for (auto& callback : callbacks) {
+      callback(input_name, message);
+    }
+  }
+};
+
+class callback_caller_node : public graph_node {
+  graph_edge_ptr output;
+  std::shared_ptr<annonymous_callback_list> callbacks;
+
+ public:
+  callback_caller_node()
+      : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)) {
+    set_output(output);
+  }
+
+  virtual void initialize() override {
+    auto output_req = get_output()->request;
+    auto data = output_req.get_data();
+    std::stringstream ss(std::string(data.begin(), data.end()));
+
+    if (data.size() == 0) {
+      return;
+    }
+
+    auto resource_name = read_string(ss);
+
+    if (const auto resource = resources->get(resource_name)) {
+      callbacks = std::dynamic_pointer_cast<annonymous_callback_list>(resource);
+    }
+  }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (callbacks) {
+      callbacks->invoke(input_name, message);
+    }
+  }
+
+  template <typename Archive>
+  void serialize(Archive& archive) {}
+
+  virtual std::string get_proc_name() const override { return "callback_caller"; }
+};
+
+class callback_callee_node : public graph_node {
+  graph_edge_ptr output;
+
+ public:
+  callback_callee_node() : graph_node(), output(std::make_shared<graph_edge>(this)) {
+    set_output(output);
+  }
+
+  virtual std::string get_proc_name() const override { return "callback_callee"; }
+
+  template <typename Archive>
+  void serialize(Archive& archive) {}
+
+  virtual void initialize() override {
+    auto callback_list = std::make_shared<annonymous_callback_list>();
+    callback_list->add(
+        [this](std::string input_name, graph_message_ptr message) { this->output->send(message); });
+
+    const auto resource_name = "callback_list_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+    resources->add(callback_list, resource_name);
+
+    std::stringstream ss;
+    write_string(ss, resource_name);
+
+    std::string str = ss.str();
+    std::vector<uint8_t> data(str.begin(), str.end());
+
+    subscribe_request req;
+    auto input = get_input();
+    req.set_proc_name(get_proc_name());
+    req.set_msg_type(text_message::get_type());
+    req.set_data(data);
+    input->request = req;
+  }
+};
+
 class heartbeat_node : public graph_node {
   uint32_t interval;
   std::shared_ptr<std::thread> th;
@@ -1894,3 +2098,12 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::demux_node)
 
 CEREAL_REGISTER_TYPE(coalsack::fifo_node)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::fifo_node)
+
+CEREAL_REGISTER_TYPE(coalsack::subgraph_node);
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::subgraph_node);
+
+CEREAL_REGISTER_TYPE(coalsack::callback_caller_node);
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::callback_caller_node);
+
+CEREAL_REGISTER_TYPE(coalsack::callback_callee_node);
+CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::callback_callee_node);
