@@ -1652,6 +1652,9 @@ class callback_caller_node : public graph_node {
   }
 
   virtual std::string get_proc_name() const override { return "callback_caller"; }
+
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
 };
 
 class callback_callee_node : public graph_node {
@@ -1663,6 +1666,9 @@ class callback_callee_node : public graph_node {
   }
 
   virtual std::string get_proc_name() const override { return "callback_callee"; }
+
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
 
   virtual void initialize() override {
     auto callback_list = std::make_shared<annonymous_callback_list>();
