@@ -35,12 +35,12 @@ class image {
         stride(stride),
         format(image_format::ANY) {}
 
-  image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, const uint8_t *data)
+  image(uint32_t width, uint32_t height, uint32_t bpp, uint32_t stride, const uint8_t* data)
       : image(width, height, bpp, stride) {
     std::copy_n(data, stride * height, this->data.begin());
   }
 
-  image(const image &other)
+  image(const image& other)
       : data(other.data),
         width(other.width),
         height(other.height),
@@ -48,7 +48,7 @@ class image {
         stride(other.stride),
         format(other.format) {}
 
-  image(image &&other)
+  image(image&& other)
       : data(std::move(other.data)),
         width(other.width),
         height(other.height),
@@ -56,7 +56,7 @@ class image {
         stride(other.stride),
         format(other.format) {}
 
-  image &operator=(const image &other) {
+  image& operator=(const image& other) {
     data = other.data;
     width = other.width;
     height = other.height;
@@ -66,7 +66,7 @@ class image {
     return *this;
   }
 
-  image &operator=(image &&other) {
+  image& operator=(image&& other) {
     data = std::move(other.data);
     width = other.width;
     height = other.height;
@@ -81,15 +81,15 @@ class image {
   uint32_t get_bpp() const { return bpp; }
   uint32_t get_stride() const { return stride; }
 
-  const uint8_t *get_data() const { return data.data(); }
-  uint8_t *get_data() { return data.data(); }
+  const uint8_t* get_data() const { return data.data(); }
+  uint8_t* get_data() { return data.data(); }
   image_format get_format() const { return format; }
   void set_format(image_format format) { this->format = format; }
 
   bool empty() const { return data.empty(); }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data, width, height, bpp, stride, format);
   }
 
@@ -108,13 +108,13 @@ class image_message : public graph_message {
  public:
   image_message() : img() {}
 
-  void set_image(const image &img) { this->img = img; }
-  void set_image(image &&img) { this->img = std::move(img); }
-  const image &get_image() const { return img; }
+  void set_image(const image& img) { this->img = img; }
+  void set_image(image&& img) { this->img = std::move(img); }
+  const image& get_image() const { return img; }
   static std::string get_type() { return "image"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(img);
   }
 };
@@ -167,7 +167,7 @@ class stream_profile {
   void set_unique_id(int uid) { this->uid = uid; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(index, type, format, fps, uid);
   }
 };
@@ -190,14 +190,14 @@ class frame_message_base : public graph_message {
   void set_frame_number(uint64_t value) { frame_number = value; }
   std::shared_ptr<stream_profile> get_profile() const { return profile; }
   void set_profile(std::shared_ptr<stream_profile> profile) { this->profile = profile; }
-  graph_message_ptr get_metadata(const std::string &name) const { return metadata.at(name); }
+  graph_message_ptr get_metadata(const std::string& name) const { return metadata.at(name); }
   template <typename U>
-  std::shared_ptr<U> get_metadata(const std::string &name) const {
+  std::shared_ptr<U> get_metadata(const std::string& name) const {
     return std::dynamic_pointer_cast<U>(metadata.at(name));
   }
-  void set_metadata(const std::string &name, graph_message_ptr value) { metadata[name] = value; }
-  void set_metadata(const frame_message_base &other) {
-    for (const auto &[name, data] : other.metadata) {
+  void set_metadata(const std::string& name, graph_message_ptr value) { metadata[name] = value; }
+  void set_metadata(const frame_message_base& other) {
+    for (const auto& [name, data] : other.metadata) {
       metadata[name] = data;
     }
   }
@@ -215,15 +215,15 @@ class frame_message : public frame_message_base {
  public:
   frame_message() : data() {}
 
-  void set_data(const T &data) { this->data = data; }
-  void set_data(T &&data) { this->data = std::move(data); }
-  T &get_data() { return data; }
-  const T &get_data() const { return data; }
+  void set_data(const T& data) { this->data = data; }
+  void set_data(T&& data) { this->data = std::move(data); }
+  T& get_data() { return data; }
+  const T& get_data() const { return data; }
 
   static std::string get_type() { return std::string(typeid(T).name()) + "_frame"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data, timestamp, frame_number, profile, metadata);
   }
 };
@@ -244,12 +244,12 @@ class image_heartbeat_node : public heartbeat_node {
 
   void set_image(image img) { this->img = img; }
 
-  const image &get_image() const { return img; }
+  const image& get_image() const { return img; }
 
   virtual std::string get_proc_name() const override { return "image_heartbeat"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(cereal::base_class<heartbeat_node>(this));
     archive(img);
   }
@@ -274,7 +274,7 @@ struct approximate_time_sync_config {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(interval);
   }
 
@@ -310,17 +310,17 @@ class sync_node : public graph_node {
   virtual std::string get_proc_name() const override { return "sync"; }
 
   void set_config(sync_config config) { this->config = config; }
-  const sync_config &get_config() const { return config; }
-  sync_config &get_config() { return config; }
+  const sync_config& get_config() const { return config; }
+  sync_config& get_config() { return config; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(config);
   }
 
   virtual void run() override {
     syncer.start(std::make_shared<typename syncer_type::callback_type>(
-        [this](const std::map<std::string, graph_message_ptr> &frames) {
+        [this](const std::map<std::string, graph_message_ptr>& frames) {
           auto msg = std::make_shared<object_message>();
           for (auto frame : frames) {
             msg->add_field(frame.first, frame.second);
@@ -359,12 +359,12 @@ class tiling_node : public graph_node {
   std::uint32_t get_num_cols() const { return num_cols; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(num_rows);
     archive(num_cols);
   }
 
-  void tiling(const std::vector<const image *> &images, image &output) {
+  void tiling(const std::vector<const image*>& images, image& output) {
     if (images.size() == 0) {
       return;
     }
@@ -406,13 +406,14 @@ class tiling_node : public graph_node {
     }
   }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-      std::vector<const image *> images;
+      std::vector<const image*> images;
       std::shared_ptr<stream_profile> profile;
       double timestamp{0.0};
       std::uint64_t frame_number{0};
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(field)) {
           names.insert(name);
         }
@@ -420,12 +421,12 @@ class tiling_node : public graph_node {
       std::vector<std::string> name_list;
       std::copy(names.begin(), names.end(), std::back_inserter(name_list));
       std::sort(name_list.begin(), name_list.end());
-      for (const auto &name : name_list) {
+      for (const auto& name : name_list) {
         if (const auto iter = obj_msg->get_fields().find(name);
             iter != obj_msg->get_fields().end()) {
-          const auto &field = iter->second;
+          const auto& field = iter->second;
           if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(field)) {
-            const auto &img = image_msg->get_data();
+            const auto& img = image_msg->get_data();
             images.push_back(&img);
             profile = image_msg->get_profile();
             timestamp = image_msg->get_timestamp();
@@ -463,7 +464,8 @@ class timestamp_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "timestamp"; }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (const auto frame_msg = std::dynamic_pointer_cast<image_frame_message>(message)) {
       auto msg = std::make_shared<number_message>();
       msg->set_value(frame_msg->get_timestamp());
@@ -490,7 +492,7 @@ class frame_demux_node : public graph_node {
   virtual std::string get_proc_name() const override { return "frame_demux"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -500,7 +502,7 @@ class frame_demux_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -508,13 +510,14 @@ class frame_demux_node : public graph_node {
     }
   }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<object_message>>(message)) {
-      const auto &obj_msg = frame_msg->get_data();
+      const auto& obj_msg = frame_msg->get_data();
       for (auto field : obj_msg.get_fields()) {
         try {
           get_output(field.first)->send(field.second);
-        } catch (const std::invalid_argument &e) {
+        } catch (const std::invalid_argument& e) {
           spdlog::warn(e.what());
         }
       }
@@ -535,17 +538,18 @@ class frame_number_numbering_node : public graph_node {
   virtual std::string get_proc_name() const override { return "frame_number_numbering"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(frame_number);
   }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
       msg->set_frame_number(frame_number++);
       output->send(msg);
     }
     if (auto msg = std::dynamic_pointer_cast<object_message>(message)) {
-      for (const auto &[name, field] : msg->get_fields()) {
+      for (const auto& [name, field] : msg->get_fields()) {
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message_base>(field)) {
           frame_msg->set_frame_number(frame_number);
         }
@@ -592,7 +596,7 @@ class task_queue {
     }
   }
 
-  void push_task(const Task &task) {
+  void push_task(const Task& task) {
     {
       const std::lock_guard<std::mutex> lock(tasks_mutex);
 
@@ -641,7 +645,7 @@ class parallel_queue_node : public graph_node {
   uint32_t get_num_threads() const { return num_threads; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(num_threads);
   }
 
@@ -649,7 +653,8 @@ class parallel_queue_node : public graph_node {
 
   virtual void stop() override { workers.reset(); }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
       workers->push_task([this, msg]() { output->send(msg); });
     }
@@ -658,7 +663,7 @@ class parallel_queue_node : public graph_node {
 
 class greater_graph_message_ptr {
  public:
-  bool operator()(const graph_message_ptr &lhs, const graph_message_ptr &rhs) const {
+  bool operator()(const graph_message_ptr& lhs, const graph_message_ptr& rhs) const {
     return std::dynamic_pointer_cast<frame_message_base>(lhs)->get_frame_number() >
            std::dynamic_pointer_cast<frame_message_base>(rhs)->get_frame_number();
   }
@@ -689,7 +694,7 @@ class frame_number_ordering_node : public graph_node {
   std::uint32_t get_max_size() const { return max_size; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(max_size, frame_number);
   }
 

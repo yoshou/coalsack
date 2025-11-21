@@ -22,7 +22,7 @@ class data_stream_transmitter {
   boost::array<char, PACKET_PAYLOAD_SIZE> buffer_;
 
  public:
-  data_stream_transmitter(asio::io_context &io_context) : socket_(io_context), counter_(0) {}
+  data_stream_transmitter(asio::io_context& io_context) : socket_(io_context), counter_(0) {}
 
   void open(std::string address, uint16_t port) {
     counter_ = 0;
@@ -42,7 +42,7 @@ class data_stream_transmitter {
     remote_endpoint_ = udp::endpoint(udp::v4(), 0);
   }
   void reset() { counter_ = 0; }
-  void send(source_identifier id, double timestamp, const uint8_t *data, size_t length) {
+  void send(source_identifier id, double timestamp, const uint8_t* data, size_t length) {
     if (remote_endpoint_.port() == 0) {
       throw std::logic_error("The socket hasn't opened.");
     }
@@ -94,7 +94,7 @@ class data_stream_tcp_transmitter {
   boost::array<char, PACKET_PAYLOAD_SIZE> buffer_;
 
  public:
-  data_stream_tcp_transmitter(asio::io_context &io_context) : socket_(io_context), counter_(0) {}
+  data_stream_tcp_transmitter(asio::io_context& io_context) : socket_(io_context), counter_(0) {}
 
   void open(std::string address, uint16_t port) {
     counter_ = 0;
@@ -114,7 +114,7 @@ class data_stream_tcp_transmitter {
     socket_.close();
   }
   void reset() { counter_ = 0; }
-  void send(source_identifier id, double timestamp, const uint8_t *data, size_t length) {
+  void send(source_identifier id, double timestamp, const uint8_t* data, size_t length) {
     if (remote_endpoint_.port() == 0) {
       throw std::logic_error("The socket hasn't opened.");
     }

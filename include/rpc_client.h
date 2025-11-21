@@ -16,7 +16,7 @@ class rpc_client {
  public:
   tcp::endpoint local_endpoint() const { return socket.local_endpoint(); }
 
-  rpc_client(asio::io_context &io_context) : socket(io_context) {}
+  rpc_client(asio::io_context& io_context) : socket(io_context) {}
 
   void connect(std::string ip, unsigned short port) {
     boost::system::error_code error;
@@ -28,7 +28,7 @@ class rpc_client {
     }
   }
 
-  int64_t invoke(uint32_t func, const std::vector<uint8_t> &arg, std::vector<uint8_t> &res) {
+  int64_t invoke(uint32_t func, const std::vector<uint8_t>& arg, std::vector<uint8_t>& res) {
     boost::system::error_code error;
 
     assert(arg.size() <= static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()));
@@ -37,7 +37,7 @@ class rpc_client {
     request.func = func;
     request.id = 0;
     request.length = arg.size();
-    asio::write(socket, asio::buffer((const char *)&request, sizeof(request_t)), error);
+    asio::write(socket, asio::buffer((const char*)&request, sizeof(request_t)), error);
     asio::write(socket, asio::buffer(arg.data(), arg.size()), error);
 
     asio::streambuf receive_buffer;
@@ -47,13 +47,13 @@ class rpc_client {
       return -1;
     }
 
-    response_t response = *static_cast<const response_t *>(receive_buffer.data().data());
+    response_t response = *static_cast<const response_t*>(receive_buffer.data().data());
     receive_buffer.consume(sizeof(response_t));
 
     if (response.length > 0) {
       asio::read(socket, receive_buffer, asio::transfer_exactly(response.length), error);
 
-      const char *data = static_cast<const char *>(receive_buffer.data().data());
+      const char* data = static_cast<const char*>(receive_buffer.data().data());
       std::copy(data, data + response.length, std::back_inserter(res));
       receive_buffer.consume(response.length);
     }

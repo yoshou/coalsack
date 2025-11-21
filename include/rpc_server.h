@@ -16,7 +16,7 @@ using rpc_disconnect_func = std::function<void(uint32_t)>;
 class session : public std::enable_shared_from_this<session> {
  public:
   session(tcp::socket socket, uint32_t session_id,
-          const std::unordered_map<uint32_t, rpc_func> &handlers,
+          const std::unordered_map<uint32_t, rpc_func>& handlers,
           const rpc_disconnect_func disconnect_handler)
       : socket_(std::move(socket)),
         receive_buff_(),
@@ -46,7 +46,7 @@ class session : public std::enable_shared_from_this<session> {
 
   void handle_request([[maybe_unused]] std::size_t bytes_transferred) {
     auto data = receive_buff_.data();
-    auto request = *reinterpret_cast<const request_t *>(&*boost::asio::buffers_begin(data));
+    auto request = *reinterpret_cast<const request_t*>(&*boost::asio::buffers_begin(data));
     receive_buff_.consume(sizeof(request_t));
 
     if (request.length > 0) {
@@ -55,7 +55,7 @@ class session : public std::enable_shared_from_this<session> {
           socket_, receive_buff_, boost::asio::transfer_exactly(request.length),
           [request, this, self](boost::system::error_code ec, [[maybe_unused]] std::size_t length) {
             if (!ec) {
-              auto bytes = reinterpret_cast<const uint8_t *>(
+              auto bytes = reinterpret_cast<const uint8_t*>(
                   &*boost::asio::buffers_begin(receive_buff_.data()));
               std::vector<uint8_t> data(bytes, bytes + request.length);
               constexpr uint32_t max_consume_once =
@@ -91,10 +91,10 @@ class session : public std::enable_shared_from_this<session> {
       res.code = result_code;
       res.length = (uint32_t)result_data.size();
 
-      asio::write(socket_, asio::buffer((const char *)&res, sizeof(response_t)));
+      asio::write(socket_, asio::buffer((const char*)&res, sizeof(response_t)));
 
       if (result_data.size() > 0) {
-        asio::write(socket_, asio::buffer((const char *)result_data.data(), result_data.size()));
+        asio::write(socket_, asio::buffer((const char*)result_data.data(), result_data.size()));
       }
     }
 
@@ -104,13 +104,13 @@ class session : public std::enable_shared_from_this<session> {
   tcp::socket socket_;
   boost::asio::streambuf receive_buff_;
   uint32_t session_id;
-  const std::unordered_map<uint32_t, rpc_func> &handlers_;
+  const std::unordered_map<uint32_t, rpc_func>& handlers_;
   const rpc_disconnect_func disconnect_handler;
 };
 
 class rpc_server {
  public:
-  rpc_server(boost::asio::io_context &io_context, std::string address, uint16_t port)
+  rpc_server(boost::asio::io_context& io_context, std::string address, uint16_t port)
       : acceptor_(io_context, tcp::endpoint(asio::ip::make_address(address), port)),
         socket_(io_context),
         next_session_id(1),

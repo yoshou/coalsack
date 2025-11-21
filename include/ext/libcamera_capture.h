@@ -56,13 +56,13 @@ class libcamera_capture {
     uint32_t width, height, fps;
 
     template <typename Archive>
-    void serialize(Archive &archive) {
+    void serialize(Archive& archive) {
       archive(format, width, height, fps);
     }
   };
 
   struct mapped_buffer_data {
-    void *pointer;
+    void* pointer;
     size_t length;
   };
 
@@ -72,7 +72,7 @@ class libcamera_capture {
   std::unique_ptr<libcamera::CameraManager> camera_manager;
   std::unique_ptr<libcamera::FrameBufferAllocator> allocator;
 
-  std::queue<libcamera::Request *> res;
+  std::queue<libcamera::Request*> res;
   std::mutex mtx;
   std::condition_variable cv;
   std::shared_ptr<std::thread> th;
@@ -80,7 +80,7 @@ class libcamera_capture {
   std::mutex camera_stop_mutex;
 
   std::unique_ptr<libcamera::CameraConfiguration> config;
-  libcamera::Stream *stream;
+  libcamera::Stream* stream;
   libcamera::ControlList controls;
   std::vector<std::unique_ptr<libcamera::Request>> requests;
   std::unordered_map<int, mapped_buffer_data> mapped_buffer;
@@ -89,9 +89,9 @@ class libcamera_capture {
   std::chrono::system_clock::time_point system_clock_start;
   std::chrono::steady_clock::time_point steady_clock_start;
 
-  std::function<void(const libcamera_capture::buffer &)> frame_received;
+  std::function<void(const libcamera_capture::buffer&)> frame_received;
 
-  void request_completed(libcamera::Request *request) {
+  void request_completed(libcamera::Request* request) {
     if (request->status() == libcamera::Request::RequestCancelled) {
       return;
     }
@@ -102,13 +102,13 @@ class libcamera_capture {
     // process_res(request);
   }
 
-  void process_res(libcamera::Request *request) {
-    const libcamera::Request::BufferMap &buffers = request->buffers();
+  void process_res(libcamera::Request* request) {
+    const libcamera::Request::BufferMap& buffers = request->buffers();
     for (auto buffer_pair : buffers) {
-      const libcamera::Stream *stream = buffer_pair.first;
-      const auto &cfg = stream->configuration();
-      libcamera::FrameBuffer *buffer = buffer_pair.second;
-      const libcamera::FrameMetadata &metadata = buffer->metadata();
+      const libcamera::Stream* stream = buffer_pair.first;
+      const auto& cfg = stream->configuration();
+      libcamera::FrameBuffer* buffer = buffer_pair.second;
+      const libcamera::FrameMetadata& metadata = buffer->metadata();
 
       const auto timestamp =
           (std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -127,20 +127,20 @@ class libcamera_capture {
       if (cfg.pixelFormat == libcamera::formats::YUV420) {
         std::vector<cv::Mat> planes;
 
-        void *y_ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
-        void *u_ptr = mapped_buffer.at(buffer->planes().at(1).fd.get()).pointer;
-        void *v_ptr = mapped_buffer.at(buffer->planes().at(2).fd.get()).pointer;
+        void* y_ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
+        void* u_ptr = mapped_buffer.at(buffer->planes().at(1).fd.get()).pointer;
+        void* v_ptr = mapped_buffer.at(buffer->planes().at(2).fd.get()).pointer;
 
         frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC1, y_ptr, cfg.stride).clone();
       } else if (cfg.pixelFormat == libcamera::formats::RGB888) {
         std::vector<cv::Mat> planes;
 
-        void *ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
+        void* ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
         frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC3, ptr, cfg.stride).clone();
       } else if (cfg.pixelFormat == libcamera::formats::SBGGR10) {
         std::vector<cv::Mat> planes;
 
-        void *ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
+        void* ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
         frame = cv::Mat(cfg.size.height, cfg.size.width, CV_16UC1, ptr, cfg.stride).clone();
       }
 
@@ -181,25 +181,25 @@ class libcamera_capture {
   }
 
   void allocate_buffers() {
-    for (libcamera::StreamConfiguration &cfg : *config) {
-      libcamera::Stream *stream = cfg.stream();
+    for (libcamera::StreamConfiguration& cfg : *config) {
+      libcamera::Stream* stream = cfg.stream();
 
       if (allocator->allocate(stream) < 0) {
         throw std::runtime_error("Failed to allocate capture buffers");
       }
 
-      const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers =
+      const std::vector<std::unique_ptr<libcamera::FrameBuffer>>& buffers =
           allocator->buffers(stream);
       for (unsigned int i = 0; i < buffers.size(); ++i) {
-        const std::unique_ptr<libcamera::FrameBuffer> &buffer = buffers[i];
+        const std::unique_ptr<libcamera::FrameBuffer>& buffer = buffers[i];
         std::size_t buffer_size = 0;
         for (std::size_t plane_idx = 0; plane_idx < buffer->planes().size(); plane_idx++) {
-          auto &plane = buffer->planes()[plane_idx];
+          auto& plane = buffer->planes()[plane_idx];
           buffer_size += plane.length;
 
           if (plane_idx == buffer->planes().size() - 1 ||
               plane.fd.get() != buffer->planes()[plane_idx + 1].fd.get()) {
-            void *ptr =
+            void* ptr =
                 mmap(nullptr, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd.get(), 0);
             if (!ptr) {
               throw std::runtime_error("Failed to map the buffer");
@@ -247,7 +247,7 @@ class libcamera_capture {
   }
 
   void make_requests() {
-    const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers =
+    const std::vector<std::unique_ptr<libcamera::FrameBuffer>>& buffers =
         allocator->buffers(stream);
     for (unsigned int i = 0; i < buffers.size(); ++i) {
       std::unique_ptr<libcamera::Request> request = camera->createRequest();
@@ -255,7 +255,7 @@ class libcamera_capture {
         throw std::runtime_error("Failed to make request");
       }
 
-      const std::unique_ptr<libcamera::FrameBuffer> &buffer = buffers[i];
+      const std::unique_ptr<libcamera::FrameBuffer>& buffer = buffers[i];
       if (request->addBuffer(stream, buffer.get()) < 0) {
         throw std::runtime_error("Failed to add buffer to request");
       }
@@ -280,7 +280,7 @@ class libcamera_capture {
 
     std::vector<std::shared_ptr<libcamera::Camera>> cameras = camera_manager->cameras();
     // Do not show USB webcams as these are not supported in libcamera-apps!
-    auto rem = std::remove_if(cameras.begin(), cameras.end(), [](auto &cam) {
+    auto rem = std::remove_if(cameras.begin(), cameras.end(), [](auto& cam) {
       return cam->id().find("/usb") != std::string::npos;
     });
     cameras.erase(rem, cameras.end());
@@ -289,7 +289,7 @@ class libcamera_capture {
 
     if (camera_idx >= cameras.size()) throw std::runtime_error("selected camera is not available");
 
-    const std::string &cam_id = cameras[camera_idx]->id();
+    const std::string& cam_id = cameras[camera_idx]->id();
     camera = camera_manager->get(cam_id);
     if (!camera) throw std::runtime_error("Failed to find camera " + cam_id);
 
@@ -298,11 +298,11 @@ class libcamera_capture {
     allocator = std::make_unique<libcamera::FrameBufferAllocator>(camera);
   }
 
-  void configure(const stream_configuration &cfg) {
+  void configure(const stream_configuration& cfg) {
     config = camera->generateConfiguration({libcamera::StreamRole::VideoRecording});
     if (!config) throw std::runtime_error("failed to generate video configuration");
 
-    libcamera::StreamConfiguration &stream_config = config->at(0);
+    libcamera::StreamConfiguration& stream_config = config->at(0);
 
     stream_config.pixelFormat = conv_format(cfg.format);
     stream_config.size.width = cfg.width;
@@ -336,7 +336,7 @@ class libcamera_capture {
   void set_auto_exposure(bool value) { controls.set(libcamera::controls::AeEnable, value); }
   int32_t get_framerate() const { return static_cast<int32_t>(1000 / this->duration); }
 
-  void start(std::function<void(const libcamera_capture::buffer &)> frame_received) {
+  void start(std::function<void(const libcamera_capture::buffer&)> frame_received) {
     system_clock_start = std::chrono::system_clock::now();
     steady_clock_start = std::chrono::steady_clock::now();
 
@@ -359,7 +359,7 @@ class libcamera_capture {
 
     camera->requestCompleted.connect(this, &libcamera_capture::request_completed);
 
-    for (std::unique_ptr<libcamera::Request> &request : requests) {
+    for (std::unique_ptr<libcamera::Request>& request : requests) {
       if (camera->queueRequest(request.get()) < 0) {
         throw std::runtime_error("Failed to queue request");
       }
@@ -367,7 +367,7 @@ class libcamera_capture {
 
     th.reset(new std::thread([this]() {
       while (running.load()) {
-        libcamera::Request *r = nullptr;
+        libcamera::Request* r = nullptr;
 
         {
           std::unique_lock<std::mutex> lock(mtx);
@@ -415,9 +415,9 @@ class libcamera_capture {
 
     requests.clear();
     controls.clear();
-    std::queue<libcamera::Request *>().swap(res);
+    std::queue<libcamera::Request*>().swap(res);
 
-    for (auto &p : mapped_buffer) {
+    for (auto& p : mapped_buffer) {
       munmap(p.second.pointer, p.second.length);
     }
     mapped_buffer.clear();
@@ -443,8 +443,8 @@ class libcamera_capture {
   libcamera_capture() {}
 
   void open(std::size_t camera_idx) {}
-  void configure(const stream_configuration &cfg) {}
-  void start(std::function<void(const libcamera_capture::buffer &)> frame_received) {}
+  void configure(const stream_configuration& cfg) {}
+  void start(std::function<void(const libcamera_capture::buffer&)> frame_received) {}
   void stop() {}
   void close() {}
 

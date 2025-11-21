@@ -29,7 +29,7 @@ class encode_lz4_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &image = image_msg->get_data();
+      const auto& image = image_msg->get_data();
       const auto width = image.get_width();
       const auto height = image.get_height();
       const auto bpp = image.get_bpp();
@@ -42,14 +42,14 @@ class encode_lz4_node : public graph_node {
       const auto header_size = sizeof(lz4_image_header);
       std::vector<uint8_t> dst_buf(max_dst_size + header_size);
       const auto compressed_size = LZ4_compress_default(
-          (const char *)src_buf, (char *)dst_buf.data() + header_size, src_size, max_dst_size);
+          (const char*)src_buf, (char*)dst_buf.data() + header_size, src_size, max_dst_size);
       if (compressed_size <= 0) {
         spdlog::error("Failed to compress LZ4");
         return;
       }
       dst_buf.resize(compressed_size + header_size);
 
-      const auto header = reinterpret_cast<lz4_image_header *>(dst_buf.data());
+      const auto header = reinterpret_cast<lz4_image_header*>(dst_buf.data());
       header->width = width;
       header->height = height;
       header->stride = stride;
@@ -68,7 +68,7 @@ class encode_lz4_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 };
 
 class decode_lz4_node : public graph_node {
@@ -88,7 +88,7 @@ class decode_lz4_node : public graph_node {
       const auto src_buf = image_msg->get_data().data();
       const auto src_size = image_msg->get_data().size();
       const auto header_size = sizeof(lz4_image_header);
-      const auto header = reinterpret_cast<lz4_image_header *>(src_buf);
+      const auto header = reinterpret_cast<lz4_image_header*>(src_buf);
       const auto width = header->width;
       const auto height = header->height;
       const auto bpp = header->bpp;
@@ -100,7 +100,7 @@ class decode_lz4_node : public graph_node {
       img.set_format(format);
 
       const int decompressed_size =
-          LZ4_decompress_safe((const char *)src_buf + header_size, (char *)img.get_data(),
+          LZ4_decompress_safe((const char*)src_buf + header_size, (char*)img.get_data(),
                               src_size - header_size, dst_size);
       if (decompressed_size < 0) {
         spdlog::error("Failed to decompress LZ4");
@@ -119,7 +119,7 @@ class decode_lz4_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 };
 }  // namespace coalsack
 

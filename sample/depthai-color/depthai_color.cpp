@@ -63,7 +63,7 @@ class local_server {
   ~local_server() { stop(); }
 };
 
-int main(int argc, char *argv[]) try {
+int main(int argc, char* argv[]) try {
   signal(SIGINT, sigint_handler);
 
   spdlog::set_level(spdlog::level::debug);
@@ -109,7 +109,7 @@ int main(int argc, char *argv[]) try {
   }
 
   return 0;
-} catch (std::exception &e) {
+} catch (std::exception& e) {
   std::cout << e.what() << std::endl;
   shutdown();
 }

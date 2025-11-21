@@ -18,5 +18,5 @@ struct response_t {
 };
 
 using rpc_func =
-    std::function<uint32_t(uint32_t, const std::vector<uint8_t> &, std::vector<uint8_t> &)>;
+    std::function<uint32_t(uint32_t, const std::vector<uint8_t>&, std::vector<uint8_t>&)>;
 }  // namespace coalsack

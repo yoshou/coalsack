@@ -62,13 +62,13 @@ class fast_blob_detector_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "fast_blob_detector"; }
 
-  const blob_detector_params &get_parameters() const { return params; }
-  blob_detector_params &get_parameters() { return params; }
-  void set_parameters(const blob_detector_params &params) { this->params = params; }
+  const blob_detector_params& get_parameters() const { return params; }
+  blob_detector_params& get_parameters() { return params; }
+  void set_parameters(const blob_detector_params& params) { this->params = params; }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &src_image = image_msg->get_data();
+      const auto& src_image = image_msg->get_data();
       const auto data = src_image.get_data();
       const auto width = src_image.get_width();
       const auto height = src_image.get_height();
@@ -86,7 +86,7 @@ class fast_blob_detector_node : public graph_node {
       detector.detect(keypoints);
 
       std::vector<keypoint> pts;
-      for (const auto &kp : keypoints) {
+      for (const auto& kp : keypoints) {
         keypoint pt;
         pt.pt_x = kp.p.x;
         pt.pt_y = kp.p.y;
@@ -106,7 +106,7 @@ class fast_blob_detector_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(params.min_threshold);
     archive(params.max_threshold);
     archive(params.step_threshold);
@@ -157,7 +157,7 @@ class charuco_detector_node : public graph_node {
   virtual std::string get_proc_name() const override { return "charuco_detector"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   virtual void initialize() override {
 #if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
@@ -181,12 +181,12 @@ class charuco_detector_node : public graph_node {
       std::vector<int> charuco_ids;
       std::vector<cv::Point2f> charuco_corners;
 
-      const auto &src_image = image_msg->get_data();
+      const auto& src_image = image_msg->get_data();
 
       int cv_type = convert_to_cv_type(src_image.get_format());
 
       cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                      (void *)src_image.get_data(), src_image.get_stride());
+                      (void*)src_image.get_data(), src_image.get_stride());
 
       try {
 #if CV_VERSION_MAJOR >= 4 && CV_VERSION_MINOR >= 7
@@ -198,7 +198,7 @@ class charuco_detector_node : public graph_node {
                                                charuco_corners, charuco_ids);
         }
 #endif
-      } catch (const cv::Exception &e) {
+      } catch (const cv::Exception& e) {
         spdlog::error(e.what());
       }
 

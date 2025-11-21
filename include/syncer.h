@@ -21,20 +21,20 @@ class approximate_time {
 
   approximate_time() : timestamp(0), interval(0) {}
   approximate_time(double timestamp, double interval) : timestamp(timestamp), interval(interval) {}
-  approximate_time(const approximate_time &src)
+  approximate_time(const approximate_time& src)
       : timestamp(src.timestamp), interval(src.interval) {}
-  approximate_time &operator=(const approximate_time &src) {
+  approximate_time& operator=(const approximate_time& src) {
     timestamp = src.timestamp;
     interval = src.interval;
     return *this;
   }
 
-  bool is_same(const approximate_time &t) const {
+  bool is_same(const approximate_time& t) const {
     auto max_interval = std::max(interval, t.interval);
     return std::abs(timestamp - t.timestamp) <= (max_interval / 2.0);
   }
 
-  bool is_less_than(const approximate_time &t) const { return timestamp < t.timestamp; }
+  bool is_less_than(const approximate_time& t) const { return timestamp < t.timestamp; }
 
   approximate_time get_next_time() const {
     return approximate_time(timestamp + interval, interval);
@@ -60,15 +60,15 @@ class frame_number {
 
   frame_number() : number(0) {}
   frame_number(int64_t number) : number(number) {}
-  frame_number(const frame_number &src) : number(src.number) {}
-  frame_number &operator=(const frame_number &src) {
+  frame_number(const frame_number& src) : number(src.number) {}
+  frame_number& operator=(const frame_number& src) {
     number = src.number;
     return *this;
   }
 
-  bool is_same(const frame_number &t) const { return number == t.number; }
+  bool is_same(const frame_number& t) const { return number == t.number; }
 
-  bool is_less_than(const frame_number &t) const { return number < t.number; }
+  bool is_less_than(const frame_number& t) const { return number < t.number; }
 
   frame_number get_next_time() const { return frame_number(number + 1); }
 
@@ -97,13 +97,13 @@ struct sync_frame {
 
   sync_frame() : sync_info(), stream_id(), data() {}
 
-  sync_frame(time_type sync_info, stream_id_type stream_id, const data_type &data)
+  sync_frame(time_type sync_info, stream_id_type stream_id, const data_type& data)
       : sync_info(sync_info), stream_id(stream_id), data(data) {}
 
-  sync_frame(const self_type &other)
+  sync_frame(const self_type& other)
       : sync_info(other.sync_info), stream_id(other.stream_id), data(other.data) {}
 
-  self_type &operator=(const self_type &other) {
+  self_type& operator=(const self_type& other) {
     sync_info = other.sync_info;
     stream_id = other.stream_id;
     data = other.data;
@@ -112,14 +112,14 @@ struct sync_frame {
 };
 
 template <typename DataTy, typename IDTy, typename TimeTy>
-static bool operator<(const sync_frame<DataTy, IDTy, TimeTy> &a,
-                      const sync_frame<DataTy, IDTy, TimeTy> &b) {
+static bool operator<(const sync_frame<DataTy, IDTy, TimeTy>& a,
+                      const sync_frame<DataTy, IDTy, TimeTy>& b) {
   return a.sync_info.is_less_than(b.sync_info);
 }
 
 template <typename DataTy, typename IDTy, typename TimeTy>
-static bool operator>(const sync_frame<DataTy, IDTy, TimeTy> &a,
-                      const sync_frame<DataTy, IDTy, TimeTy> &b) {
+static bool operator>(const sync_frame<DataTy, IDTy, TimeTy>& a,
+                      const sync_frame<DataTy, IDTy, TimeTy>& b) {
   return b.sync_info.is_less_than(a.sync_info);
 }
 
@@ -127,13 +127,13 @@ template <typename DataTy, typename IDTy>
 struct synced_frame_callback {
   using data_type = DataTy;
   using stream_id_type = IDTy;
-  using func_type = std::function<void(const std::map<stream_id_type, data_type> &)>;
+  using func_type = std::function<void(const std::map<stream_id_type, data_type>&)>;
 
   func_type func;
 
   explicit synced_frame_callback(func_type func) : func(func) {}
 
-  void operator()(const std::map<stream_id_type, data_type> &frames) {
+  void operator()(const std::map<stream_id_type, data_type>& frames) {
     if (func) {
       func(frames);
     }
@@ -157,8 +157,8 @@ class stream_syncer {
   void start(std::shared_ptr<callback_type> callback) { _callback = callback; }
 
   void start(std::shared_ptr<callback_type> callback,
-             const std::vector<stream_id_type> &initial_ids) {
-    for (const auto &initial_id : initial_ids) {
+             const std::vector<stream_id_type>& initial_ids) {
+    for (const auto& initial_id : initial_ids) {
       _frames_queue[initial_id] = std::make_shared<frame_queue>();
       _times[initial_id];
     }
@@ -207,7 +207,7 @@ class stream_syncer {
 
       std::vector<frame_type> arrived_frames;
       std::vector<stream_id_type> missing_stream_ids;
-      for (auto &queue : _frames_queue) {
+      for (auto& queue : _frames_queue) {
         if (queue.second->empty()) {
           missing_stream_ids.push_back(queue.first);
         } else {
@@ -247,7 +247,7 @@ class stream_syncer {
 
       if (synced_frames.size() > 0) {
         frames.clear();
-        for (auto &synced_frame : synced_frames) {
+        for (auto& synced_frame : synced_frames) {
           frames[synced_frame.stream_id] = synced_frame.data;
         }
 

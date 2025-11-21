@@ -19,7 +19,7 @@ class encode_jpeg_node : public graph_node {
   JSAMPROW row_pointer[1];
   std::vector<uint8_t> row_buffer;
 
-  static void convert_yuyv_to_yuv(const uint8_t *src_buf, size_t width, uint8_t *dst_buf) {
+  static void convert_yuyv_to_yuv(const uint8_t* src_buf, size_t width, uint8_t* dst_buf) {
     for (size_t i = 0; i < width; i += 2) {
       dst_buf[i * 3] = src_buf[i * 2 + 0];      // Y
       dst_buf[i * 3 + 1] = src_buf[i * 2 + 1];  // U
@@ -30,7 +30,7 @@ class encode_jpeg_node : public graph_node {
     }
   }
 
-  static void convert_uyvy_to_yuv(const uint8_t *src_buf, size_t width, uint8_t *dst_buf) {
+  static void convert_uyvy_to_yuv(const uint8_t* src_buf, size_t width, uint8_t* dst_buf) {
     for (size_t i = 0; i < width; i += 2) {
       dst_buf[i * 3] = src_buf[i * 2 + 1];      // Y
       dst_buf[i * 3 + 1] = src_buf[i * 2 + 0];  // U
@@ -41,7 +41,7 @@ class encode_jpeg_node : public graph_node {
     }
   }
 
-  static void convert_bgr_to_rgb(const uint8_t *src_buf, size_t width, uint8_t *dst_buf) {
+  static void convert_bgr_to_rgb(const uint8_t* src_buf, size_t width, uint8_t* dst_buf) {
     for (size_t i = 0; i < width * 3; i += 3) {
       dst_buf[i] = src_buf[i + 2];      // R
       dst_buf[i + 1] = src_buf[i + 1];  // G
@@ -63,7 +63,7 @@ class encode_jpeg_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      auto &image = image_msg->get_data();
+      auto& image = image_msg->get_data();
       uint32_t width = image.get_width();
       uint32_t height = image.get_height();
       auto format = image_msg->get_profile()->get_format();
@@ -92,7 +92,7 @@ class encode_jpeg_node : public graph_node {
       jpeg_set_defaults(&cinfo);
 
       unsigned long compressed_size = 0;
-      unsigned char *data = nullptr;
+      unsigned char* data = nullptr;
       jpeg_mem_dest(&cinfo, &data, &compressed_size);
 
       cinfo.image_width = width;
@@ -137,7 +137,7 @@ class encode_jpeg_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 };
 
 class decode_jpeg_node : public graph_node {
@@ -147,7 +147,7 @@ class decode_jpeg_node : public graph_node {
   struct jpeg_decompress_struct dinfo;
   std::vector<uint8_t> row_buffer;
 
-  static void convert_yuv_to_yuyv(const uint8_t *src_buf, size_t width, uint8_t *dst_buf) {
+  static void convert_yuv_to_yuyv(const uint8_t* src_buf, size_t width, uint8_t* dst_buf) {
     for (size_t i = 0; i < width; i += 2) {
       dst_buf[i * 2] = src_buf[i * 3];          // Y
       dst_buf[i * 2 + 1] = src_buf[i * 3 + 1];  // U
@@ -156,7 +156,7 @@ class decode_jpeg_node : public graph_node {
     }
   }
 
-  static void convert_yuv_to_uyvy(const uint8_t *src_buf, size_t width, uint8_t *dst_buf) {
+  static void convert_yuv_to_uyvy(const uint8_t* src_buf, size_t width, uint8_t* dst_buf) {
     for (size_t i = 0; i < width; i += 2) {
       dst_buf[i * 2] = src_buf[i * 3 + 1];      // U
       dst_buf[i * 2 + 1] = src_buf[i * 3 + 0];  // Y
@@ -165,7 +165,7 @@ class decode_jpeg_node : public graph_node {
     }
   }
 
-  static void convert_rgb_to_bgr(const uint8_t *src_buf, size_t width, uint8_t *dst_buf) {
+  static void convert_rgb_to_bgr(const uint8_t* src_buf, size_t width, uint8_t* dst_buf) {
     for (size_t i = 0; i < width * 3; i += 3) {
       dst_buf[i] = src_buf[i + 2];      // B
       dst_buf[i + 1] = src_buf[i + 1];  // G
@@ -239,11 +239,11 @@ class decode_jpeg_node : public graph_node {
       img.set_format(image_format);
 
       auto dst_buf = img.get_data();
-      uint8_t *ptr = dst_buf;
+      uint8_t* ptr = dst_buf;
       if (row_stride > row_buffer.size()) {
         row_buffer.resize(row_stride);
       }
-      uint8_t *row_pointer = row_buffer.data();
+      uint8_t* row_pointer = row_buffer.data();
 
       while (dinfo.output_scanline < dinfo.output_height) {
         int num_lines = jpeg_read_scanlines(&dinfo, &row_pointer, 1);
@@ -283,7 +283,7 @@ class decode_jpeg_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 };
 }  // namespace coalsack
 

@@ -30,7 +30,7 @@ static void sigint_handler(int) {
   exit(0);
 }
 
-int main(int argc, char *argv[]) try {
+int main(int argc, char* argv[]) try {
   signal(SIGINT, sigint_handler);
 
   asio::io_context io_context;
@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) try {
   std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
   return 0;
-} catch (std::exception &e) {
+} catch (std::exception& e) {
   std::cout << e.what() << std::endl;
   shutdown();
   return 0;

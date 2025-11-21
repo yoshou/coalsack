@@ -64,12 +64,12 @@ class camera_data_message : public graph_message {
  public:
   camera_data_message() {}
 
-  void set_data(const camera_data &value) { data = value; }
-  const camera_data &get_data() const { return data; }
+  void set_data(const camera_data& value) { data = value; }
+  const camera_data& get_data() const { return data; }
   static std::string get_type() { return "camera_data"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data.fx, data.fy, data.cx, data.cy, data.k, data.p, data.rotation, data.translation);
   }
 };
@@ -86,25 +86,25 @@ class roi_data_message : public graph_message {
  public:
   roi_data_message() {}
 
-  void set_data(const roi_data &value) { data = value; }
-  const roi_data &get_data() const { return data; }
+  void set_data(const roi_data& value) { data = value; }
+  const roi_data& get_data() const { return data; }
   static std::string get_type() { return "roi_data"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data.scale, data.rotation, data.center);
   }
 };
 
-static cv::Mat get_transform(const cv::Point2f &center, const cv::Size2f &scale,
-                             const cv::Size2f &output_size) {
-  const auto get_tri_3rd_point = [](const cv::Point2f &a, const cv::Point2f &b) {
+static cv::Mat get_transform(const cv::Point2f& center, const cv::Size2f& scale,
+                             const cv::Size2f& output_size) {
+  const auto get_tri_3rd_point = [](const cv::Point2f& a, const cv::Point2f& b) {
     const auto direct = a - b;
     return b + cv::Point2f(-direct.y, direct.x);
   };
 
-  const auto get_affine_transform = [&](const cv::Point2f &center, const cv::Size2f &scale,
-                                        const cv::Size2f &output_size) {
+  const auto get_affine_transform = [&](const cv::Point2f& center, const cv::Size2f& scale,
+                                        const cv::Size2f& output_size) {
     const auto src_w = scale.width * 200.0;
     const auto src_h = scale.height * 200.0;
     const auto dst_w = output_size.width;
@@ -154,13 +154,13 @@ class image_loader_node : public heartbeat_node {
   }
 
   void set_filename(std::string value) { filename = value; }
-  const std::string &get_filename() const { return filename; }
+  const std::string& get_filename() const { return filename; }
   void set_flip(bool value) { flip = value; }
 
   virtual std::string get_proc_name() const override { return "image_loader"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(cereal::base_class<heartbeat_node>(this));
     archive(filename, flip);
   }
@@ -179,7 +179,7 @@ class image_loader_node : public heartbeat_node {
         {static_cast<std::uint32_t>(input_img.size().width),
          static_cast<std::uint32_t>(input_img.size().height),
          static_cast<std::uint32_t>(input_img.elemSize()), 1},
-        (const uint8_t *)input_img.data,
+        (const uint8_t*)input_img.data,
         {static_cast<std::uint32_t>(input_img.step[1]),
          static_cast<std::uint32_t>(input_img.step[0]), static_cast<std::uint32_t>(1),
          static_cast<std::uint32_t>(input_img.total())});
@@ -213,12 +213,12 @@ class parameter_loader_node : public graph_node {
 
   void set_filename(std::string value) { filename = value; }
 
-  const std::string &get_filename() const { return filename; }
+  const std::string& get_filename() const { return filename; }
 
   virtual std::string get_proc_name() const override { return "parameter_loader"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(filename);
   }
 
@@ -229,9 +229,9 @@ class parameter_loader_node : public graph_node {
 
       auto obj_msg = std::make_shared<object_message>();
 
-      for (const auto &item : params.items()) {
-        const auto &name = item.key();
-        const auto &value = item.value();
+      for (const auto& item : params.items()) {
+        const auto& name = item.key();
+        const auto& value = item.value();
 
         const auto type = value["type"].get<std::string>();
         assert(type == "float");
@@ -276,21 +276,21 @@ class normalize_node : public graph_node {
     set_output(output);
   }
 
-  void set_mean(const std::vector<float> &value) { mean = value; }
+  void set_mean(const std::vector<float>& value) { mean = value; }
 
-  void set_std(const std::vector<float> &value) { std = value; }
+  void set_std(const std::vector<float>& value) { std = value; }
 
   virtual std::string get_proc_name() const override { return "normalize"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(mean);
     archive(std);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
       const auto dst =
           src.transform([this](const float value, const size_t w, const size_t h, const size_t c,
@@ -319,8 +319,8 @@ class onnx_runtime_session {
   std::unordered_map<std::string, std::vector<int64_t>> input_dims;
   std::unordered_map<std::string, int> input_types;
 
-  static Ort::Session create_session(const Ort::Env &env, const std::vector<uint8_t> &model_data) {
-    const auto &api = Ort::GetApi();
+  static Ort::Session create_session(const Ort::Env& env, const std::vector<uint8_t>& model_data) {
+    const auto& api = Ort::GetApi();
 
     // Create session
     Ort::SessionOptions session_options;
@@ -339,7 +339,7 @@ class onnx_runtime_session {
     return Ort::Session(env, model_data.data(), model_data.size(), session_options);
   }
 
-  onnx_runtime_session(const Ort::Env &env, const std::vector<uint8_t> &model_data)
+  onnx_runtime_session(const Ort::Env& env, const std::vector<uint8_t>& model_data)
       : session(create_session(env, model_data)) {
     // Iterate over all input nodes
     const size_t num_input_nodes = session.GetInputCount();
@@ -362,7 +362,7 @@ class onnx_runtime_session {
 
 class onnx_runtime_session_pool {
   struct vector_hash {
-    size_t operator()(const std::vector<uint8_t> &v) const {
+    size_t operator()(const std::vector<uint8_t>& v) const {
       size_t hash = v.size();
       for (const auto i : v) hash ^= i + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       return hash;
@@ -375,7 +375,7 @@ class onnx_runtime_session_pool {
   std::mutex mtx;
 
  public:
-  std::shared_ptr<onnx_runtime_session> get_or_load(const std::vector<uint8_t> &model_data) {
+  std::shared_ptr<onnx_runtime_session> get_or_load(const std::vector<uint8_t>& model_data) {
     std::lock_guard<std::mutex> lock(mtx);
 
     auto it = sessions.find(model_data);
@@ -397,12 +397,12 @@ class onnx_runtime_node : public graph_node {
  public:
   onnx_runtime_node() : graph_node(), session(nullptr) {}
 
-  void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
+  void set_model_data(const std::vector<uint8_t>& value) { model_data = value; }
 
   virtual std::string get_proc_name() const override { return "onnx_runtime"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -413,7 +413,7 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -422,7 +422,7 @@ class onnx_runtime_node : public graph_node {
     archive(model_data);
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -436,9 +436,9 @@ class onnx_runtime_node : public graph_node {
   virtual void initialize() override { session = sessions.get_or_load(model_data); }
 
   template <size_t num_dims, typename T, std::size_t... Is>
-  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t> &shape,
-                                                            const T *data,
-                                                            const frame_message_base *base_msg,
+  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t>& shape,
+                                                            const T* data,
+                                                            const frame_message_base* base_msg,
                                                             std::index_sequence<Is...>) {
     auto msg = std::make_shared<frame_message<tensor<T, num_dims>>>();
     tensor<T, num_dims> output_tensor({static_cast<std::uint32_t>(shape.at(num_dims - 1 - Is))...},
@@ -454,9 +454,9 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <size_t num_dims, typename T>
-  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t> &shape,
-                                                            const T *data,
-                                                            const frame_message_base *base_msg) {
+  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t>& shape,
+                                                            const T* data,
+                                                            const frame_message_base* base_msg) {
     if (shape.size() == num_dims) {
       return create_message<num_dims>(shape, data, base_msg, std::make_index_sequence<num_dims>{});
     }
@@ -468,11 +468,11 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <size_t num_dims>
-  static std::tuple<size_t, const float *, std::shared_ptr<frame_message_base>> get_input_data(
-      const graph_message_ptr &msg) {
+  static std::tuple<size_t, const float*, std::shared_ptr<frame_message_base>> get_input_data(
+      const graph_message_ptr& msg) {
     if (const auto frame_msg =
             std::dynamic_pointer_cast<frame_message<tensor<float, num_dims>>>(msg)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
       const auto size = src.get_size();
       const auto data = src.get_data();
 
@@ -499,13 +499,13 @@ class onnx_runtime_node : public graph_node {
     {
       std::lock_guard<std::mutex> lock(mtx);
 
-      std::vector<const char *> output_name_strs;
+      std::vector<const char*> output_name_strs;
       std::vector<Ort::Value> output_tensors;
       std::shared_ptr<frame_message_base> base_frame_msg = nullptr;
 
       {
         const auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        std::vector<const char *> input_name_strs;
+        std::vector<const char*> input_name_strs;
         std::vector<Ort::Value> input_tensors;
 
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
@@ -523,7 +523,7 @@ class onnx_runtime_node : public graph_node {
               expect_size *= dim;
             }
 
-            const float *data = nullptr;
+            const float* data = nullptr;
             size_t size = 0;
             std::tie(size, data, base_frame_msg) = get_input_data<5>(frame_msg);
 
@@ -532,12 +532,12 @@ class onnx_runtime_node : public graph_node {
             assert(base_frame_msg != nullptr);
 
             input_tensors.push_back(Ort::Value::CreateTensor<float>(
-                memory_info, const_cast<float *>(data), size, dims.data(), dims.size()));
+                memory_info, const_cast<float*>(data), size, dims.data(), dims.size()));
           }
         }
 
         if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-          for (const auto &name : session->input_names) {
+          for (const auto& name : session->input_names) {
             const auto dims = session->input_dims.at(name);
             const auto type = session->input_types.at(name);
             assert(type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
@@ -549,7 +549,7 @@ class onnx_runtime_node : public graph_node {
               expect_size *= dim;
             }
 
-            const float *data = nullptr;
+            const float* data = nullptr;
             size_t size = 0;
             std::tie(size, data, base_frame_msg) = get_input_data<5>(obj_msg->get_field(name));
 
@@ -558,14 +558,14 @@ class onnx_runtime_node : public graph_node {
             assert(base_frame_msg != nullptr);
 
             input_tensors.push_back(Ort::Value::CreateTensor<float>(
-                memory_info, const_cast<float *>(data), size, dims.data(), dims.size()));
+                memory_info, const_cast<float*>(data), size, dims.data(), dims.size()));
           }
         }
 
         assert(input_name_strs.size() == session->input_names.size());
         assert(input_tensors.size() == session->input_names.size());
 
-        for (const auto &[name, _] : get_outputs()) {
+        for (const auto& [name, _] : get_outputs()) {
           output_name_strs.push_back(name.c_str());
         }
 
@@ -577,7 +577,7 @@ class onnx_runtime_node : public graph_node {
       assert(output_tensors.size() == output_name_strs.size());
       for (std::size_t i = 0; i < output_name_strs.size(); i++) {
         const auto name = output_name_strs.at(i);
-        const auto &value = output_tensors.at(i);
+        const auto& value = output_tensors.at(i);
 
         graph_message_ptr output_msg;
 
@@ -598,11 +598,11 @@ class onnx_runtime_node : public graph_node {
       }
     }
 
-    for (const auto &[name, output_msg] : output_msgs) {
+    for (const auto& [name, output_msg] : output_msgs) {
       try {
         const auto output = get_output(name);
         output->send(output_msg);
-      } catch (const std::exception &e) {
+      } catch (const std::exception& e) {
         spdlog::error(e.what());
       }
     }
@@ -637,7 +637,7 @@ static std::tuple<T, T, T> normalize(T a, T b, T c) {
 };
 
 template <typename Tensor>
-static tensor<float, 4> rot6d_to_rotmat(const Tensor &src) {
+static tensor<float, 4> rot6d_to_rotmat(const Tensor& src) {
   tensor<float, 4> dst({3, 3, src.shape[1], src.shape[2]});
 
   for (uint32_t i = 0; i < src.shape[2]; i++) {
@@ -670,7 +670,7 @@ static tensor<float, 4> rot6d_to_rotmat(const Tensor &src) {
 }
 
 template <typename Tensor>
-static tensor<float, 4> flip_rotmat(const Tensor &src) {
+static tensor<float, 4> flip_rotmat(const Tensor& src) {
   tensor<float, 4> dst(src.shape);
 
   for (uint32_t i = 0; i < src.shape[3]; i++) {
@@ -690,7 +690,7 @@ static tensor<float, 4> flip_rotmat(const Tensor &src) {
   return dst;
 }
 
-static tensor<float, 2> normalize(const tensor<float, 2> &src) {
+static tensor<float, 2> normalize(const tensor<float, 2>& src) {
   assert(src.shape.size() == 2);
 
   tensor<float, 2> dst(src.shape);
@@ -720,29 +720,29 @@ class prepare_body_mesh_parameter_node : public graph_node {
   virtual std::string get_proc_name() const override { return "prepare_body_mesh_parameter"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
       const auto base_frame_msg =
           std::dynamic_pointer_cast<frame_message_base>(obj_msg->get_field("pred_pose"));
 
-      const auto &pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                   obj_msg->get_field("pred_pose"))
                                   ->get_data();
-      const auto &pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_shape"))
                                    ->get_data();
-      const auto &pred_rhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_rhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_rhand"))
                                    ->get_data();
-      const auto &pred_lhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_lhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_lhand"))
                                    ->get_data();
-      const auto &pred_face = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_face = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                   obj_msg->get_field("pred_face"))
                                   ->get_data();
-      const auto &pred_exp =
+      const auto& pred_exp =
           std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(obj_msg->get_field("pred_exp"))
               ->get_data();
 
@@ -784,7 +784,7 @@ class prepare_body_mesh_parameter_node : public graph_node {
 
       auto new_obj_msg = std::make_shared<object_message>();
 
-      const auto make_message = [base_frame_msg](const auto &output_tensor) {
+      const auto make_message = [base_frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(base_frame_msg->get_profile());
@@ -823,23 +823,23 @@ class prepare_face_mesh_parameter_node : public graph_node {
   virtual std::string get_proc_name() const override { return "prepare_face_mesh_parameter"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
       const auto base_frame_msg =
           std::dynamic_pointer_cast<frame_message_base>(obj_msg->get_field("pred_pose"));
 
-      const auto &pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                   obj_msg->get_field("pred_pose"))
                                   ->get_data();
-      const auto &pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_shape"))
                                    ->get_data();
-      const auto &pred_orient = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_orient = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                     obj_msg->get_field("pred_orient"))
                                     ->get_data();
-      const auto &pred_exp =
+      const auto& pred_exp =
           std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(obj_msg->get_field("pred_exp"))
               ->get_data();
 
@@ -871,7 +871,7 @@ class prepare_face_mesh_parameter_node : public graph_node {
 
       auto new_obj_msg = std::make_shared<object_message>();
 
-      const auto make_message = [base_frame_msg](const auto &output_tensor) {
+      const auto make_message = [base_frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(base_frame_msg->get_profile());
@@ -907,20 +907,20 @@ class prepare_hand_mesh_parameter_node : public graph_node {
   virtual std::string get_proc_name() const override { return "prepare_hand_mesh_parameter"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
       const auto base_frame_msg =
           std::dynamic_pointer_cast<frame_message_base>(obj_msg->get_field("pred_pose"));
 
-      const auto &pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                   obj_msg->get_field("pred_pose"))
                                   ->get_data();
-      const auto &pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_shape"))
                                    ->get_data();
-      const auto &pred_orient = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_orient = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                     obj_msg->get_field("pred_orient"))
                                     ->get_data();
 
@@ -942,7 +942,7 @@ class prepare_hand_mesh_parameter_node : public graph_node {
 
       auto new_obj_msg = std::make_shared<object_message>();
 
-      const auto make_message = [base_frame_msg](const auto &output_tensor) {
+      const auto make_message = [base_frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(base_frame_msg->get_profile());
@@ -977,25 +977,25 @@ class optimize_body_mesh_parameter_node : public graph_node {
 
   void set_filename(std::string value) { filename = value; }
 
-  const std::string &get_filename() const { return filename; }
+  const std::string& get_filename() const { return filename; }
 
   virtual std::string get_proc_name() const override { return "optimize_body_mesh_parameter"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(filename);
   }
 
   static std::shared_ptr<object_message> load_parameters(
-      const std::string &filename, std::shared_ptr<frame_message_base> frame_msg = nullptr) {
+      const std::string& filename, std::shared_ptr<frame_message_base> frame_msg = nullptr) {
     std::ifstream file(filename.c_str());
     nlohmann::json params = nlohmann::json::parse(file);
 
     auto obj_msg = std::make_shared<object_message>();
 
-    for (const auto &item : params.items()) {
-      const auto &name = item.key();
-      const auto &value = item.value();
+    for (const auto& item : params.items()) {
+      const auto& name = item.key();
+      const auto& value = item.value();
 
       const auto type = value["type"].get<std::string>();
       const auto shape = value["shape"].get<std::vector<uint32_t>>();
@@ -1088,12 +1088,12 @@ class optimize_body_mesh_parameter_node : public graph_node {
 
   virtual void initialize() override { mesh_spec = load_parameters(filename); }
 
-  tensor<float, 4> get_global_rotation(const tensor<float, 4> &global_orient,
-                                       const tensor<float, 4> &pose) const {
-    const auto &tpose_joints = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
+  tensor<float, 4> get_global_rotation(const tensor<float, 4>& global_orient,
+                                       const tensor<float, 4>& pose) const {
+    const auto& tpose_joints = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
                                    mesh_spec->get_field("tpose_joints"))
                                    ->get_data();
-    const auto &parents = std::dynamic_pointer_cast<frame_message<tensor<int32_t, 1>>>(
+    const auto& parents = std::dynamic_pointer_cast<frame_message<tensor<int32_t, 1>>>(
                               mesh_spec->get_field("parents"))
                               ->get_data();
 
@@ -1152,7 +1152,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
         .contiguous();
   }
 
-  static tensor<float, 3> bmm(const tensor<float, 3> &value1, const tensor<float, 3> &value2) {
+  static tensor<float, 3> bmm(const tensor<float, 3>& value1, const tensor<float, 3>& value2) {
     assert(value1.shape[0] == value2.shape[1]);
     auto result = tensor<float, 3>::zeros({value1.shape[1], value2.shape[0], value1.shape[2]});
     for (uint32_t i = 0; i < value1.shape[2]; i++) {
@@ -1168,8 +1168,8 @@ class optimize_body_mesh_parameter_node : public graph_node {
     return result;
   }
 
-  static tensor<float, 3> blend_shapes(const tensor<float, 2> &betas,
-                                       const tensor<float, 3> &shape_disps) {
+  static tensor<float, 3> blend_shapes(const tensor<float, 2>& betas,
+                                       const tensor<float, 3>& shape_disps) {
     auto result =
         tensor<float, 3>::zeros({shape_disps.shape[1], shape_disps.shape[2], betas.shape[1]});
     for (uint32_t b = 0; b < betas.shape[1]; b++) {
@@ -1185,11 +1185,11 @@ class optimize_body_mesh_parameter_node : public graph_node {
     return result;
   }
 
-  tensor<float, 3> get_tpose(const tensor<float, 2> &betas) const {
-    const auto &joint_template = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+  tensor<float, 3> get_tpose(const tensor<float, 2>& betas) const {
+    const auto& joint_template = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                      mesh_spec->get_field("joint_template"))
                                      ->get_data();
-    const auto &joint_dirs = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
+    const auto& joint_dirs = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
                                  mesh_spec->get_field("joint_dirs"))
                                  ->get_data();
 
@@ -1208,7 +1208,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   template <size_t size>
-  static inline float norm(const std::array<float, size> &values) {
+  static inline float norm(const std::array<float, size>& values) {
     float result = 0.0f;
     for (size_t i = 0; i < size; i++) {
       result += values[i] * values[i];
@@ -1217,7 +1217,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   template <size_t size>
-  static inline float sum(const std::array<float, size> &values) {
+  static inline float sum(const std::array<float, size>& values) {
     float result = 0.0f;
     for (size_t i = 0; i < size; i++) {
       result += values[i];
@@ -1226,7 +1226,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   template <size_t size>
-  static inline std::array<float, size> normalize(const std::array<float, size> &values) {
+  static inline std::array<float, size> normalize(const std::array<float, size>& values) {
     const auto n = norm(values);
     std::array<float, size> result;
     for (size_t i = 0; i < size; i++) {
@@ -1236,8 +1236,8 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   template <size_t size>
-  static inline float dot(const std::array<float, size> &values1,
-                          const std::array<float, size> &values2) {
+  static inline float dot(const std::array<float, size>& values1,
+                          const std::array<float, size>& values2) {
     float result = 0.0f;
     for (size_t i = 0; i < size; i++) {
       result += values1[i] * values2[i];
@@ -1246,7 +1246,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   template <size_t size>
-  static inline std::array<float, size> mul(const std::array<float, size> &v, const float x) {
+  static inline std::array<float, size> mul(const std::array<float, size>& v, const float x) {
     std::array<float, size> result;
     for (size_t i = 0; i < size; i++) {
       result[i] = v[i] * x;
@@ -1255,7 +1255,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   static std::array<std::array<float, 3>, 3> quaternion_to_rotation_matrix(
-      const std::array<float, 4> &quaternion) {
+      const std::array<float, 4>& quaternion) {
     const auto q0 = quaternion[0];
     const auto q1 = quaternion[1];
     const auto q2 = quaternion[2];
@@ -1278,7 +1278,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   static std::array<float, 4> rotation_matrix_to_quaternion(
-      const std::array<std::array<float, 3>, 3> &rotation_matrix, float eps = 1e-6f) {
+      const std::array<std::array<float, 3>, 3>& rotation_matrix, float eps = 1e-6f) {
     float r11 = rotation_matrix[0][0];
     float r12 = rotation_matrix[0][1];
     float r13 = rotation_matrix[0][2];
@@ -1340,7 +1340,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
     return {q0, q1, q2, q3};
   }
 
-  static std::array<float, 3> quaternion_to_angle_axis(const std::array<float, 4> &quaternion) {
+  static std::array<float, 3> quaternion_to_angle_axis(const std::array<float, 4>& quaternion) {
     const auto q1 = quaternion[1];
     const auto q2 = quaternion[2];
     const auto q3 = quaternion[3];
@@ -1367,8 +1367,8 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   static std::tuple<std::array<std::array<float, 3>, 3>, float> compute_twist_rotation(
-      const std::array<std::array<float, 3>, 3> &rotation_matrix,
-      const std::array<float, 3> &twist_axis) {
+      const std::array<std::array<float, 3>, 3>& rotation_matrix,
+      const std::array<float, 3>& twist_axis) {
     const auto quaternion = rotation_matrix_to_quaternion(rotation_matrix);
 
     const auto norm_twist_axis = normalize(twist_axis);
@@ -1385,7 +1385,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 
   static std::tuple<tensor<float, 3>, tensor<float, 1>> compute_twist_rotation(
-      const tensor<float, 3> &rotation_matrix, const tensor<float, 2> &twist_axis) {
+      const tensor<float, 3>& rotation_matrix, const tensor<float, 2>& twist_axis) {
     assert(rotation_matrix.shape[2] == twist_axis.shape[1]);
     const auto batch_size = rotation_matrix.shape[2];
     tensor<float, 3> twist_rotation({3, 3, batch_size});
@@ -1420,8 +1420,8 @@ class optimize_body_mesh_parameter_node : public graph_node {
 
   template <size_t size_m, size_t size_n, size_t size_k>
   static std::array<std::array<float, 3>, 3> mul(
-      const std::array<std::array<float, size_k>, size_m> &value1,
-      const std::array<std::array<float, size_n>, size_k> &value2) {
+      const std::array<std::array<float, size_k>, size_m>& value1,
+      const std::array<std::array<float, size_n>, size_k>& value2) {
     std::array<std::array<float, size_n>, size_m> result = {};
     for (size_t m = 0; m < size_m; m++) {
       for (size_t n = 0; n < size_n; n++) {
@@ -1433,7 +1433,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
     return result;
   }
 
-  static tensor<float, 3> batch_rodrigues(const tensor<float, 2> &rot_vec) {
+  static tensor<float, 3> batch_rodrigues(const tensor<float, 2>& rot_vec) {
     const auto batch_size = rot_vec.shape[1];
 
     tensor<float, 3> result({3, 3, batch_size});
@@ -1472,28 +1472,28 @@ class optimize_body_mesh_parameter_node : public graph_node {
       const auto base_frame_msg =
           std::dynamic_pointer_cast<frame_message_base>(obj_msg->get_field("pred_pose"));
 
-      const auto &pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_pose = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                   obj_msg->get_field("pred_pose"))
                                   ->get_data();
-      const auto &pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_shape = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_shape"))
                                    ->get_data();
-      const auto &pred_rhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_rhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_rhand"))
                                    ->get_data();
-      const auto &pred_lhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_lhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                    obj_msg->get_field("pred_lhand"))
                                    ->get_data();
-      const auto &pred_face = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_face = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                   obj_msg->get_field("pred_face"))
                                   ->get_data();
-      const auto &pred_exp =
+      const auto& pred_exp =
           std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(obj_msg->get_field("pred_exp"))
               ->get_data();
-      const auto &pred_orient_lhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_orient_lhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                           obj_msg->get_field("pred_orient_lhand"))
                                           ->get_data();
-      const auto &pred_orient_rhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
+      const auto& pred_orient_rhand = std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(
                                           obj_msg->get_field("pred_orient_rhand"))
                                           ->get_data();
 
@@ -1692,7 +1692,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
 
       auto new_obj_msg = std::make_shared<object_message>();
 
-      const auto make_message = [base_frame_msg](const auto &output_tensor) {
+      const auto make_message = [base_frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(base_frame_msg->get_profile());
@@ -1727,7 +1727,7 @@ class object_map_node : public graph_node {
   virtual std::string get_proc_name() const override { return "object_map"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -1737,7 +1737,7 @@ class object_map_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -1745,7 +1745,7 @@ class object_map_node : public graph_node {
     }
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -1758,11 +1758,11 @@ class object_map_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-      for (const auto &[name, output] : get_outputs()) {
+      for (const auto& [name, output] : get_outputs()) {
         try {
-          const auto &field = obj_msg->get_field(name);
+          const auto& field = obj_msg->get_field(name);
           output->send(field);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
           spdlog::error(e.what());
         }
       }
@@ -1782,7 +1782,7 @@ class render_node : public graph_node {
   virtual std::string get_proc_name() const override { return "render"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
@@ -1804,12 +1804,12 @@ class project_joint_iwp_node : public graph_node {
   virtual std::string get_proc_name() const override { return "project_joint_iwp"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   template <typename TensorNx3, typename Tensor3x3, typename Tensor3, typename Scalar>
-  static TensorNx3 perspective_projection(const TensorNx3 &points, const Tensor3x3 &rotation,
-                                          const Tensor3 &translation, const Scalar focal_length,
-                                          const Tensor3 &camera_center) {
+  static TensorNx3 perspective_projection(const TensorNx3& points, const Tensor3x3& rotation,
+                                          const Tensor3& translation, const Scalar focal_length,
+                                          const Tensor3& camera_center) {
     assert(points.shape.size() == 3);
 
     TensorNx3 dst({2, points.shape[1], points.shape[2]});
@@ -1868,10 +1868,10 @@ class project_joint_iwp_node : public graph_node {
       const auto base_frame_msg =
           std::dynamic_pointer_cast<frame_message_base>(obj_msg->get_field("joints"));
 
-      const auto &joints =
+      const auto& joints =
           std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(obj_msg->get_field("joints"))
               ->get_data();
-      const auto &cam_sxy =
+      const auto& cam_sxy =
           std::dynamic_pointer_cast<frame_message<tensor<float, 2>>>(obj_msg->get_field("cam_sxy"))
               ->get_data();
 
@@ -1891,7 +1891,7 @@ class project_joint_iwp_node : public graph_node {
       auto proj = perspective_projection(joints, rotation, translation, 5000.0f, camera_center);
       proj.view().assign([](const auto value, auto...) { return value / (224. / 2.); });
 
-      const auto make_message = [base_frame_msg](const auto &output_tensor) {
+      const auto make_message = [base_frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(base_frame_msg->get_profile());
@@ -1925,13 +1925,13 @@ class extract_point_2d_node : public graph_node {
   virtual std::string get_proc_name() const override { return "extract_point_2d"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(index);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(message)) {
-      const auto &joints = frame_msg->get_data();
+      const auto& joints = frame_msg->get_data();
 
       const auto batch_size = joints.shape[2];
       tensor<float, 2> dst({2, batch_size});
@@ -1940,7 +1940,7 @@ class extract_point_2d_node : public graph_node {
         dst.set({1, i}, joints.get({1, index, i}));
       }
 
-      const auto make_message = [frame_msg](const auto &output_tensor) {
+      const auto make_message = [frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(frame_msg->get_profile());
@@ -1991,7 +1991,7 @@ class local_server {
   ~local_server() { stop(); }
 };
 
-static void load_model(std::string model_path, std::vector<uint8_t> &data) {
+static void load_model(std::string model_path, std::vector<uint8_t>& data) {
   std::ifstream ifs;
   ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
   if (ifs.fail()) {
@@ -2005,14 +2005,14 @@ static void load_model(std::string model_path, std::vector<uint8_t> &data) {
 
   data.resize(length);
 
-  ifs.read((char *)data.data(), length);
+  ifs.read((char*)data.data(), length);
   if (ifs.fail()) {
     std::cerr << "File read error: " << model_path << "\n";
     std::quick_exit(0);
   }
 }
 
-int main(int argc, char *argv[]) try {
+int main(int argc, char* argv[]) try {
   signal(SIGINT, sigint_handler);
 
   spdlog::set_level(spdlog::level::debug);
@@ -2033,7 +2033,7 @@ int main(int argc, char *argv[]) try {
       {"face", "../sample/pymafx/data/pymafx/face_encoder.onnx"},
   };
 
-  for (const auto &[part, model_path] : encode_model_files) {
+  for (const auto& [part, model_path] : encode_model_files) {
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2052,7 +2052,7 @@ int main(int argc, char *argv[]) try {
   graph_edge_ptr features_ = nullptr;
   std::unordered_map<std::string, std::vector<graph_edge_ptr>> part_features;
 
-  for (const auto &[part, part_img] : part_image_files) {
+  for (const auto& [part, part_img] : part_image_files) {
     std::shared_ptr<image_loader_node> data_loader(new image_loader_node());
     data_loader->set_filename(part_img);
     data_loader->set_interval(100000);
@@ -2192,7 +2192,7 @@ int main(int argc, char *argv[]) try {
 #if 1
   std::unordered_map<std::string, graph_edge_ptr> pred_pose_hands, pred_shape_hands,
       pred_orient_hands, pred_cam_hands;
-  for (const auto &part : {"lhand", "rhand"}) {
+  for (const auto& part : {"lhand", "rhand"}) {
     std::vector<uint8_t> hand_grid_feature_model_data;
     {
       const auto model_path = "../sample/pymafx/data/pymafx/hand_grid_feature_encoder0.onnx";
@@ -2328,7 +2328,7 @@ int main(int argc, char *argv[]) try {
 
 #if 1
   std::unordered_map<std::string, graph_edge_ptr> hands_vertices;
-  for (const auto &part : {"lhand", "rhand"}) {
+  for (const auto& part : {"lhand", "rhand"}) {
     std::shared_ptr<frame_number_sync_node> sync_mesh_input(new frame_number_sync_node());
     {
       sync_mesh_input->set_input(pred_pose_hands.at(part), "pred_pose");
@@ -2505,7 +2505,7 @@ int main(int argc, char *argv[]) try {
 #if 1
   std::unordered_map<std::string, graph_edge_ptr> pred_pose_hands1, pred_shape_hands1,
       pred_orient_hands1, pred_cam_hands1;
-  for (const auto &part : {"lhand", "rhand"}) {
+  for (const auto& part : {"lhand", "rhand"}) {
     std::vector<uint8_t> mesh_aligned_feature_model_data;
     {
       const auto model_path =
@@ -2671,7 +2671,7 @@ int main(int argc, char *argv[]) try {
 
 #if 1
   std::unordered_map<std::string, graph_edge_ptr> hands_vertices1;
-  for (const auto &part : {"lhand", "rhand"}) {
+  for (const auto& part : {"lhand", "rhand"}) {
     std::shared_ptr<frame_number_sync_node> sync_mesh_input(new frame_number_sync_node());
     {
       sync_mesh_input->set_input(pred_pose_hands1.at(part), "pred_pose");
@@ -2852,7 +2852,7 @@ int main(int argc, char *argv[]) try {
 #if 1
   std::unordered_map<std::string, graph_edge_ptr> pred_pose_hands2, pred_shape_hands2,
       pred_orient_hands2, pred_cam_hands2;
-  for (const auto &part : {"lhand", "rhand"}) {
+  for (const auto& part : {"lhand", "rhand"}) {
     std::vector<uint8_t> mesh_aligned_feature_model_data;
     {
       const auto model_path =
@@ -3019,7 +3019,7 @@ int main(int argc, char *argv[]) try {
 
 #if 1
   std::unordered_map<std::string, graph_edge_ptr> hands_vertices2;
-  for (const auto &part : {"lhand", "rhand"}) {
+  for (const auto& part : {"lhand", "rhand"}) {
     std::shared_ptr<frame_number_sync_node> sync_mesh_input(new frame_number_sync_node());
     {
       sync_mesh_input->set_input(pred_pose_hands2.at(part), "pred_pose");
@@ -3086,7 +3086,7 @@ int main(int argc, char *argv[]) try {
   }
 
   return 0;
-} catch (std::exception &e) {
+} catch (std::exception& e) {
   std::cout << e.what() << std::endl;
   shutdown();
 }

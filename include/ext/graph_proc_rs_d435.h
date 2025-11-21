@@ -190,17 +190,17 @@ struct stream_profile_request {
   uint32_t width, height, fps;
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(format, stream, index, width, height, fps);
   }
 };
 
-static inline bool operator==(const stream_profile_request &a, const stream_profile_request &b) {
+static inline bool operator==(const stream_profile_request& a, const stream_profile_request& b) {
   return (a.width == b.width) && (a.height == b.height) && (a.fps == b.fps) &&
          (a.format == b.format) && (a.index == b.index) && (a.stream == b.stream);
 }
 
-static inline bool operator<(const stream_profile_request &lhs, const stream_profile_request &rhs) {
+static inline bool operator<(const stream_profile_request& lhs, const stream_profile_request& rhs) {
   if (lhs.format != rhs.format) return lhs.format < rhs.format;
   if (lhs.index != rhs.index) return lhs.index < rhs.index;
   return lhs.stream < rhs.stream;
@@ -497,7 +497,7 @@ class rs_d435_node : public graph_node {
 #endif
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -510,7 +510,7 @@ class rs_d435_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -530,7 +530,7 @@ class rs_d435_node : public graph_node {
     auto msg = std::make_shared<frame_message<image>>();
 
     image img(frame.get_width(), frame.get_height(), frame.get_bytes_per_pixel(),
-              frame.get_stride_in_bytes(), (const uint8_t *)frame.get_data());
+              frame.get_stride_in_bytes(), (const uint8_t*)frame.get_data());
 
     img.set_format(convert_image_format(profile.format()));
 
@@ -585,7 +585,7 @@ class rs_d435_node : public graph_node {
       device = devices.front();
       serial_number = device.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
     } else {
-      for (auto &&dev : devices) {
+      for (auto&& dev : devices) {
         if (serial_number == dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER)) {
           device = dev;
           break;
@@ -597,8 +597,8 @@ class rs_d435_node : public graph_node {
       throw std::runtime_error("Not found D435 device");
     }
 
-    for (auto &&sensor : device.query_sensors()) {
-      for (auto &profile : sensor.get_stream_profiles()) {
+    for (auto&& sensor : device.query_sensors()) {
+      for (auto& profile : sensor.get_stream_profiles()) {
         const auto stream = convert_from_rs2_stream(profile.stream_type());
         stream_index_pair sip(stream, profile.stream_index());
         if (sensors.find(sip) == sensors.end()) {

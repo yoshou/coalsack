@@ -22,54 +22,54 @@ struct f32vec2 {
   float x;
   float y;
 
-  f32vec2 &operator+=(const f32vec2 &v) {
+  f32vec2& operator+=(const f32vec2& v) {
     x += v.x;
     y += v.y;
     return *this;
   }
-  f32vec2 &operator-=(const f32vec2 &v) {
+  f32vec2& operator-=(const f32vec2& v) {
     x -= v.x;
     y -= v.y;
     return *this;
   }
-  f32vec2 &operator*=(const f32vec2 &v) {
+  f32vec2& operator*=(const f32vec2& v) {
     x *= v.x;
     y *= v.y;
     return *this;
   }
-  f32vec2 &operator*=(float s) {
+  f32vec2& operator*=(float s) {
     x *= s;
     y *= s;
     return *this;
   }
 };
 
-inline f32vec2 operator+(const f32vec2 &left, const f32vec2 &right) {
+inline f32vec2 operator+(const f32vec2& left, const f32vec2& right) {
   return f32vec2{left.x + right.x, left.y + right.y};
 }
-inline f32vec2 operator-(const f32vec2 &left, const f32vec2 &right) {
+inline f32vec2 operator-(const f32vec2& left, const f32vec2& right) {
   return f32vec2{left.x - right.x, left.y - right.y};
 }
-inline f32vec2 operator*(const f32vec2 &left, const f32vec2 &right) {
+inline f32vec2 operator*(const f32vec2& left, const f32vec2& right) {
   return f32vec2{left.x * right.x, left.y * right.y};
 }
-inline f32vec2 operator*(const f32vec2 &v, float s) { return f32vec2{v.x * s, v.y * s}; }
+inline f32vec2 operator*(const f32vec2& v, float s) { return f32vec2{v.x * s, v.y * s}; }
 
-inline float norm(const f32vec2 &v) { return std::sqrt(v.x * v.x + v.y * v.y); }
+inline float norm(const f32vec2& v) { return std::sqrt(v.x * v.x + v.y * v.y); }
 
 class contours_detector {
-  const std::uint8_t *image;
+  const std::uint8_t* image;
   std::size_t width;
   std::size_t height;
   std::size_t stride;
 
  public:
-  contours_detector(const std::uint8_t *image, std::size_t width, std::size_t height,
+  contours_detector(const std::uint8_t* image, std::size_t width, std::size_t height,
                     std::size_t stride)
       : image(image), width(width), height(height), stride(stride) {}
 
  private:
-  static inline std::size_t find_nonzero(const std::uint8_t *__restrict image, std::size_t length,
+  static inline std::size_t find_nonzero(const std::uint8_t* __restrict image, std::size_t length,
                                          double threshold) {
     std::size_t x = 0;
 #if USE_NEON
@@ -112,7 +112,7 @@ class contours_detector {
     return length;
   }
 
-  static inline std::size_t find_zero(const std::uint8_t *image, std::size_t length,
+  static inline std::size_t find_zero(const std::uint8_t* image, std::size_t length,
                                       double threshold) {
     std::size_t x = 0;
 #if USE_NEON
@@ -203,10 +203,10 @@ class contours_detector {
       CONNECTING_LINE connecting_line = CONNECTING_LINE::NONE;
       std::size_t prev_point = -1;
       while (i < upper_row_points_end && j < lower_row_points_end) {
-        auto &upper_segment_start = points[i];
-        auto &upper_segment_end = points[i + 1];
-        auto &lower_segment_start = points[j];
-        auto &lower_segment_end = points[j + 1];
+        auto& upper_segment_start = points[i];
+        auto& upper_segment_end = points[i + 1];
+        auto& lower_segment_start = points[j];
+        auto& lower_segment_end = points[j + 1];
 
         if (connecting_line == CONNECTING_LINE::NONE) {
           if (upper_segment_end.x < lower_segment_end.x) {
@@ -310,7 +310,7 @@ class contours_detector {
       }
 
       for (; i < upper_row_points_end; i += 2) {
-        auto &upper_segment_end = points[i + 1];
+        auto& upper_segment_end = points[i + 1];
 
         if (connecting_line != CONNECTING_LINE::NONE) {
           // Terminate link
@@ -322,7 +322,7 @@ class contours_detector {
   };
 
  public:
-  void detect(double threshold, std::vector<std::vector<u32vec2>> &contours) {
+  void detect(double threshold, std::vector<std::vector<u32vec2>>& contours) {
     contour_connector connector;
 
     for (std::size_t x = 0; x < width;) {
@@ -366,10 +366,10 @@ class contours_detector {
     }
     connector.build_link();
 
-    const auto traverse_contours = [](const auto &connector, auto &contours) {
-      const auto &points = connector.points;
-      const auto &external_contour_heads = connector.external_contour_heads;
-      const auto &internal_contour_heads = connector.internal_contour_heads;
+    const auto traverse_contours = [](const auto& connector, auto& contours) {
+      const auto& points = connector.points;
+      const auto& external_contour_heads = connector.external_contour_heads;
+      const auto& internal_contour_heads = connector.internal_contour_heads;
 
       const auto visited = std::make_unique<bool[]>(points.size());
       for (std::size_t i = 0; i < external_contour_heads.size(); i++) {
@@ -414,14 +414,14 @@ class contours_detector {
 
   using contour_t = std::vector<u32vec2>;
 
-  void detect_multi_layer(const std::vector<double> &thresholds,
-                          std::vector<std::vector<contour_t>> &contours) {
+  void detect_multi_layer(const std::vector<double>& thresholds,
+                          std::vector<std::vector<contour_t>>& contours) {
     contours.resize(thresholds.size());
 
     std::vector<contour_connector> connectors(thresholds.size());
 
     for (std::size_t layer = 0; layer < thresholds.size(); layer++) {
-      auto &connector = connectors.at(layer);
+      auto& connector = connectors.at(layer);
       const auto threshold = thresholds.at(layer);
 
       for (std::size_t x = 0; x < width;) {
@@ -446,7 +446,7 @@ class contours_detector {
 
     for (std::size_t y = 1; y < height; y++) {
       for (std::size_t layer = 0; layer < thresholds.size(); layer++) {
-        auto &connector = connectors.at(layer);
+        auto& connector = connectors.at(layer);
         const auto threshold = thresholds.at(layer);
         for (std::size_t x = 0; x < width;) {
           x += find_nonzero(image + y * stride + x, width - x, threshold);
@@ -469,14 +469,14 @@ class contours_detector {
     }
 
     for (std::size_t layer = 0; layer < thresholds.size(); layer++) {
-      auto &connector = connectors.at(layer);
+      auto& connector = connectors.at(layer);
       connector.build_link();
     }
 
-    const auto traverse_contours = [](const auto &connector, auto &contours) {
-      const auto &points = connector.points;
-      const auto &external_contour_heads = connector.external_contour_heads;
-      const auto &internal_contour_heads = connector.internal_contour_heads;
+    const auto traverse_contours = [](const auto& connector, auto& contours) {
+      const auto& points = connector.points;
+      const auto& external_contour_heads = connector.external_contour_heads;
+      const auto& internal_contour_heads = connector.internal_contour_heads;
 
       const auto visited = std::make_unique<bool[]>(points.size());
       for (std::size_t i = 0; i < external_contour_heads.size(); i++) {
@@ -517,15 +517,15 @@ class contours_detector {
     };
 
     for (std::size_t layer = 0; layer < thresholds.size(); layer++) {
-      const auto &connector = connectors.at(layer);
+      const auto& connector = connectors.at(layer);
       traverse_contours(connector, contours.at(layer));
     }
   }
 };
 
-inline void threshold(const std::uint8_t *__restrict src, std::size_t length,
+inline void threshold(const std::uint8_t* __restrict src, std::size_t length,
                       std::uint8_t threshold, std::uint8_t max_value,
-                      std::uint8_t *__restrict dst) {
+                      std::uint8_t* __restrict dst) {
   std::size_t x = 0;
 #if USE_NEON
   constexpr auto num_vector_lanes = sizeof(uint8x16_t) / sizeof(uint8_t);
@@ -573,7 +573,7 @@ struct moments_t {
   double nu03;
 };
 
-inline void update_central_moments(moments_t &moments) {
+inline void update_central_moments(moments_t& moments) {
   double cx = 0;
   double cy = 0;
   double mu20;
@@ -619,7 +619,7 @@ inline void update_central_moments(moments_t &moments) {
   moments.nu03 = moments.mu03 * s3;
 }
 
-inline moments_t compute_contour_moments(const std::vector<u32vec2> &contour) {
+inline moments_t compute_contour_moments(const std::vector<u32vec2>& contour) {
   moments_t m = {};
 
   if (contour.size() == 0) {
@@ -643,7 +643,7 @@ inline moments_t compute_contour_moments(const std::vector<u32vec2> &contour) {
   auto xi_12 = xi_1 * xi_1;
   auto yi_12 = yi_1 * yi_1;
 
-  for (const auto &pt : contour) {
+  for (const auto& pt : contour) {
     const auto xi = static_cast<double>(pt.x);
     const auto yi = static_cast<double>(pt.y);
 
@@ -703,7 +703,7 @@ inline moments_t compute_contour_moments(const std::vector<u32vec2> &contour) {
   return m;
 }
 
-float compute_arc_length(const std::vector<u32vec2> &contour) {
+float compute_arc_length(const std::vector<u32vec2>& contour) {
   float perimeter = 0;
 
   if (contour.size() < 2) {
@@ -715,7 +715,7 @@ float compute_arc_length(const std::vector<u32vec2> &contour) {
       static_cast<float>(contour.back().y),
   };
 
-  for (const auto &p : contour) {
+  for (const auto& p : contour) {
     const auto pt = f32vec2{
         static_cast<float>(p.x),
         static_cast<float>(p.y),
@@ -736,13 +736,13 @@ struct circle_t {
 };
 
 class blob_detector {
-  const std::uint8_t *image;
+  const std::uint8_t* image;
   std::size_t width;
   std::size_t height;
   std::size_t stride;
 
  public:
-  blob_detector(const std::uint8_t *image, std::size_t width, std::size_t height,
+  blob_detector(const std::uint8_t* image, std::size_t width, std::size_t height,
                 std::size_t stride)
       : image(image),
         width(width),
@@ -768,7 +768,7 @@ class blob_detector {
   float min_dist_between_blobs;
   std::size_t min_repeatability;
 
-  void detect(std::vector<circle_t> &keypoints) {
+  void detect(std::vector<circle_t>& keypoints) {
     std::vector<double> threshs;
     for (double thresh = min_threshold; thresh < max_threshold; thresh += step_threshold) {
       threshs.push_back(thresh);
@@ -787,9 +787,9 @@ class blob_detector {
 #endif
 
     for (std::size_t layer = 0; layer < threshs.size(); layer++) {
-      const auto &contours = contours_list.at(layer);
+      const auto& contours = contours_list.at(layer);
 
-      auto &circles = circles_list[layer];
+      auto& circles = circles_list[layer];
       for (std::size_t i = 0; i < contours.size(); i++) {
         const auto moments = compute_contour_moments(contours[i]);
 
@@ -812,7 +812,7 @@ class blob_detector {
                                     static_cast<float>(moments.m01 / moments.m00)};
 
         std::vector<float> dists;
-        for (const auto &pt : contours[i]) {
+        for (const auto& pt : contours[i]) {
           const auto x = pt.x - center.x;
           const auto y = pt.y - center.y;
           dists.push_back(std::sqrt(x * x + y * y));
@@ -825,7 +825,7 @@ class blob_detector {
     }
 
     std::vector<std::vector<circle_t>> centers;
-    for (const auto &circles : circles_list) {
+    for (const auto& circles : circles_list) {
       std::vector<std::vector<circle_t>> new_centers;
       for (size_t i = 0; i < circles.size(); i++) {
         bool is_new = true;

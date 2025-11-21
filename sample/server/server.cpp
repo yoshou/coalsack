@@ -44,7 +44,7 @@ static void sigint_handler(int) {
   exit(0);
 }
 
-int main(int argc, char *argv[]) try {
+int main(int argc, char* argv[]) try {
   signal(SIGINT, sigint_handler);
 
   spdlog::set_level(spdlog::level::debug);
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) try {
   io_context.run();
 
   return 0;
-} catch (std::exception &e) {
+} catch (std::exception& e) {
   std::cout << e.what() << std::endl;
   shutdown();
 }

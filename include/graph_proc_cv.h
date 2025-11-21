@@ -39,7 +39,7 @@ class image_viz_node : public graph_node {
   virtual std::string get_proc_name() const override { return "image_viz"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(image_name);
   }
 
@@ -51,8 +51,8 @@ class image_viz_node : public graph_node {
 
       while (running.load() && cv::waitKey(1)) {
         if (image_msg) {
-          const auto &image = image_msg->get_image();
-          cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data(),
+          const auto& image = image_msg->get_image();
+          cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar*)image.get_data(),
                         image.get_stride());
           cv::imshow(image_name, frame);
         }
@@ -71,7 +71,8 @@ class image_viz_node : public graph_node {
     }
   }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<image_message>(message)) {
       this->image_msg = image_msg;
     }
@@ -91,16 +92,17 @@ class image_write_node : public graph_node {
   virtual std::string get_proc_name() const override { return "image_write"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(path);
   }
 
   virtual void run() override {}
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<image_message>(message)) {
-      const auto &image = image_msg->get_image();
-      cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar *)image.get_data(),
+      const auto& image = image_msg->get_image();
+      cv::Mat frame(image.get_height(), image.get_width(), CV_8UC3, (uchar*)image.get_data(),
                     image.get_stride());
       cv::imwrite(path, frame);
 
@@ -111,11 +113,11 @@ class image_write_node : public graph_node {
 
 class cv_window {
  public:
-  static std::map<std::string, cv::Mat> &get_window_buf() {
+  static std::map<std::string, cv::Mat>& get_window_buf() {
     static std::map<std::string, cv::Mat> window_buf;
     return window_buf;
   }
-  static std::mutex &get_mutex() {
+  static std::mutex& get_mutex() {
     static std::mutex mtx;
     return mtx;
   }
@@ -124,11 +126,11 @@ class cv_window {
     std::map<std::string, cv::Mat> window_buf_copy;
     {
       std::lock_guard<std::mutex> lock(cv_window::get_mutex());
-      auto &window_buf = get_window_buf();
+      auto& window_buf = get_window_buf();
       window_buf_copy = window_buf;
       window_buf.clear();
     }
-    for (const auto &[name, buf] : window_buf_copy) {
+    for (const auto& [name, buf] : window_buf_copy) {
       cv::imshow(name, buf);
     }
 
@@ -145,14 +147,14 @@ class cv_window {
     std::lock_guard<std::mutex> lock(cv_window::get_mutex());
     cv::destroyWindow(name);
 
-    auto &window_buf = get_window_buf();
+    auto& window_buf = get_window_buf();
     window_buf.erase(name);
   }
 
   static void imshow(std::string name, cv::Mat mat) {
     std::lock_guard<std::mutex> lock(cv_window::get_mutex());
 
-    auto &window_buf = get_window_buf();
+    auto& window_buf = get_window_buf();
     window_buf[name] = mat;
   }
 };
@@ -200,7 +202,7 @@ class video_viz_node : public graph_node {
   virtual std::string get_proc_name() const override { return "video_viz"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(image_name);
   }
 
@@ -208,9 +210,10 @@ class video_viz_node : public graph_node {
 
   virtual void stop() override {}
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &image = image_msg->get_data();
+      const auto& image = image_msg->get_data();
 
       int type = -1;
       stream_format format = stream_format::ANY;
@@ -223,7 +226,7 @@ class video_viz_node : public graph_node {
         throw std::logic_error("Unknown image format");
       }
 
-      auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar *)image.get_data(),
+      auto frame = cv::Mat(image.get_height(), image.get_width(), type, (uchar*)image.get_data(),
                            image.get_stride())
                        .clone();
       if (format == stream_format::YUYV) {
@@ -257,11 +260,12 @@ class image_transform_node : public graph_node {
     set_output(output);
   }
 
-  virtual void transform(const image &src_image, image &dst_image) = 0;
+  virtual void transform(const image& src_image, image& dst_image) = 0;
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &src_image = image_msg->get_data();
+      const auto& src_image = image_msg->get_data();
 
       image dst_image;
       transform(src_image, dst_image);
@@ -296,7 +300,7 @@ class threshold_node : public image_transform_node {
   int get_threshold_type() const { return thresh_type; }
   void set_threshold_type(int value) { thresh_type = value; }
 
-  virtual void transform(const image &src_image, image &dst_image) override {
+  virtual void transform(const image& src_image, image& dst_image) override {
     image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
                        src_image.get_stride());
     binary_image.set_format(src_image.get_format());
@@ -304,9 +308,9 @@ class threshold_node : public image_transform_node {
     int cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                    (void *)src_image.get_data(), src_image.get_stride());
+                    (void*)src_image.get_data(), src_image.get_stride());
     cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type,
-                    (void *)binary_image.get_data(), binary_image.get_stride());
+                    (void*)binary_image.get_data(), binary_image.get_stride());
 
     cv::threshold(src_mat, dst_mat, thresh, maxval, thresh_type);
 
@@ -314,7 +318,7 @@ class threshold_node : public image_transform_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(thresh, maxval, thresh_type);
   }
 };
@@ -329,10 +333,10 @@ class mask_node : public image_transform_node {
 
   virtual std::string get_proc_name() const override { return "mask"; }
 
-  void set_mask(const image &value) { mask = value; }
+  void set_mask(const image& value) { mask = value; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(mask);
   }
 
@@ -348,7 +352,7 @@ class mask_node : public image_transform_node {
     image_transform_node::process(input_name, message);
   }
 
-  virtual void transform(const image &src_image, image &dst_image) override {
+  virtual void transform(const image& src_image, image& dst_image) override {
     std::lock_guard lock(mask_mutex);
 
     image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
@@ -358,11 +362,11 @@ class mask_node : public image_transform_node {
     int cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                    (void *)src_image.get_data(), (int)src_image.get_stride());
+                    (void*)src_image.get_data(), (int)src_image.get_stride());
     cv::Mat dst_mat((int)masked_image.get_height(), (int)masked_image.get_width(), cv_type,
-                    (void *)masked_image.get_data(), (int)masked_image.get_stride());
-    cv::Mat mask_mat((int)mask.get_height(), (int)mask.get_width(), CV_8UC1,
-                     (void *)mask.get_data(), (int)mask.get_stride());
+                    (void*)masked_image.get_data(), (int)masked_image.get_stride());
+    cv::Mat mask_mat((int)mask.get_height(), (int)mask.get_width(), CV_8UC1, (void*)mask.get_data(),
+                     (int)mask.get_stride());
 
     cv::bitwise_and(src_mat, mask_mat, dst_mat);
 
@@ -391,7 +395,7 @@ class gaussian_blur_node : public image_transform_node {
   void set_sigma_y(double value) { sigma_y = value; }
   double get_sigma_y() const { return sigma_y; }
 
-  virtual void transform(const image &src_image, image &dst_image) override {
+  virtual void transform(const image& src_image, image& dst_image) override {
     image blurred_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
                         src_image.get_stride());
     blurred_image.set_format(src_image.get_format());
@@ -399,9 +403,9 @@ class gaussian_blur_node : public image_transform_node {
     int cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                    (void *)src_image.get_data(), src_image.get_stride());
+                    (void*)src_image.get_data(), src_image.get_stride());
     cv::Mat dst_mat((int)blurred_image.get_height(), (int)blurred_image.get_width(), cv_type,
-                    (void *)blurred_image.get_data(), blurred_image.get_stride());
+                    (void*)blurred_image.get_data(), blurred_image.get_stride());
 
     if (dst_mat.channels() == 1) {
       gaussian_blur(src_mat, dst_mat, kernel_width, kernel_height, sigma_x, sigma_y);
@@ -413,7 +417,7 @@ class gaussian_blur_node : public image_transform_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(kernel_width, kernel_height, sigma_x, sigma_y);
   }
 };
@@ -435,16 +439,16 @@ class resize_node : public image_transform_node {
   int get_interpolation_type() const { return interpolation; }
   void set_interpolation_type(int value) { interpolation = value; }
 
-  virtual void transform(const image &src_image, image &dst_image) override {
+  virtual void transform(const image& src_image, image& dst_image) override {
     image resized_image(width, height, src_image.get_bpp(), width * src_image.get_bpp());
     resized_image.set_format(src_image.get_format());
 
     const auto cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                    (void *)src_image.get_data(), src_image.get_stride());
+                    (void*)src_image.get_data(), src_image.get_stride());
     cv::Mat dst_mat((int)resized_image.get_height(), (int)resized_image.get_width(), cv_type,
-                    (void *)resized_image.get_data(), resized_image.get_stride());
+                    (void*)resized_image.get_data(), resized_image.get_stride());
 
     cv::resize(src_mat, dst_mat, dst_mat.size(), 0, 0, interpolation);
 
@@ -452,7 +456,7 @@ class resize_node : public image_transform_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(width, height, interpolation);
   }
 };
@@ -471,7 +475,7 @@ class scale_abs_node : public image_transform_node {
   double get_beta() const { return beta; }
   void set_beta(double value) { beta = value; }
 
-  virtual void transform(const image &src_image, image &dst_image) override {
+  virtual void transform(const image& src_image, image& dst_image) override {
     image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
                        src_image.get_stride());
     binary_image.set_format(src_image.get_format());
@@ -479,9 +483,9 @@ class scale_abs_node : public image_transform_node {
     int cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                    (void *)src_image.get_data(), src_image.get_stride());
+                    (void*)src_image.get_data(), src_image.get_stride());
     cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type,
-                    (void *)binary_image.get_data(), binary_image.get_stride());
+                    (void*)binary_image.get_data(), binary_image.get_stride());
 
     cv::convertScaleAbs(src_mat, dst_mat, alpha, beta);
 
@@ -489,7 +493,7 @@ class scale_abs_node : public image_transform_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(alpha, beta);
   }
 };
@@ -508,7 +512,7 @@ class scale_node : public image_transform_node {
   double get_beta() const { return beta; }
   void set_beta(double value) { beta = value; }
 
-  virtual void transform(const image &src_image, image &dst_image) override {
+  virtual void transform(const image& src_image, image& dst_image) override {
     image binary_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
                        src_image.get_stride());
     binary_image.set_format(src_image.get_format());
@@ -516,9 +520,9 @@ class scale_node : public image_transform_node {
     int cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                    (void *)src_image.get_data(), src_image.get_stride());
+                    (void*)src_image.get_data(), src_image.get_stride());
     cv::Mat dst_mat((int)binary_image.get_height(), (int)binary_image.get_width(), cv_type,
-                    (void *)binary_image.get_data(), binary_image.get_stride());
+                    (void*)binary_image.get_data(), binary_image.get_stride());
 
     if (dst_mat.channels() == 1) {
       const auto stride = static_cast<std::size_t>(dst_mat.step);
@@ -582,7 +586,7 @@ class scale_node : public image_transform_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(alpha, beta);
   }
 };
@@ -597,7 +601,7 @@ struct keypoint {
   int class_id;
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(pt_x, pt_y, size, angle, response, octave, class_id);
   }
 };
@@ -618,19 +622,20 @@ class orb_detector_node : public graph_node {
 
   cv::Ptr<cv::ORB> get_detector() const { return detector; }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &src_image = image_msg->get_data();
+      const auto& src_image = image_msg->get_data();
       int cv_type = convert_to_cv_type(src_image.get_format());
 
       cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                      (void *)src_image.get_data(), src_image.get_stride());
+                      (void*)src_image.get_data(), src_image.get_stride());
 
       std::vector<cv::KeyPoint> kps;
       detector->detect(src_mat, kps);
 
       std::vector<keypoint> pts;
-      for (auto &kp : kps) {
+      for (auto& kp : kps) {
         keypoint pt;
         pt.pt_x = kp.pt.x;
         pt.pt_y = kp.pt.y;
@@ -654,7 +659,7 @@ class orb_detector_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     int max_features;
     double scale_factor;
     int n_levels;
@@ -680,7 +685,7 @@ class orb_detector_node : public graph_node {
   }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     int max_features = detector->getMaxFeatures();
     double scale_factor = detector->getScaleFactor();
     int n_levels = detector->getNLevels();
@@ -710,24 +715,25 @@ class simple_blob_detector_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "simple_blob_detector"; }
 
-  const cv::SimpleBlobDetector::Params &get_parameters() const { return params; }
-  cv::SimpleBlobDetector::Params &get_parameters() { return params; }
-  void set_parameters(const cv::SimpleBlobDetector::Params &params) { this->params = params; }
+  const cv::SimpleBlobDetector::Params& get_parameters() const { return params; }
+  cv::SimpleBlobDetector::Params& get_parameters() { return params; }
+  void set_parameters(const cv::SimpleBlobDetector::Params& params) { this->params = params; }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &src_image = image_msg->get_data();
+      const auto& src_image = image_msg->get_data();
       int cv_type = convert_to_cv_type(src_image.get_format());
 
       cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
-                      (void *)src_image.get_data(), src_image.get_stride());
+                      (void*)src_image.get_data(), src_image.get_stride());
 
       auto detector = cv::SimpleBlobDetector::create(params);
       std::vector<cv::KeyPoint> kps;
       detector->detect(src_mat, kps);
 
       std::vector<keypoint> pts;
-      for (auto &kp : kps) {
+      for (auto& kp : kps) {
         keypoint pt;
         pt.pt_x = kp.pt.x;
         pt.pt_y = kp.pt.y;
@@ -751,7 +757,7 @@ class simple_blob_detector_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(params.blobColor);
     archive(params.filterByArea);
     archive(params.filterByCircularity);
@@ -803,7 +809,7 @@ struct simple_blob_detector_params {
   bool collect_contours = false;
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(threshold_step, min_threshold, max_threshold, min_repeatability, min_dist_between_blobs,
             filter_by_color, blob_color, filter_by_area, min_area, max_area, filter_by_circularity,
             min_circularity, max_circularity, filter_by_inertia, min_inertia_ratio,
@@ -825,9 +831,9 @@ class detect_circle_grid_node : public graph_node {
     set_output(output);
   }
 
-  void set_parameters(const simple_blob_detector_params &params) { this->params = params; }
-  const simple_blob_detector_params &get_parameters() const { return params; }
-  simple_blob_detector_params &get_parameters() { return params; }
+  void set_parameters(const simple_blob_detector_params& params) { this->params = params; }
+  const simple_blob_detector_params& get_parameters() const { return params; }
+  simple_blob_detector_params& get_parameters() { return params; }
 
   void set_num_circles_per_row(int value) { num_circles_per_row = value; }
   int get_num_circles_per_row() const { return num_circles_per_row; }
@@ -841,7 +847,7 @@ class detect_circle_grid_node : public graph_node {
   virtual std::string get_proc_name() const override { return "detect_circle_grid"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(params, num_circles_per_row, num_circles_per_column, flags);
   }
 
@@ -873,11 +879,12 @@ class detect_circle_grid_node : public graph_node {
 
   virtual void finalize() override { detector.release(); }
 
-  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto image_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
-      const auto &src_image = image_msg->get_data();
+      const auto& src_image = image_msg->get_data();
       cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(),
-                      convert_to_cv_type(src_image.get_format()), (void *)src_image.get_data(),
+                      convert_to_cv_type(src_image.get_format()), (void*)src_image.get_data(),
                       src_image.get_stride());
 
       const cv::Size pattern_size(num_circles_per_row, num_circles_per_column);
@@ -890,7 +897,7 @@ class detect_circle_grid_node : public graph_node {
       }
 
       std::vector<keypoint> keypoints;
-      for (const auto &corner : centers) {
+      for (const auto& corner : centers) {
         keypoint kp;
         kp.pt_x = corner.x;
         kp.pt_y = corner.y;
@@ -934,7 +941,7 @@ class video_capture_node : public graph_node {
   virtual std::string get_proc_name() const override { return "video_capture"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(request_options);
     archive(stream);
   }
@@ -947,7 +954,7 @@ class video_capture_node : public graph_node {
       if (stream == stream_type::INFRARED) {
         capture.set(cv::CAP_PROP_CONVERT_RGB, 0);
       }
-      for (const auto &[option, value] : request_options) {
+      for (const auto& [option, value] : request_options) {
         capture.set(option, value);
       }
       cv::Mat frame;
@@ -986,7 +993,7 @@ class video_capture_node : public graph_node {
     image img(static_cast<std::uint32_t>(frame.size().width),
               static_cast<std::uint32_t>(frame.size().height),
               static_cast<std::uint32_t>(frame.elemSize()), static_cast<std::uint32_t>(frame.step),
-              (const uint8_t *)frame.data);
+              (const uint8_t*)frame.data);
 
     if (frame.channels() == 1) {
       img.set_format(image_format::Y8_UINT);

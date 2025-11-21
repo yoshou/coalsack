@@ -59,7 +59,7 @@ class libcamera_capture_node : public graph_node {
   virtual std::string get_proc_name() const override { return "libcamera_capture"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(request_options);
     archive(stream);
     archive(width);
@@ -69,7 +69,7 @@ class libcamera_capture_node : public graph_node {
     archive(emitter_enabled);
   }
 
-  void frame_received(const libcamera_capture::buffer &buffer) {
+  void frame_received(const libcamera_capture::buffer& buffer) {
     if (!running) {
       return;
     }
@@ -126,7 +126,7 @@ class libcamera_capture_node : public graph_node {
     camera->configure(
         libcamera_capture::stream_configuration(get_stream_format(format), width, height, fps));
 
-    for (const auto &[op, value] : request_options) {
+    for (const auto& [op, value] : request_options) {
       switch (op) {
         case option::exposure:
           camera->set_exposure_time(static_cast<std::int32_t>(value));
@@ -173,7 +173,7 @@ class libcamera_capture_node : public graph_node {
           image img(static_cast<std::uint32_t>(frame.size().width),
                     static_cast<std::uint32_t>(frame.size().height),
                     static_cast<std::uint32_t>(frame.elemSize()),
-                    static_cast<std::uint32_t>(frame.step), (const uint8_t *)frame.data);
+                    static_cast<std::uint32_t>(frame.step), (const uint8_t*)frame.data);
 
           if (frame.channels() == 1) {
             if (frame.elemSize() == 1) {
@@ -323,7 +323,8 @@ class video_time_sync_control_node : public graph_node {
       const auto sign = diff > 0 ? -1.0 : 1.0;
       adj_diff = sign * (interval - std::abs(diff));
     }
-    double interval_ref = std::min(std::max(interval - adj_diff * gain, min_interval), max_interval);
+    double interval_ref =
+        std::min(std::max(interval - adj_diff * gain, min_interval), max_interval);
     spdlog::debug("Video timing diff: {0} [ms], Interval ref: {1}", adj_diff, interval_ref);
     return interval_ref;
   }
@@ -348,7 +349,7 @@ class video_time_sync_control_node : public graph_node {
   virtual std::string get_proc_name() const override { return "video_time_sync_control"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(gain);
     archive(interval);
     archive(min_interval);

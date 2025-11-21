@@ -63,12 +63,12 @@ class camera_data_message : public graph_message {
  public:
   camera_data_message() {}
 
-  void set_data(const camera_data &value) { data = value; }
-  const camera_data &get_data() const { return data; }
+  void set_data(const camera_data& value) { data = value; }
+  const camera_data& get_data() const { return data; }
   static std::string get_type() { return "camera_data"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data.fx, data.fy, data.cx, data.cy, data.k, data.p, data.rotation, data.translation);
   }
 };
@@ -85,19 +85,19 @@ class roi_data_message : public graph_message {
  public:
   roi_data_message() {}
 
-  void set_data(const roi_data &value) { data = value; }
-  const roi_data &get_data() const { return data; }
+  void set_data(const roi_data& value) { data = value; }
+  const roi_data& get_data() const { return data; }
   static std::string get_type() { return "roi_data"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data.scale, data.rotation, data.center);
   }
 };
 
-static cv::Mat get_affine_transform(const cv::Point2f &center, const cv::Size2f &scale,
-                                    const cv::Size2f &output_size) {
-  const auto get_tri_3rd_point = [](const cv::Point2f &a, const cv::Point2f &b) {
+static cv::Mat get_affine_transform(const cv::Point2f& center, const cv::Size2f& scale,
+                                    const cv::Size2f& output_size) {
+  const auto get_tri_3rd_point = [](const cv::Point2f& a, const cv::Point2f& b) {
     const auto direct = a - b;
     return b + cv::Point2f(-direct.y, direct.x);
   };
@@ -133,8 +133,8 @@ static cv::Mat get_affine_transform(const cv::Point2f &center, const cv::Size2f 
   return result;
 };
 
-static cv::Mat get_transform(const cv::Point2f &center, const cv::Size2f &scale,
-                             const cv::Size2f &output_size) {
+static cv::Mat get_transform(const cv::Point2f& center, const cv::Size2f& scale,
+                             const cv::Size2f& output_size) {
   return get_affine_transform(center, scale, output_size);
 }
 
@@ -156,27 +156,27 @@ class panoptic_data_loader_node : public graph_node {
 
   void set_data_dir(std::string value) { data_dir = value; }
 
-  void set_sequence_list(const std::vector<std::string> &value) { sequence_list = value; }
+  void set_sequence_list(const std::vector<std::string>& value) { sequence_list = value; }
 
-  void set_camera_list(const std::vector<std::tuple<int32_t, int32_t>> &value) {
+  void set_camera_list(const std::vector<std::tuple<int32_t, int32_t>>& value) {
     camera_list = value;
   }
 
   virtual std::string get_proc_name() const override { return "panoptic_data_loader"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data_dir);
     archive(sequence_list);
     archive(camera_list);
   }
 
   virtual void initialize() override {
-    for (const auto &sequence : sequence_list) {
+    for (const auto& sequence : sequence_list) {
       const auto annotation_dir = fs::path(data_dir) / sequence / "hdPose3d_stage1_coco19";
 
       std::vector<std::string> annotation_files;
-      for (const auto &entry : fs::directory_iterator(annotation_dir)) {
+      for (const auto& entry : fs::directory_iterator(annotation_dir)) {
         if (entry.path().extension() == ".json") {
           annotation_files.push_back(entry.path().string());
         }
@@ -194,7 +194,7 @@ class panoptic_data_loader_node : public graph_node {
 
         nlohmann::json calib = nlohmann::json::parse(str);
 
-        for (const auto &cam : calib["cameras"]) {
+        for (const auto& cam : calib["cameras"]) {
           const auto panel = cam["panel"].get<int32_t>();
           const auto node = cam["node"].get<int32_t>();
 
@@ -242,7 +242,7 @@ class panoptic_data_loader_node : public graph_node {
       }
 
       for (size_t i = 0; i < annotation_files.size(); i++) {
-        for (const auto &[camera_panel, camera_node] : camera_list) {
+        for (const auto& [camera_panel, camera_node] : camera_list) {
           const auto prefix = fmt::format("{:02d}_{:02d}", camera_panel, camera_node);
           std::string postfix = fs::path(annotation_files[i]).filename().string();
           const std::string to_erase = "body3DScene";
@@ -275,7 +275,7 @@ class panoptic_data_loader_node : public graph_node {
           auto data = cv::imread(image_file, cv::IMREAD_UNCHANGED | cv::IMREAD_IGNORE_ORIENTATION);
           cv::cvtColor(data, data, cv::COLOR_BGR2RGB);
 
-          const auto get_scale = [](const cv::Size2f &image_size, const cv::Size2f &resized_size) {
+          const auto get_scale = [](const cv::Size2f& image_size, const cv::Size2f& resized_size) {
             float w_pad, h_pad;
             if (image_size.width / resized_size.width < image_size.height / resized_size.height) {
               w_pad = image_size.height / resized_size.height * resized_size.width;
@@ -288,7 +288,7 @@ class panoptic_data_loader_node : public graph_node {
             return cv::Size2f(w_pad / 200.0, h_pad / 200.0);
           };
 
-          const auto &&image_size = cv::Size2f(960, 512);
+          const auto&& image_size = cv::Size2f(960, 512);
           const auto scale = get_scale(data.size(), image_size);
           const auto center = cv::Point2f(data.size().width / 2.0, data.size().height / 2.0);
           const auto rotation = 0.0;
@@ -302,7 +302,7 @@ class panoptic_data_loader_node : public graph_node {
               {static_cast<std::uint32_t>(input_img.size().width),
                static_cast<std::uint32_t>(input_img.size().height),
                static_cast<std::uint32_t>(input_img.elemSize()), 1},
-              (const uint8_t *)input_img.data,
+              (const uint8_t*)input_img.data,
               {static_cast<std::uint32_t>(input_img.step[1]),
                static_cast<std::uint32_t>(input_img.step[0]), static_cast<std::uint32_t>(1),
                static_cast<std::uint32_t>(input_img.total())});
@@ -355,7 +355,7 @@ class object_map_node : public graph_node {
   virtual std::string get_proc_name() const override { return "object_map"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -365,7 +365,7 @@ class object_map_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -373,7 +373,7 @@ class object_map_node : public graph_node {
     }
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -386,11 +386,11 @@ class object_map_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         try {
           const auto output = get_output(name);
           output->send(field);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
           spdlog::error(e.what());
         }
       }
@@ -411,21 +411,21 @@ class normalize_node : public graph_node {
     set_output(output);
   }
 
-  void set_mean(const std::vector<float> &value) { mean = value; }
+  void set_mean(const std::vector<float>& value) { mean = value; }
 
-  void set_std(const std::vector<float> &value) { std = value; }
+  void set_std(const std::vector<float>& value) { std = value; }
 
   virtual std::string get_proc_name() const override { return "normalize"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(mean);
     archive(std);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
       const auto dst =
           src.transform([this](const float value, const size_t w, const size_t h, const size_t c,
@@ -454,8 +454,8 @@ class onnx_runtime_session {
   std::unordered_map<std::string, std::vector<int64_t>> input_dims;
   std::unordered_map<std::string, int> input_types;
 
-  static Ort::Session create_session(const Ort::Env &env, const std::vector<uint8_t> &model_data) {
-    const auto &api = Ort::GetApi();
+  static Ort::Session create_session(const Ort::Env& env, const std::vector<uint8_t>& model_data) {
+    const auto& api = Ort::GetApi();
 
     // Create session
     Ort::SessionOptions session_options;
@@ -474,7 +474,7 @@ class onnx_runtime_session {
     return Ort::Session(env, model_data.data(), model_data.size(), session_options);
   }
 
-  onnx_runtime_session(const Ort::Env &env, const std::vector<uint8_t> &model_data)
+  onnx_runtime_session(const Ort::Env& env, const std::vector<uint8_t>& model_data)
       : session(create_session(env, model_data)) {
     // Iterate over all input nodes
     const size_t num_input_nodes = session.GetInputCount();
@@ -497,7 +497,7 @@ class onnx_runtime_session {
 
 class onnx_runtime_session_pool {
   struct vector_hash {
-    size_t operator()(const std::vector<uint8_t> &v) const {
+    size_t operator()(const std::vector<uint8_t>& v) const {
       size_t hash = v.size();
       for (const auto i : v) hash ^= i + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       return hash;
@@ -510,7 +510,7 @@ class onnx_runtime_session_pool {
   std::mutex mtx;
 
  public:
-  std::shared_ptr<onnx_runtime_session> get_or_load(const std::vector<uint8_t> &model_data) {
+  std::shared_ptr<onnx_runtime_session> get_or_load(const std::vector<uint8_t>& model_data) {
     std::lock_guard<std::mutex> lock(mtx);
 
     auto it = sessions.find(model_data);
@@ -532,12 +532,12 @@ class onnx_runtime_node : public graph_node {
  public:
   onnx_runtime_node() : graph_node(), session(nullptr) {}
 
-  void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
+  void set_model_data(const std::vector<uint8_t>& value) { model_data = value; }
 
   virtual std::string get_proc_name() const override { return "onnx_runtime"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -548,7 +548,7 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -557,7 +557,7 @@ class onnx_runtime_node : public graph_node {
     archive(model_data);
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -571,9 +571,9 @@ class onnx_runtime_node : public graph_node {
   virtual void initialize() override { session = sessions.get_or_load(model_data); }
 
   template <size_t num_dims, typename T, std::size_t... Is>
-  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t> &shape,
-                                                            const T *data,
-                                                            const frame_message_base *base_msg,
+  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t>& shape,
+                                                            const T* data,
+                                                            const frame_message_base* base_msg,
                                                             std::index_sequence<Is...>) {
     auto msg = std::make_shared<frame_message<tensor<T, num_dims>>>();
     tensor<T, num_dims> output_tensor({static_cast<std::uint32_t>(shape.at(num_dims - 1 - Is))...},
@@ -589,9 +589,9 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <size_t num_dims, typename T>
-  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t> &shape,
-                                                            const T *data,
-                                                            const frame_message_base *base_msg) {
+  static std::shared_ptr<frame_message_base> create_message(const std::vector<int64_t>& shape,
+                                                            const T* data,
+                                                            const frame_message_base* base_msg) {
     if (shape.size() == num_dims) {
       return create_message<num_dims>(shape, data, base_msg, std::make_index_sequence<num_dims>{});
     }
@@ -603,11 +603,11 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <size_t num_dims>
-  static std::tuple<size_t, const float *, std::shared_ptr<frame_message_base>> get_input_data(
-      const graph_message_ptr &msg) {
+  static std::tuple<size_t, const float*, std::shared_ptr<frame_message_base>> get_input_data(
+      const graph_message_ptr& msg) {
     if (const auto frame_msg =
             std::dynamic_pointer_cast<frame_message<tensor<float, num_dims>>>(msg)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
       const auto size = src.get_size();
       const auto data = src.get_data();
 
@@ -666,13 +666,13 @@ class onnx_runtime_node : public graph_node {
     {
       std::lock_guard<std::mutex> lock(mtx);
 
-      std::vector<const char *> output_name_strs;
+      std::vector<const char*> output_name_strs;
       std::vector<Ort::Value> output_tensors;
       std::shared_ptr<frame_message_base> base_frame_msg = nullptr;
 
       {
         const auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        std::vector<const char *> input_name_strs;
+        std::vector<const char*> input_name_strs;
         std::vector<Ort::Value> input_tensors;
 
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
@@ -690,7 +690,7 @@ class onnx_runtime_node : public graph_node {
               expect_size *= dim;
             }
 
-            const float *data = nullptr;
+            const float* data = nullptr;
             size_t size = 0;
             std::tie(size, data, base_frame_msg) = get_input_data<5>(frame_msg);
 
@@ -699,12 +699,12 @@ class onnx_runtime_node : public graph_node {
             assert(base_frame_msg != nullptr);
 
             input_tensors.push_back(Ort::Value::CreateTensor<float>(
-                memory_info, const_cast<float *>(data), size, dims.data(), dims.size()));
+                memory_info, const_cast<float*>(data), size, dims.data(), dims.size()));
           }
         }
 
         if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-          for (const auto &name : session->input_names) {
+          for (const auto& name : session->input_names) {
             const auto dims = session->input_dims.at(name);
             const auto type = session->input_types.at(name);
             assert(type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
@@ -716,7 +716,7 @@ class onnx_runtime_node : public graph_node {
               expect_size *= dim;
             }
 
-            const float *data = nullptr;
+            const float* data = nullptr;
             size_t size = 0;
             std::tie(size, data, base_frame_msg) = get_input_data<5>(obj_msg->get_field(name));
 
@@ -725,14 +725,14 @@ class onnx_runtime_node : public graph_node {
             assert(base_frame_msg != nullptr);
 
             input_tensors.push_back(Ort::Value::CreateTensor<float>(
-                memory_info, const_cast<float *>(data), size, dims.data(), dims.size()));
+                memory_info, const_cast<float*>(data), size, dims.data(), dims.size()));
           }
         }
 
         assert(input_name_strs.size() == session->input_names.size());
         assert(input_tensors.size() == session->input_names.size());
 
-        for (const auto &[name, _] : get_outputs()) {
+        for (const auto& [name, _] : get_outputs()) {
           output_name_strs.push_back(name.c_str());
         }
         output_tensors = session->session.Run(Ort::RunOptions{nullptr}, input_name_strs.data(),
@@ -743,7 +743,7 @@ class onnx_runtime_node : public graph_node {
       assert(output_tensors.size() == output_name_strs.size());
       for (std::size_t i = 0; i < output_name_strs.size(); i++) {
         const auto name = output_name_strs.at(i);
-        const auto &value = output_tensors.at(i);
+        const auto& value = output_tensors.at(i);
 
         graph_message_ptr output_msg;
 
@@ -764,11 +764,11 @@ class onnx_runtime_node : public graph_node {
       }
     }
 
-    for (const auto &[name, output_msg] : output_msgs) {
+    for (const auto& [name, output_msg] : output_msgs) {
       try {
         const auto output = get_output(name);
         output->send(output_msg);
-      } catch (const std::exception &e) {
+      } catch (const std::exception& e) {
         spdlog::error(e.what());
       }
     }
@@ -791,11 +791,11 @@ class pre_inference_node : public graph_node {
   virtual std::string get_proc_name() const override { return "pre_inference"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   template <typename T, int32_t num_dims>
   static tensor<T, num_dims> make_tensor(std::initializer_list<T> values,
-                                         const std::array<uint32_t, num_dims> &shape) {
+                                         const std::array<uint32_t, num_dims>& shape) {
     std::vector<T> vec(values);
     return tensor<T, num_dims>(shape, vec.data());
   }
@@ -819,14 +819,14 @@ class pre_inference_node : public graph_node {
       std::vector<camera_data> cameras;
       std::vector<roi_data> rois;
 
-      auto dot = [](const std::array<double, 3> &a, const std::array<double, 3> &b) {
+      auto dot = [](const std::array<double, 3>& a, const std::array<double, 3>& b) {
         return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
       };
 
       std::shared_ptr<frame_message_base> base_frame_msg = nullptr;
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field)) {
-          auto &src = frame_msg->get_data();
+          auto& src = frame_msg->get_data();
 
           const auto camera_msg = frame_msg->get_metadata<camera_data_message>("camera");
           const auto camera = camera_msg->get_data();
@@ -882,7 +882,7 @@ class pre_inference_node : public graph_node {
               cv::Point2f(static_cast<float>(roi.center[0]), static_cast<float>(roi.center[1]));
           const auto image_scale =
               cv::Size2f(static_cast<float>(roi.scale[0]), static_cast<float>(roi.scale[1]));
-          const auto &&image_size = cv::Size2f(960, 512);
+          const auto&& image_size = cv::Size2f(960, 512);
 
           const auto image_trans = get_affine_transform(image_center, image_scale, image_size);
 
@@ -918,7 +918,7 @@ class pre_inference_node : public graph_node {
 
       auto new_obj_msg = std::make_shared<object_message>();
 
-      const auto make_message = [base_frame_msg](const auto &output_tensor) {
+      const auto make_message = [base_frame_msg](const auto& output_tensor) {
         auto msg = std::make_shared<frame_message<std::decay_t<decltype(output_tensor)>>>();
         msg->set_data(std::move(output_tensor));
         msg->set_profile(base_frame_msg->get_profile());
@@ -965,21 +965,21 @@ class post_inference_node : public graph_node {
   virtual std::string get_proc_name() const override { return "post_inference"; }
 
   std::array<float, 3> get_grid_center() const { return grid_center; }
-  void set_grid_center(const std::array<float, 3> &value) { grid_center = value; }
+  void set_grid_center(const std::array<float, 3>& value) { grid_center = value; }
   std::array<float, 3> get_grid_size() const { return grid_size; }
-  void set_grid_size(const std::array<float, 3> &value) { grid_size = value; }
+  void set_grid_size(const std::array<float, 3>& value) { grid_size = value; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(grid_center, grid_size);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-      const auto &pred_logits = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
+      const auto& pred_logits = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
                                     obj_msg->get_field("pred_logits"))
                                     ->get_data();
-      const auto &pred_poses = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
+      const auto& pred_poses = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(
                                    obj_msg->get_field("pred_poses"))
                                    ->get_data();
 
@@ -987,9 +987,9 @@ class post_inference_node : public graph_node {
       constexpr uint32_t num_joints = 15;
       constexpr uint32_t num_queries = 10;
 
-      auto norm2absolute = [](const std::array<float, 3> &coord,
-                              const std::array<float, 3> &grid_center,
-                              const std::array<float, 3> &grid_size) {
+      auto norm2absolute = [](const std::array<float, 3>& coord,
+                              const std::array<float, 3>& grid_center,
+                              const std::array<float, 3>& grid_size) {
         std::array<float, 3> result;
         for (size_t i = 0; i < 3; i++) {
           result[i] = coord[i] * grid_size[i] + grid_center[i] - grid_size[i] / 2.0f;
@@ -1041,10 +1041,10 @@ class post_inference_node : public graph_node {
       ofs << "DATA ascii" << std::endl;
 
       for (size_t i = 0; i < poses.size(); i++) {
-        const auto &joints = poses[i];
+        const auto& joints = poses[i];
 
         for (size_t j = 0; j < joints.size(); j++) {
-          const auto &joint = joints[j];
+          const auto& joint = joints[j];
           ofs << joint[0] << " " << joint[1] << " " << joint[2] << " " << 16711680 << std::endl;
         }
       }
@@ -1086,7 +1086,7 @@ class local_server {
   ~local_server() { stop(); }
 };
 
-static void load_model(std::string model_path, std::vector<uint8_t> &data) {
+static void load_model(std::string model_path, std::vector<uint8_t>& data) {
   std::ifstream ifs;
   ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
   if (ifs.fail()) {
@@ -1100,14 +1100,14 @@ static void load_model(std::string model_path, std::vector<uint8_t> &data) {
 
   data.resize(length);
 
-  ifs.read((char *)data.data(), length);
+  ifs.read((char*)data.data(), length);
   if (ifs.fail()) {
     std::cerr << "File read error: " << model_path << "\n";
     std::quick_exit(0);
   }
 }
 
-int main(int argc, char *argv[]) try {
+int main(int argc, char* argv[]) try {
   signal(SIGINT, sigint_handler);
 
   spdlog::set_level(spdlog::level::debug);
@@ -1134,7 +1134,7 @@ int main(int argc, char *argv[]) try {
   g->add_node(map_data);
 
   std::unordered_map<std::string, graph_edge_ptr> images;
-  for (const auto &[camera_panel, camera_node] : camera_list) {
+  for (const auto& [camera_panel, camera_node] : camera_list) {
     const auto camera_name = fmt::format("camera_{:02d}_{:02d}", camera_panel, camera_node);
     const auto camera_image = map_data->add_output(camera_name);
 
@@ -1150,7 +1150,7 @@ int main(int argc, char *argv[]) try {
   }
 
   std::shared_ptr<frame_number_sync_node> sync(new frame_number_sync_node());
-  for (const auto &[camera_name, image] : images) {
+  for (const auto& [camera_name, image] : images) {
     sync->set_input(image, camera_name);
   }
   g->add_node(sync);
@@ -1208,7 +1208,7 @@ int main(int argc, char *argv[]) try {
   }
 
   return 0;
-} catch (std::exception &e) {
+} catch (std::exception& e) {
   std::cout << e.what() << std::endl;
   shutdown();
 }

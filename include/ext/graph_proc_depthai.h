@@ -42,7 +42,7 @@ class depthai_color_camera_node : public graph_node {
   virtual std::string get_proc_name() const override { return "depthai_color_camera"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(width);
     archive(height);
     archive(fps);
@@ -111,7 +111,7 @@ class depthai_color_camera_node : public graph_node {
         image img(static_cast<std::uint32_t>(frame.size().width),
                   static_cast<std::uint32_t>(frame.size().height),
                   static_cast<std::uint32_t>(frame.elemSize()),
-                  static_cast<std::uint32_t>(frame.step), (const uint8_t *)frame.data);
+                  static_cast<std::uint32_t>(frame.step), (const uint8_t*)frame.data);
 
         if (frame.channels() == 1) {
           if (frame.elemSize() == 1) {

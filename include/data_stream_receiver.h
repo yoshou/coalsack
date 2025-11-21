@@ -32,7 +32,7 @@ class packet_buffer_pool {
   std::vector<std::shared_ptr<packet_data>> allocated_packets;
 
   std::mutex free_packets_mtx;
-  std::stack<packet_data *> free_packets;
+  std::stack<packet_data*> free_packets;
 
  public:
   packet_buffer_pool(size_t prepare_size = 10000) {
@@ -43,7 +43,7 @@ class packet_buffer_pool {
     }
   }
 
-  packet_data *obtain_packet() {
+  packet_data* obtain_packet() {
     {
       std::lock_guard<std::mutex> lock(free_packets_mtx);
       if (free_packets.size() > 0) {
@@ -59,7 +59,7 @@ class packet_buffer_pool {
     return new_packet.get();
   }
 
-  void release_packets(const std::vector<packet_data *> &packets) {
+  void release_packets(const std::vector<packet_data*>& packets) {
     std::lock_guard<std::mutex> lock(free_packets_mtx);
     for (auto packet : packets) {
       free_packets.push(packet);
@@ -72,7 +72,7 @@ class reordering_packet_buffer {
   uint16_t next_counter;
 
   std::mutex ordered_packets_mtx;
-  std::unordered_map<uint16_t, packet_data *> ordered_packets;
+  std::unordered_map<uint16_t, packet_data*> ordered_packets;
 
  public:
   reordering_packet_buffer(size_t max_size = 10) : max_size(max_size), next_counter(0) {}
@@ -81,7 +81,7 @@ class reordering_packet_buffer {
 
   uint16_t get_next_counter() const { return next_counter; }
 
-  void commit_packet(packet_data *packet) {
+  void commit_packet(packet_data* packet) {
     std::lock_guard<std::mutex> lock(ordered_packets_mtx);
     ordered_packets[packet->counter] = packet;
   }
@@ -95,7 +95,7 @@ class reordering_packet_buffer {
     return false;
   }
 
-  packet_data *receive_packet() {
+  packet_data* receive_packet() {
     std::lock_guard<std::mutex> lock(ordered_packets_mtx);
 
     if (ordered_packets.find(next_counter) != ordered_packets.end()) {
@@ -108,11 +108,11 @@ class reordering_packet_buffer {
     return nullptr;
   }
 
-  std::vector<packet_data *> reset() {
+  std::vector<packet_data*> reset() {
     std::lock_guard<std::mutex> lock(ordered_packets_mtx);
-    std::vector<packet_data *> packets;
+    std::vector<packet_data*> packets;
 
-    for (const auto &[key, packet] : ordered_packets) {
+    for (const auto& [key, packet] : ordered_packets) {
       packets.push_back(packet);
     }
     ordered_packets.clear();
@@ -130,7 +130,7 @@ class data_stream_receiver {
 
     session() : lost_packet(true) {}
   };
-  typedef std::function<void(asio::streambuf &)> on_receive_func;
+  typedef std::function<void(asio::streambuf&)> on_receive_func;
   udp::socket socket_;
   udp::endpoint remote_endpoint_;
   reordering_packet_buffer reordering;
@@ -140,7 +140,7 @@ class data_stream_receiver {
   std::atomic_bool running;
   std::shared_ptr<std::thread> handling_thread;
   std::shared_ptr<std::thread> io_thread;
-  std::queue<packet_data *> packet_queue;
+  std::queue<packet_data*> packet_queue;
   std::mutex mtx;
   std::condition_variable cv;
 
@@ -199,7 +199,7 @@ class data_stream_receiver {
   }
 
   void start_receive() {
-    packet_data *packet = packet_pool.obtain_packet();
+    packet_data* packet = packet_pool.obtain_packet();
 
     socket_.async_receive_from(boost::asio::buffer(packet->recv_buf), remote_endpoint_,
                                [packet, this](boost::system::error_code ec, std::size_t length) {
@@ -216,7 +216,7 @@ class data_stream_receiver {
   }
 
   void handle_receive() {
-    packet_data *packet;
+    packet_data* packet;
 
     {
       std::unique_lock<std::mutex> lock(mtx);
@@ -234,17 +234,17 @@ class data_stream_receiver {
     size_t receive_size = packet->size;
 
     std::stringstream ss(std::string(packet->recv_buf.data(), receive_size));
-    ss.read((char *)&packet->flags, sizeof(packet->flags));
-    ss.read((char *)&packet->counter, sizeof(packet->counter));
-    ss.read((char *)&packet->timestamp, sizeof(packet->timestamp));
-    ss.read((char *)&packet->id.stream_unique_id, sizeof(packet->id.stream_unique_id));
-    ss.read((char *)&packet->id.data_id, sizeof(packet->id.data_id));
+    ss.read((char*)&packet->flags, sizeof(packet->flags));
+    ss.read((char*)&packet->counter, sizeof(packet->counter));
+    ss.read((char*)&packet->timestamp, sizeof(packet->timestamp));
+    ss.read((char*)&packet->id.stream_unique_id, sizeof(packet->id.stream_unique_id));
+    ss.read((char*)&packet->id.data_id, sizeof(packet->id.data_id));
 
     reordering.commit_packet(packet);
 
-    std::vector<packet_data *> completed_packets;
+    std::vector<packet_data*> completed_packets;
 
-    for (packet_data *packet = nullptr; (packet = reordering.receive_packet()) != nullptr;) {
+    for (packet_data* packet = nullptr; (packet = reordering.receive_packet()) != nullptr;) {
       auto it = sessions.find(packet->id);
       if (it == sessions.end()) {
         continue;
@@ -253,7 +253,7 @@ class data_stream_receiver {
       const size_t header_size = 24;
       const size_t payload_size = packet->size - header_size;
 
-      auto &session = *it->second;
+      auto& session = *it->second;
       session.buffer.commit(boost::asio::buffer_copy(
           session.buffer.prepare(payload_size),
           boost::asio::buffer(packet->recv_buf.data() + header_size, payload_size)));
@@ -270,7 +270,7 @@ class data_stream_receiver {
     }
 
     if (reordering.detect_lost_packet()) {
-      for (auto &p : sessions) {
+      for (auto& p : sessions) {
         auto session = p.second;
         session->lost_packet = true;
       }
@@ -297,7 +297,7 @@ class data_stream_tcp_receiver {
     session() : lost_packet(true) {}
   };
 
-  typedef std::function<void(asio::streambuf &)> on_receive_func;
+  typedef std::function<void(asio::streambuf&)> on_receive_func;
   tcp::socket socket_;
   tcp::acceptor acceptor_;
   tcp::endpoint remote_endpoint_;
@@ -309,7 +309,7 @@ class data_stream_tcp_receiver {
   std::atomic_bool running;
   std::shared_ptr<std::thread> handling_thread;
   std::shared_ptr<std::thread> io_thread;
-  std::queue<packet_data *> packet_queue;
+  std::queue<packet_data*> packet_queue;
   std::mutex mtx;
   std::condition_variable cv;
 
@@ -355,7 +355,7 @@ class data_stream_tcp_receiver {
   }
 
   void start_accept() {
-    acceptor_.async_accept(socket_, [this](const boost::system::error_code &ec) {
+    acceptor_.async_accept(socket_, [this](const boost::system::error_code& ec) {
       if (ec) {
         spdlog::error("Accept failed: {}", ec.message());
         return;
@@ -365,14 +365,14 @@ class data_stream_tcp_receiver {
     });
   }
 
-  void start_receive_data(packet_data *packet) {
+  void start_receive_data(packet_data* packet) {
     constexpr auto header_size = 26;
 
     boost::asio::async_read(
         socket_, receive_buff_, asio::transfer_exactly(packet->size - header_size),
-        [packet, this](const boost::system::error_code &ec, std::size_t length) {
+        [packet, this](const boost::system::error_code& ec, std::size_t length) {
           if (!ec) {
-            const uint8_t *data = static_cast<const uint8_t *>(receive_buff_.data().data());
+            const uint8_t* data = static_cast<const uint8_t*>(receive_buff_.data().data());
 
             std::copy_n(data, length, packet->recv_buf.begin() + header_size);
 
@@ -391,13 +391,13 @@ class data_stream_tcp_receiver {
 
   void start_receive() {
     constexpr auto header_size = 26;
-    packet_data *packet = packet_pool.obtain_packet();
+    packet_data* packet = packet_pool.obtain_packet();
 
     boost::asio::async_read(
         socket_, receive_buff_, asio::transfer_exactly(header_size),
-        [packet, this](const boost::system::error_code &ec, std::size_t length) {
+        [packet, this](const boost::system::error_code& ec, std::size_t length) {
           if (!ec) {
-            const uint8_t *data = static_cast<const uint8_t *>(receive_buff_.data().data());
+            const uint8_t* data = static_cast<const uint8_t*>(receive_buff_.data().data());
 
             const auto payload_size = (uint32_t)data[24] | ((uint32_t)data[25] << 8);
 
@@ -413,7 +413,7 @@ class data_stream_tcp_receiver {
   }
 
   void handle_receive() {
-    packet_data *packet;
+    packet_data* packet;
 
     {
       std::unique_lock<std::mutex> lock(mtx);
@@ -431,17 +431,17 @@ class data_stream_tcp_receiver {
     size_t receive_size = packet->size;
 
     std::stringstream ss(std::string(packet->recv_buf.data(), receive_size));
-    ss.read((char *)&packet->flags, sizeof(packet->flags));
-    ss.read((char *)&packet->counter, sizeof(packet->counter));
-    ss.read((char *)&packet->timestamp, sizeof(packet->timestamp));
-    ss.read((char *)&packet->id.stream_unique_id, sizeof(packet->id.stream_unique_id));
-    ss.read((char *)&packet->id.data_id, sizeof(packet->id.data_id));
+    ss.read((char*)&packet->flags, sizeof(packet->flags));
+    ss.read((char*)&packet->counter, sizeof(packet->counter));
+    ss.read((char*)&packet->timestamp, sizeof(packet->timestamp));
+    ss.read((char*)&packet->id.stream_unique_id, sizeof(packet->id.stream_unique_id));
+    ss.read((char*)&packet->id.data_id, sizeof(packet->id.data_id));
 
     reordering.commit_packet(packet);
 
-    std::vector<packet_data *> completed_packets;
+    std::vector<packet_data*> completed_packets;
 
-    for (packet_data *packet = nullptr; (packet = reordering.receive_packet()) != nullptr;) {
+    for (packet_data* packet = nullptr; (packet = reordering.receive_packet()) != nullptr;) {
       auto it = sessions.find(packet->id);
       if (it == sessions.end()) {
         continue;
@@ -450,7 +450,7 @@ class data_stream_tcp_receiver {
       const size_t header_size = 26;
       const size_t payload_size = packet->size - header_size;
 
-      auto &session = *it->second;
+      auto& session = *it->second;
       session.buffer.commit(boost::asio::buffer_copy(
           session.buffer.prepare(payload_size),
           boost::asio::buffer(packet->recv_buf.data() + header_size, payload_size)));
@@ -467,7 +467,7 @@ class data_stream_tcp_receiver {
     }
 
     if (reordering.detect_lost_packet()) {
-      for (auto &p : sessions) {
+      for (auto& p : sessions) {
         auto session = p.second;
         session->lost_packet = true;
       }

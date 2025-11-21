@@ -2,7 +2,7 @@
 #include <opencv2/imgproc.hpp>
 
 namespace coalsack {
-static void create_gaussian_kernel(float *kernel, int size, float sigma) {
+static void create_gaussian_kernel(float* kernel, int size, float sigma) {
   const int r = size / 2;
   constexpr auto pi = 3.141592653589793;
   float total = 0;
@@ -17,9 +17,9 @@ static void create_gaussian_kernel(float *kernel, int size, float sigma) {
   }
 }
 
-static inline void filter_row(const std::uint8_t *__restrict src, const std::size_t width,
-                              const float *__restrict kernel, const std::size_t kernel_width,
-                              float *__restrict dst) {
+static inline void filter_row(const std::uint8_t* __restrict src, const std::size_t width,
+                              const float* __restrict kernel, const std::size_t kernel_width,
+                              float* __restrict dst) {
   const std::size_t radius_x = kernel_width / 2;
   std::size_t x = 0;
   for (; x < radius_x; x++) {
@@ -37,7 +37,7 @@ static inline void filter_row(const std::uint8_t *__restrict src, const std::siz
   constexpr auto num_vector_lanes = static_cast<int>(sizeof(uint8x16_t) / sizeof(uint8_t));
   if (width - radius_x >= num_vector_lanes) {
     for (; x <= width - radius_x - num_vector_lanes; x += num_vector_lanes) {
-      const uint8_t *src_ptr = src + x - radius_x;
+      const uint8_t* src_ptr = src + x - radius_x;
 
       if (kernel_width == 3 && symmetric) {
         const uint8x16_t v_src0 = vld1q_u8(src_ptr);
@@ -115,9 +115,9 @@ static inline void filter_row(const std::uint8_t *__restrict src, const std::siz
   }
 }
 
-static inline void filter_col(const float **__restrict src, const std::size_t width,
-                              const float *__restrict kernel, const std::size_t kernel_height,
-                              std::uint8_t *__restrict dst) {
+static inline void filter_col(const float** __restrict src, const std::size_t width,
+                              const float* __restrict kernel, const std::size_t kernel_height,
+                              std::uint8_t* __restrict dst) {
   std::size_t x = 0;
 #if USE_NEON
   const float32x4_t v_coeff0 = vdupq_n_f32(kernel[0]);
@@ -212,7 +212,7 @@ static void gaussian_blur(cv::Mat src_mat, cv::Mat dst_mat, int kernel_width, in
     const auto width = static_cast<std::size_t>(dst_mat.cols);
     const auto height = static_cast<std::size_t>(dst_mat.rows);
     const auto stride = static_cast<std::size_t>(dst_mat.step);
-    const auto row_ptrs = std::make_unique<const float *[]>(kernel_height);
+    const auto row_ptrs = std::make_unique<const float*[]>(kernel_height);
     const auto row_buffer = std::make_unique<float[]>(kernel_height * width);
 
     for (std::size_t y = 0; y < static_cast<std::size_t>(kernel_height) - 1; y++) {

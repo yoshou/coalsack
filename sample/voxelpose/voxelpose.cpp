@@ -63,12 +63,12 @@ class camera_data_message : public graph_message {
  public:
   camera_data_message() {}
 
-  void set_data(const camera_data &value) { data = value; }
-  const camera_data &get_data() const { return data; }
+  void set_data(const camera_data& value) { data = value; }
+  const camera_data& get_data() const { return data; }
   static std::string get_type() { return "camera_data"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data.fx, data.fy, data.cx, data.cy, data.k, data.p, data.rotation, data.translation);
   }
 };
@@ -85,25 +85,25 @@ class roi_data_message : public graph_message {
  public:
   roi_data_message() {}
 
-  void set_data(const roi_data &value) { data = value; }
-  const roi_data &get_data() const { return data; }
+  void set_data(const roi_data& value) { data = value; }
+  const roi_data& get_data() const { return data; }
   static std::string get_type() { return "roi_data"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data.scale, data.rotation, data.center);
   }
 };
 
-static cv::Mat get_transform(const cv::Point2f &center, const cv::Size2f &scale,
-                             const cv::Size2f &output_size) {
-  const auto get_tri_3rd_point = [](const cv::Point2f &a, const cv::Point2f &b) {
+static cv::Mat get_transform(const cv::Point2f& center, const cv::Size2f& scale,
+                             const cv::Size2f& output_size) {
+  const auto get_tri_3rd_point = [](const cv::Point2f& a, const cv::Point2f& b) {
     const auto direct = a - b;
     return b + cv::Point2f(-direct.y, direct.x);
   };
 
-  const auto get_affine_transform = [&](const cv::Point2f &center, const cv::Size2f &scale,
-                                        const cv::Size2f &output_size) {
+  const auto get_affine_transform = [&](const cv::Point2f& center, const cv::Size2f& scale,
+                                        const cv::Size2f& output_size) {
     const auto src_w = scale.width * 200.0;
     const auto src_h = scale.height * 200.0;
     const auto dst_w = output_size.width;
@@ -153,27 +153,27 @@ class panoptic_data_loader_node : public graph_node {
 
   void set_data_dir(std::string value) { data_dir = value; }
 
-  void set_sequence_list(const std::vector<std::string> &value) { sequence_list = value; }
+  void set_sequence_list(const std::vector<std::string>& value) { sequence_list = value; }
 
-  void set_camera_list(const std::vector<std::tuple<int32_t, int32_t>> &value) {
+  void set_camera_list(const std::vector<std::tuple<int32_t, int32_t>>& value) {
     camera_list = value;
   }
 
   virtual std::string get_proc_name() const override { return "panoptic_data_loader"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data_dir);
     archive(sequence_list);
     archive(camera_list);
   }
 
   virtual void initialize() override {
-    for (const auto &sequence : sequence_list) {
+    for (const auto& sequence : sequence_list) {
       const auto annotation_dir = fs::path(data_dir) / sequence / "hdPose3d_stage1_coco19";
 
       std::vector<std::string> annotation_files;
-      for (const auto &entry : fs::directory_iterator(annotation_dir)) {
+      for (const auto& entry : fs::directory_iterator(annotation_dir)) {
         if (entry.path().extension() == ".json") {
           annotation_files.push_back(entry.path().string());
         }
@@ -191,7 +191,7 @@ class panoptic_data_loader_node : public graph_node {
 
         nlohmann::json calib = nlohmann::json::parse(str);
 
-        for (const auto &cam : calib["cameras"]) {
+        for (const auto& cam : calib["cameras"]) {
           const auto panel = cam["panel"].get<int32_t>();
           const auto node = cam["node"].get<int32_t>();
 
@@ -239,7 +239,7 @@ class panoptic_data_loader_node : public graph_node {
       }
 
       for (size_t i = 0; i < annotation_files.size(); i++) {
-        for (const auto &[camera_panel, camera_node] : camera_list) {
+        for (const auto& [camera_panel, camera_node] : camera_list) {
           const auto prefix = fmt::format("{:02d}_{:02d}", camera_panel, camera_node);
           std::string postfix = fs::path(annotation_files[i]).filename().string();
           const std::string to_erase = "body3DScene";
@@ -272,7 +272,7 @@ class panoptic_data_loader_node : public graph_node {
           auto data = cv::imread(image_file, cv::IMREAD_UNCHANGED | cv::IMREAD_IGNORE_ORIENTATION);
           cv::cvtColor(data, data, cv::COLOR_BGR2RGB);
 
-          const auto get_scale = [](const cv::Size2f &image_size, const cv::Size2f &resized_size) {
+          const auto get_scale = [](const cv::Size2f& image_size, const cv::Size2f& resized_size) {
             float w_pad, h_pad;
             if (image_size.width / resized_size.width < image_size.height / resized_size.height) {
               w_pad = image_size.height / resized_size.height * resized_size.width;
@@ -285,7 +285,7 @@ class panoptic_data_loader_node : public graph_node {
             return cv::Size2f(w_pad / 200.0, h_pad / 200.0);
           };
 
-          const auto &&image_size = cv::Size2f(960, 512);
+          const auto&& image_size = cv::Size2f(960, 512);
           const auto scale = get_scale(data.size(), image_size);
           const auto center = cv::Point2f(data.size().width / 2.0, data.size().height / 2.0);
           const auto rotation = 0.0;
@@ -299,7 +299,7 @@ class panoptic_data_loader_node : public graph_node {
               {static_cast<std::uint32_t>(input_img.size().width),
                static_cast<std::uint32_t>(input_img.size().height),
                static_cast<std::uint32_t>(input_img.elemSize()), 1},
-              (const uint8_t *)input_img.data,
+              (const uint8_t*)input_img.data,
               {static_cast<std::uint32_t>(input_img.step[1]),
                static_cast<std::uint32_t>(input_img.step[0]), static_cast<std::uint32_t>(1),
                static_cast<std::uint32_t>(input_img.total())});
@@ -352,7 +352,7 @@ class object_map_node : public graph_node {
   virtual std::string get_proc_name() const override { return "object_map"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -362,7 +362,7 @@ class object_map_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -370,7 +370,7 @@ class object_map_node : public graph_node {
     }
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -383,11 +383,11 @@ class object_map_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         try {
           const auto output = get_output(name);
           output->send(field);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
           spdlog::error(e.what());
         }
       }
@@ -408,21 +408,21 @@ class normalize_node : public graph_node {
     set_output(output);
   }
 
-  void set_mean(const std::vector<float> &value) { mean = value; }
+  void set_mean(const std::vector<float>& value) { mean = value; }
 
-  void set_std(const std::vector<float> &value) { std = value; }
+  void set_std(const std::vector<float>& value) { std = value; }
 
   virtual std::string get_proc_name() const override { return "normalize"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(mean);
     archive(std);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
       const auto dst =
           src.transform([this](const float value, const size_t w, const size_t h, const size_t c,
@@ -455,12 +455,12 @@ class onnx_runtime_node : public graph_node {
  public:
   onnx_runtime_node() : graph_node(), session(nullptr) {}
 
-  void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
+  void set_model_data(const std::vector<uint8_t>& value) { model_data = value; }
 
   virtual std::string get_proc_name() const override { return "onnx_runtime"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -471,7 +471,7 @@ class onnx_runtime_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -480,7 +480,7 @@ class onnx_runtime_node : public graph_node {
     archive(model_data);
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -494,7 +494,7 @@ class onnx_runtime_node : public graph_node {
   Ort::Env env{ORT_LOGGING_LEVEL_WARNING};
 
   virtual void initialize() override {
-    const auto &api = Ort::GetApi();
+    const auto& api = Ort::GetApi();
 
     // Create session
     Ort::SessionOptions session_options;
@@ -535,23 +535,23 @@ class onnx_runtime_node : public graph_node {
     }
 
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
       const auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-      std::vector<const char *> input_node_names;
+      std::vector<const char*> input_node_names;
       std::vector<Ort::Value> input_tensors;
-      for (const auto &name : this->input_node_names) {
+      for (const auto& name : this->input_node_names) {
         input_node_names.push_back(name.c_str());
 
         const auto dims = input_node_dims.at(name);
         input_tensors.push_back(
-            Ort::Value::CreateTensor<float>(memory_info, const_cast<float *>(src.get_data()),
+            Ort::Value::CreateTensor<float>(memory_info, const_cast<float*>(src.get_data()),
                                             src.get_size(), dims.data(), dims.size()));
       }
 
-      std::vector<const char *> output_node_names;
-      for (const auto &[name, _] : get_outputs()) {
+      std::vector<const char*> output_node_names;
+      for (const auto& [name, _] : get_outputs()) {
         output_node_names.push_back(name.c_str());
       }
 
@@ -562,7 +562,7 @@ class onnx_runtime_node : public graph_node {
       assert(output_tensors.size() == output_node_names.size());
       for (std::size_t i = 0; i < output_node_names.size(); i++) {
         const auto name = output_node_names.at(i);
-        const auto &value = output_tensors.at(i);
+        const auto& value = output_tensors.at(i);
 
         graph_message_ptr output_msg;
 
@@ -611,7 +611,7 @@ class onnx_runtime_node : public graph_node {
         try {
           const auto output = get_output(name);
           output->send(output_msg);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
           spdlog::error(e.what());
         }
       }
@@ -640,12 +640,12 @@ class tensorflow_lite_node : public graph_node {
  public:
   tensorflow_lite_node() : graph_node(), session(nullptr) {}
 
-  void set_model_data(const std::vector<uint8_t> &value) { model_data = value; }
+  void set_model_data(const std::vector<uint8_t>& value) { model_data = value; }
 
   virtual std::string get_proc_name() const override { return "tensorflow_lite"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -656,7 +656,7 @@ class tensorflow_lite_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -665,7 +665,7 @@ class tensorflow_lite_node : public graph_node {
     archive(model_data);
   }
 
-  graph_edge_ptr add_output(const std::string &name) {
+  graph_edge_ptr add_output(const std::string& name) {
     auto outputs = get_outputs();
     auto it = outputs.find(name);
     if (it == outputs.end()) {
@@ -681,7 +681,7 @@ class tensorflow_lite_node : public graph_node {
 
   virtual void initialize() override {
     model = tflite::FlatBufferModel::BuildFromBuffer(
-        reinterpret_cast<const char *>(model_data.data()), model_data.size());
+        reinterpret_cast<const char*>(model_data.data()), model_data.size());
     TFLITE_MINIMAL_CHECK(model != nullptr);
 
     tflite::ops::builtin::BuiltinOpResolver resolver;
@@ -698,7 +698,7 @@ class tensorflow_lite_node : public graph_node {
     }
 
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
       for (size_t input = 0; input < interpreter->inputs().size(); input++) {
         const auto input_tensor = interpreter->input_tensor(input);
@@ -719,7 +719,7 @@ class tensorflow_lite_node : public graph_node {
         }
 
         input_tensor_view.assign(src.transpose({2, 0, 1, 3}),
-                                 [](auto, const auto &value, auto...) { return value; });
+                                 [](auto, const auto& value, auto...) { return value; });
       }
 
       TFLITE_MINIMAL_CHECK(interpreter->Invoke() == kTfLiteOk);
@@ -807,7 +807,7 @@ class tensorflow_lite_node : public graph_node {
         try {
           const auto output = get_output(name);
           output->send(output_msg);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
           spdlog::error(e.what());
         }
       }
@@ -832,10 +832,10 @@ class pre_project_node : public graph_node {
   virtual std::string get_proc_name() const override { return "pre_project"; }
 
   std::array<float, 3> get_grid_center() const { return grid_center; }
-  void set_grid_center(const std::array<float, 3> &value) { grid_center = value; }
+  void set_grid_center(const std::array<float, 3>& value) { grid_center = value; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(grid_center);
   }
 
@@ -851,9 +851,9 @@ class pre_project_node : public graph_node {
       heatmaps_list_type heatmaps;
 
       std::shared_ptr<frame_message<tensor<float, 4>>> src_msg = nullptr;
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field)) {
-          auto &src = frame_msg->get_data();
+          auto& src = frame_msg->get_data();
 
           const auto camera_msg = frame_msg->get_metadata<camera_data_message>("camera");
           const auto camera = camera_msg->get_data();
@@ -910,16 +910,16 @@ class project_node : public graph_node {
   virtual std::string get_proc_name() const override { return "project"; }
 
   std::array<float, 3> get_grid_size() const { return grid_size; }
-  void set_grid_size(const std::array<float, 3> &value) { grid_size = value; }
+  void set_grid_size(const std::array<float, 3>& value) { grid_size = value; }
   std::array<int32_t, 3> get_cube_size() const { return cube_size; }
-  void set_cube_size(const std::array<int32_t, 3> &value) { cube_size = value; }
+  void set_cube_size(const std::array<int32_t, 3>& value) { cube_size = value; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(grid_size, cube_size);
   }
 
-  std::vector<std::array<float, 3>> compute_grid(const std::array<float, 3> &grid_center) const {
+  std::vector<std::array<float, 3>> compute_grid(const std::array<float, 3>& grid_center) const {
     std::vector<std::array<float, 3>> grid;
     for (int32_t x = 0; x < cube_size.at(0); x++) {
       for (int32_t y = 0; y < cube_size.at(1); y++) {
@@ -938,11 +938,11 @@ class project_node : public graph_node {
     return grid;
   }
 
-  static std::vector<std::array<float, 2>> project_point(const std::vector<std::array<float, 3>> &x,
-                                                         const camera_data &camera) {
+  static std::vector<std::array<float, 2>> project_point(const std::vector<std::array<float, 3>>& x,
+                                                         const camera_data& camera) {
     std::vector<cv::Point3d> points;
 
-    std::transform(x.begin(), x.end(), std::back_inserter(points), [&](const auto &p) {
+    std::transform(x.begin(), x.end(), std::back_inserter(points), [&](const auto& p) {
       const auto pt_x = p[0] - camera.translation[0];
       const auto pt_y = p[1] - camera.translation[1];
       const auto pt_z = p[2] - camera.translation[2];
@@ -978,15 +978,15 @@ class project_node : public graph_node {
     std::vector<std::array<float, 2>> y;
 
     std::transform(projected_points.begin(), projected_points.end(), std::back_inserter(y),
-                   [](const auto &p) {
+                   [](const auto& p) {
                      return std::array<float, 2>{static_cast<float>(p.x), static_cast<float>(p.y)};
                    });
 
     return y;
   }
 
-  static tensor<float, 4> grid_sample(const tensor<float, 4> &src,
-                                      const std::vector<std::array<float, 2>> &grid,
+  static tensor<float, 4> grid_sample(const tensor<float, 4>& src,
+                                      const std::vector<std::array<float, 2>>& grid,
                                       bool align_corner = false) {
     const auto num_o = src.shape[3];
     const auto num_c = src.shape[2];
@@ -1021,9 +1021,8 @@ class project_node : public graph_node {
 
       for (uint32_t o = 0; o < num_o; o++) {
         for (uint32_t c = 0; c < num_c; c++) {
-          cv::Mat plane(
-              num_h, num_w, cv::DataType<float>::type,
-              const_cast<float *>(src.get_data()) + c * src.stride[2] + o * src.stride[3]);
+          cv::Mat plane(num_h, num_w, cv::DataType<float>::type,
+                        const_cast<float*>(src.get_data()) + c * src.stride[2] + o * src.stride[3]);
           cv::Mat remapped(grid_num, 1, cv::DataType<float>::type,
                            dst.get_data() + offset + c * dst.stride[2] + o * dst.stride[3]);
           cv::remap(plane, remapped, map_x, map_y, cv::INTER_LINEAR);
@@ -1035,8 +1034,8 @@ class project_node : public graph_node {
   }
 
   std::tuple<tensor<float, 4>, std::vector<std::array<float, 3>>> get_voxel(
-      const std::vector<tensor<float, 4>> &heatmaps, const std::vector<camera_data> &cameras,
-      const std::vector<roi_data> &rois, const std::array<float, 3> &grid_center) const {
+      const std::vector<tensor<float, 4>>& heatmaps, const std::vector<camera_data>& cameras,
+      const std::vector<roi_data>& rois, const std::array<float, 3>& grid_center) const {
     const auto num_bins =
         std::accumulate(cube_size.begin(), cube_size.end(), 1u, std::multiplies<uint32_t>());
     const auto num_joints = heatmaps.at(0).shape[2];
@@ -1049,8 +1048,8 @@ class project_node : public graph_node {
     auto bounding = tensor<float, 4>::zeros({num_cameras, num_bins, 1, 1});
 
     for (uint32_t c = 0; c < num_cameras; c++) {
-      const auto &roi = rois.at(c);
-      const auto &&image_size = cv::Size2f(960, 512);
+      const auto& roi = rois.at(c);
+      const auto&& image_size = cv::Size2f(960, 512);
       const auto center = cv::Point2f(roi.center[0], roi.center[1]);
       const auto scale = cv::Size2f(roi.scale[0], roi.scale[1]);
       const auto width = center.x * 2;
@@ -1069,7 +1068,7 @@ class project_node : public graph_node {
       });
 
       std::vector<std::array<float, 2>> sample_grid;
-      std::transform(xy.begin(), xy.end(), std::back_inserter(sample_grid), [&](const auto &p) {
+      std::transform(xy.begin(), xy.end(), std::back_inserter(sample_grid), [&](const auto& p) {
         const auto x0 = p[0];
         const auto y0 = p[1];
 
@@ -1130,7 +1129,7 @@ class project_node : public graph_node {
       heatmaps_list_type heatmaps_and_metas;
       tensor<float, 1> grid_center;
 
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         if (name == "heatmaps") {
           if (auto frame_msg =
                   std::dynamic_pointer_cast<frame_message<heatmaps_list_type>>(field)) {
@@ -1149,7 +1148,7 @@ class project_node : public graph_node {
       std::vector<camera_data> cameras;
       std::vector<roi_data> rois;
 
-      for (const auto &[heatmap, camera, roi] : heatmaps_and_metas) {
+      for (const auto& [heatmap, camera, roi] : heatmaps_and_metas) {
         heatmaps.push_back(heatmap);
         cameras.push_back(camera);
         rois.push_back(roi);
@@ -1199,18 +1198,18 @@ class proposal_node : public graph_node {
   void set_max_num(uint32_t value) { max_num = value; }
   void set_threshold(float value) { threshold = value; }
   std::array<float, 3> get_grid_size() const { return grid_size; }
-  void set_grid_size(const std::array<float, 3> &value) { grid_size = value; }
+  void set_grid_size(const std::array<float, 3>& value) { grid_size = value; }
   std::array<float, 3> get_grid_center() const { return grid_center; }
-  void set_grid_center(const std::array<float, 3> &value) { grid_center = value; }
+  void set_grid_center(const std::array<float, 3>& value) { grid_center = value; }
   std::array<int32_t, 3> get_cube_size() const { return cube_size; }
-  void set_cube_size(const std::array<int32_t, 3> &value) { cube_size = value; }
+  void set_cube_size(const std::array<int32_t, 3>& value) { cube_size = value; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(max_num, threshold, grid_size, grid_center, cube_size);
   }
 
-  static tensor<float, 4> max_pool(const tensor<float, 4> &inputs, size_t kernel = 3) {
+  static tensor<float, 4> max_pool(const tensor<float, 4>& inputs, size_t kernel = 3) {
     const auto padding = (kernel - 1) / 2;
     const auto max = inputs.max_pool3d(kernel, 1, padding, 1);
     const auto keep = inputs.transform(max, [](const float value1, const float value2, auto...) {
@@ -1219,8 +1218,8 @@ class proposal_node : public graph_node {
     return keep;
   }
 
-  static tensor<uint64_t, 2> get_index(const tensor<uint64_t, 1> &indices,
-                                       const std::array<uint64_t, 3> &shape) {
+  static tensor<uint64_t, 2> get_index(const tensor<uint64_t, 1>& indices,
+                                       const std::array<uint64_t, 3>& shape) {
     const auto num_people = indices.shape[3];
     const auto result = indices.transform_expand<1>({3}, [shape](const uint64_t value, auto...) {
       const auto index_x = value / (shape[1] * shape[0]);
@@ -1231,7 +1230,7 @@ class proposal_node : public graph_node {
     return result;
   }
 
-  tensor<float, 2> get_real_loc(const tensor<uint64_t, 2> &index) {
+  tensor<float, 2> get_real_loc(const tensor<uint64_t, 2>& index) {
     const auto loc =
         index.cast<float>().transform([this](const float value, const size_t i, const size_t j) {
           return value / (cube_size[i] - 1) * grid_size[i] + grid_center[i] - grid_size[i] / 2.0f;
@@ -1241,7 +1240,7 @@ class proposal_node : public graph_node {
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 5>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
       const auto root_cubes =
           src.view<4>({src.shape[0], src.shape[1], src.shape[2], src.shape[3]}).contiguous();
@@ -1290,7 +1289,7 @@ class iterate_proposal_node : public graph_node {
   virtual std::string get_proc_name() const override { return "iterate_proposal"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize(Archive& archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
@@ -1299,7 +1298,7 @@ class iterate_proposal_node : public graph_node {
       std::shared_ptr<frame_message<heatmaps_list_type>> heatmaps_msg = nullptr;
       std::shared_ptr<frame_message<tensor<float, 2>>> proposal_msg = nullptr;
 
-      for (const auto &[name, field] : obj_msg->get_fields()) {
+      for (const auto& [name, field] : obj_msg->get_fields()) {
         if (name == "heatmaps") {
           if (auto frame_msg =
                   std::dynamic_pointer_cast<frame_message<heatmaps_list_type>>(field)) {
@@ -1317,7 +1316,7 @@ class iterate_proposal_node : public graph_node {
         return;
       }
 
-      auto &proposal = proposal_msg->get_data();
+      auto& proposal = proposal_msg->get_data();
 
       for (uint32_t i = 0; i < proposal.shape[1]; i++) {
         if (proposal.get({3, i}) >= 0) {
@@ -1358,17 +1357,17 @@ class soft_argmax_node : public graph_node {
   virtual std::string get_proc_name() const override { return "soft_argmax"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(beta);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto frame_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 5>>>(message)) {
-      const auto &src = frame_msg->get_data();
+      const auto& src = frame_msg->get_data();
 
-      const auto &grid_msg =
+      const auto& grid_msg =
           frame_msg->get_metadata<frame_message<std::vector<std::array<float, 3>>>>("grid");
-      const auto &grid = grid_msg->get_data();
+      const auto& grid = grid_msg->get_data();
 
       const auto dst =
           src.view<3>(
@@ -1431,7 +1430,7 @@ class local_server {
   ~local_server() { stop(); }
 };
 
-int main(int argc, char *argv[]) try {
+int main(int argc, char* argv[]) try {
   signal(SIGINT, sigint_handler);
 
   spdlog::set_level(spdlog::level::debug);
@@ -1521,7 +1520,7 @@ int main(int argc, char *argv[]) try {
   g->add_node(map_data);
 
   std::unordered_map<std::string, graph_edge_ptr> heatmaps_list;
-  for (const auto &[camera_panel, camera_node] : camera_list) {
+  for (const auto& [camera_panel, camera_node] : camera_list) {
     const auto camera_name = fmt::format("camera_{:02d}_{:02d}", camera_panel, camera_node);
     const auto camera_image = map_data->add_output(camera_name);
 
@@ -1543,7 +1542,7 @@ int main(int argc, char *argv[]) try {
   }
 
   std::shared_ptr<frame_number_sync_node> sync(new frame_number_sync_node());
-  for (const auto &[camera_name, heatmaps] : heatmaps_list) {
+  for (const auto& [camera_name, heatmaps] : heatmaps_list) {
     sync->set_input(heatmaps, camera_name);
   }
   g->add_node(sync);
@@ -1627,7 +1626,7 @@ int main(int argc, char *argv[]) try {
   }
 
   return 0;
-} catch (std::exception &e) {
+} catch (std::exception& e) {
   std::cout << e.what() << std::endl;
   shutdown();
 }
