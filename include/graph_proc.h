@@ -637,7 +637,7 @@ class graph_proc_server {
       : rpc_server_(io_context, address, port), resources_(resources) {
     rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::DEPLOY,
                                  [this](uint32_t session, const std::vector<uint8_t> &arg,
-                                        std::vector<uint8_t> &res) -> uint32_t {
+                                        [[maybe_unused]] std::vector<uint8_t> &res) -> uint32_t {
                                    spdlog::debug("Deploy graph (session = {0})", session);
 
                                    std::stringstream ss(std::string(arg.begin(), arg.end()));
@@ -705,8 +705,8 @@ class graph_proc_server {
         });
 
     rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::RUN,
-                                 [this](uint32_t session, const std::vector<uint8_t> &arg,
-                                        std::vector<uint8_t> &res) -> uint32_t {
+                                 [this](uint32_t session, [[maybe_unused]] const std::vector<uint8_t> &arg,
+                                        [[maybe_unused]] std::vector<uint8_t> &res) -> uint32_t {
                                    spdlog::debug("Run graph (session = {0})", session);
 
                                    auto g_ = graphs_.at(session);
@@ -716,8 +716,8 @@ class graph_proc_server {
                                  });
 
     rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::STOP,
-                                 [this](uint32_t session, const std::vector<uint8_t> &arg,
-                                        std::vector<uint8_t> &res) -> uint32_t {
+                                 [this](uint32_t session, [[maybe_unused]] const std::vector<uint8_t> &arg,
+                                        [[maybe_unused]] std::vector<uint8_t> &res) -> uint32_t {
                                    spdlog::debug("Stop graph (session = {0})", session);
 
                                    auto g_ = graphs_.at(session);
@@ -780,7 +780,7 @@ class graph_proc_server {
     rpc_server_.register_handler(
         (uint32_t)GRAPH_PROC_RPC_FUNC::PROCESS,
         [this](uint32_t session, const std::vector<uint8_t> &arg,
-               std::vector<uint8_t> &res) -> uint32_t {
+               [[maybe_unused]] std::vector<uint8_t> &res) -> uint32_t {
           std::stringstream arg_ss(std::string((const char *)arg.data(), arg.size()));
           const auto node_id = read_uint32(arg_ss);
           const auto input_name = read_string(arg_ss);
@@ -1207,7 +1207,7 @@ class p2p_talker_node : public graph_node {
     transmitter->open(remote_address, remote_port);
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     source_identifier id{0, 0};
     std::stringstream ss;
     {
@@ -1275,7 +1275,7 @@ class p2p_tcp_talker_node : public graph_node {
     transmitter->open(address, port);
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     source_identifier id{0, 0};
     std::stringstream ss;
     {
@@ -1358,22 +1358,14 @@ class p2p_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream) {
-      this->on_receive_handler(timestamp, id, stream);
+    receiver->start([this](asio::streambuf &stream) {
+      this->on_receive_data_handler(stream);
     });
   }
 
   virtual void stop() override { receiver->stop(); }
 
-  void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
-    if (id.data_id == 0) {
-      on_receive_data_handler(timestamp, id, stream);
-    } else {
-      spdlog::error("Received unknown data");
-    }
-  }
-
-  void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
+  void on_receive_data_handler(asio::streambuf &stream) {
     if (stream.size() < sizeof(int)) {
       return;
     }
@@ -1442,22 +1434,14 @@ class p2p_tcp_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream) {
-      this->on_receive_handler(timestamp, id, stream);
+    receiver->start([this](asio::streambuf &stream) {
+      this->on_receive_data_handler(stream);
     });
   }
 
   virtual void stop() override { receiver->stop(); }
 
-  void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
-    if (id.data_id == 0) {
-      on_receive_data_handler(timestamp, id, stream);
-    } else {
-      spdlog::error("Received unknown data");
-    }
-  }
-
-  void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
+  void on_receive_data_handler(asio::streambuf &stream) {
     if (stream.size() < sizeof(int)) {
       return;
     }
@@ -1511,7 +1495,7 @@ class broadcast_talker_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     source_identifier id{0, 0};
     std::stringstream ss;
     {
@@ -1591,22 +1575,14 @@ class broadcast_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream) {
-      this->on_receive_handler(timestamp, id, stream);
+    receiver->start([this](asio::streambuf &stream) {
+      this->on_receive_data_handler(stream);
     });
   }
 
   virtual void stop() override { receiver->stop(); }
 
-  void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
-    if (id.data_id == 0) {
-      on_receive_data_handler(timestamp, id, stream);
-    } else {
-      spdlog::error("Received unknown data");
-    }
-  }
-
-  void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
+  void on_receive_data_handler(asio::streambuf &stream) {
     if (stream.size() < sizeof(int)) {
       return;
     }
@@ -1626,7 +1602,7 @@ class broadcast_listener_node : public graph_node {
 };
 
 class annonymous_callback_list : public resource_base {
-  using callback_func = std::function<void(std::string, graph_message_ptr)>;
+  using callback_func = std::function<void(graph_message_ptr)>;
   std::vector<callback_func> callbacks;
 
  public:
@@ -1634,9 +1610,9 @@ class annonymous_callback_list : public resource_base {
 
   void add(callback_func callback) { callbacks.push_back(callback); }
 
-  void invoke(std::string input_name, graph_message_ptr message) const {
+  void invoke(graph_message_ptr message) const {
     for (auto& callback : callbacks) {
-      callback(input_name, message);
+      callback(message);
     }
   }
 };
@@ -1667,14 +1643,11 @@ class callback_caller_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
     if (callbacks) {
-      callbacks->invoke(input_name, message);
+      callbacks->invoke(message);
     }
   }
-
-  template <typename Archive>
-  void serialize(Archive& archive) {}
 
   virtual std::string get_proc_name() const override { return "callback_caller"; }
 };
@@ -1689,13 +1662,10 @@ class callback_callee_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "callback_callee"; }
 
-  template <typename Archive>
-  void serialize(Archive& archive) {}
-
   virtual void initialize() override {
     auto callback_list = std::make_shared<annonymous_callback_list>();
     callback_list->add(
-        [this](std::string input_name, graph_message_ptr message) { this->output->send(message); });
+        [this](graph_message_ptr message) { this->output->send(message); });
 
     const auto resource_name = "callback_list_" + std::to_string(reinterpret_cast<uintptr_t>(this));
     resources->add(callback_list, resource_name);

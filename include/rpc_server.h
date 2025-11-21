@@ -44,7 +44,7 @@ class session : public std::enable_shared_from_this<session> {
                             });
   }
 
-  void handle_request(std::size_t bytes_transferred) {
+  void handle_request([[maybe_unused]] std::size_t bytes_transferred) {
     auto data = receive_buff_.data();
     auto request = *reinterpret_cast<const request_t *>(&*boost::asio::buffers_begin(data));
     receive_buff_.consume(sizeof(request_t));
@@ -53,7 +53,7 @@ class session : public std::enable_shared_from_this<session> {
       auto self(shared_from_this());
       boost::asio::async_read(
           socket_, receive_buff_, boost::asio::transfer_exactly(request.length),
-          [request, this, self](boost::system::error_code ec, std::size_t length) {
+          [request, this, self](boost::system::error_code ec, [[maybe_unused]] std::size_t length) {
             if (!ec) {
               auto bytes = reinterpret_cast<const uint8_t *>(
                   &*boost::asio::buffers_begin(receive_buff_.data()));

@@ -130,7 +130,7 @@ class data_stream_receiver {
 
     session() : lost_packet(true) {}
   };
-  typedef std::function<void(double, source_identifier, asio::streambuf &)> on_receive_func;
+  typedef std::function<void(asio::streambuf &)> on_receive_func;
   udp::socket socket_;
   udp::endpoint remote_endpoint_;
   reordering_packet_buffer reordering;
@@ -261,7 +261,7 @@ class data_stream_receiver {
       bool completed = packet->flags & 0x1;
       if (completed) {
         if (!session.lost_packet) {
-          on_receive(packet->timestamp, packet->id, session.buffer);
+          on_receive(session.buffer);
         }
         session.buffer.consume(session.buffer.size());
         session.lost_packet = false;
@@ -297,7 +297,7 @@ class data_stream_tcp_receiver {
     session() : lost_packet(true) {}
   };
 
-  typedef std::function<void(double, source_identifier, asio::streambuf &)> on_receive_func;
+  typedef std::function<void(asio::streambuf &)> on_receive_func;
   tcp::socket socket_;
   tcp::acceptor acceptor_;
   tcp::endpoint remote_endpoint_;
@@ -458,7 +458,7 @@ class data_stream_tcp_receiver {
       bool completed = packet->flags & 0x1;
       if (completed) {
         if (!session.lost_packet) {
-          on_receive(packet->timestamp, packet->id, session.buffer);
+          on_receive(session.buffer);
         }
         session.buffer.consume(session.buffer.size());
         session.lost_packet = false;
