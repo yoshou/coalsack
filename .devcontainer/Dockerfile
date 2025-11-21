@@ -37,7 +37,7 @@ ARG REINSTALL_CMAKE_VERSION_FROM_SOURCE="3.22.2"
 COPY ./reinstall-cmake.sh /tmp/
 
 RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
-        chmod +x /tmp/reinstall-cmake.sh && /tmp/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
+    chmod +x /tmp/reinstall-cmake.sh && /tmp/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
     fi \
     && rm -f /tmp/reinstall-cmake.sh
 
@@ -48,7 +48,7 @@ RUN su vscode -c "${VCPKG_ROOT}/vcpkg install boost-asio opencv4[core,jpeg,png]"
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends autoconf automake libtool libudev-dev
-    
+
 RUN su vscode -c "${VCPKG_ROOT}/vcpkg install realsense2"
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \

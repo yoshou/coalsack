@@ -75,7 +75,7 @@ RUN apt-get update \
 
 RUN apt-get update && \
     apt-get install -y gcc g++ git cmake automake libboost-all-dev libopencv-dev libyaml-dev python3-yaml python3-ply \
-                       python3-jinja2 python3-pip libgnutls28-dev && \
+    python3-jinja2 python3-pip libgnutls28-dev && \
     apt-get -y --purge autoremove && \
     rm -rf /var/lib/apt/lists/*
 
