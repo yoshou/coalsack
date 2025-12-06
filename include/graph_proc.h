@@ -5,13 +5,13 @@
 #include <atomic>
 #include <cereal/archives/binary.hpp>
 #include <cereal/cereal.hpp>
+#include <cereal/types/atomic.hpp>
 #include <cereal/types/base_class.hpp>
 #include <cereal/types/map.hpp>
 #include <cereal/types/polymorphic.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/tuple.hpp>
 #include <cereal/types/vector.hpp>
-#include <cereal/types/atomic.hpp>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -37,7 +37,7 @@ class graph_message {
   virtual ~graph_message() = default;
 
   template <typename Archive>
-  void serialize(Archive &archive) {}
+  void serialize([[maybe_unused]] Archive& archive) {}
 };
 
 using graph_message_ptr = std::shared_ptr<graph_message>;
@@ -74,23 +74,23 @@ class subscribe_request {
   void set_msg_type(std::string value) { msg_type = value; }
   std::string get_msg_type() const { return msg_type; }
 
-  void set_data(const std::vector<uint8_t> &value) { data = value; }
+  void set_data(const std::vector<uint8_t>& value) { data = value; }
   std::vector<uint8_t> get_data() const { return data; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(proc_name, msg_type, data);
   }
 };
 
 class graph_edge {
-  graph_node *source;
+  graph_node* source;
   std::string name;
   EDGE_TYPE edge_type;
   std::vector<std::shared_ptr<graph_message_callback>> callbacks;
 
  public:
-  graph_edge(graph_node *source, EDGE_TYPE edge_type = EDGE_TYPE::DATAFLOW)
+  graph_edge(graph_node* source, EDGE_TYPE edge_type = EDGE_TYPE::DATAFLOW)
       : source(source), name(), edge_type(edge_type), callbacks() {}
 
   void set_name(std::string name) { this->name = name; }
@@ -99,7 +99,7 @@ class graph_edge {
 
   EDGE_TYPE get_type() const { return edge_type; }
 
-  graph_node *get_source() const { return source; }
+  graph_node* get_source() const { return source; }
 
   void set_callback(std::shared_ptr<graph_message_callback> callback) {
     if (std::find(callbacks.begin(), callbacks.end(), callback) != callbacks.end()) {
@@ -111,7 +111,7 @@ class graph_edge {
   void remove_callback() { callbacks.clear(); }
 
   void send(graph_message_ptr message) {
-    for (const auto &callback : callbacks) {
+    for (const auto& callback : callbacks) {
       if (callback) {
         (*callback)(message);
       }
@@ -135,11 +135,15 @@ class resource_list {
   std::unordered_map<std::string, std::shared_ptr<resource_base>> resources;
 
  public:
-  void add(const std::shared_ptr<resource_base> &resource) {
+  void add(const std::shared_ptr<resource_base>& resource) {
     resources.insert(std::make_pair(resource->get_name(), resource));
   }
 
-  std::shared_ptr<resource_base> get(const std::string &name) const {
+  void add(const std::shared_ptr<resource_base>& resource, const std::string& name) {
+    resources.insert(std::make_pair(name, resource));
+  }
+
+  std::shared_ptr<resource_base> get(const std::string& name) const {
     const auto found = resources.find(name);
     if (found == resources.end()) {
       return nullptr;
@@ -150,7 +154,7 @@ class resource_list {
 
 class graph_node {
  protected:
-  subgraph *g;
+  subgraph* g;
   std::shared_ptr<resource_list> resources;
 
   void set_output(graph_edge_ptr output) { set_output(output, "default"); }
@@ -179,7 +183,7 @@ class graph_node {
     }
   }
 
-  void set_resources(const std::shared_ptr<resource_list> &resources) {
+  void set_resources(const std::shared_ptr<resource_list>& resources) {
     this->resources = resources;
   }
   void set_input(graph_edge_ptr input) { set_input(input, "default"); }
@@ -191,7 +195,7 @@ class graph_node {
         [this, name](graph_message_ptr msg) { process(name, msg); }));
   }
 
-  const std::unordered_map<std::string, graph_edge_ptr> &get_outputs() const { return outputs; }
+  const std::unordered_map<std::string, graph_edge_ptr>& get_outputs() const { return outputs; }
 
   graph_edge_ptr get_output() const { return get_output("default"); }
 
@@ -209,13 +213,14 @@ class graph_node {
     }
     return inputs.at(name);
   }
-  const std::unordered_map<std::string, graph_edge_ptr> &get_inputs() const { return inputs; }
+  const std::unordered_map<std::string, graph_edge_ptr>& get_inputs() const { return inputs; }
 
-  virtual void process(std::string input_name, graph_message_ptr message) {}
+  virtual void process([[maybe_unused]] std::string input_name,
+                       [[maybe_unused]] graph_message_ptr message) {}
 
-  void set_parent(subgraph *g) { this->g = g; }
+  void set_parent(subgraph* g) { this->g = g; }
 
-  subgraph *get_parent() const { return this->g; }
+  subgraph* get_parent() const { return this->g; }
 
   virtual void initialize() {}
 
@@ -229,7 +234,7 @@ class graph_node {
 using graph_node_ptr = std::shared_ptr<graph_node>;
 
 template <typename T>
-static void dfs_postorder(graph_node *node, std::unordered_set<graph_node *> &visited, T callback) {
+static void dfs_postorder(graph_node* node, std::unordered_set<graph_node*>& visited, T callback) {
   if (node == nullptr) {
     return;
   }
@@ -240,7 +245,10 @@ static void dfs_postorder(graph_node *node, std::unordered_set<graph_node *> &vi
   visited.insert(node);
 
   for (auto input : node->get_inputs()) {
-    const auto &[input_name, input_edge] = input;
+    const auto& [input_name, input_edge] = input;
+    if (input_edge->get_type() != EDGE_TYPE::DATAFLOW) {
+      continue;
+    }
     dfs_postorder(input_edge->get_source(), visited, callback);
   }
 
@@ -249,7 +257,7 @@ static void dfs_postorder(graph_node *node, std::unordered_set<graph_node *> &vi
 
 class subgraph {
   std::vector<graph_node_ptr> nodes;
-  std::unordered_map<const graph_node *, uint32_t> node_ids;
+  std::unordered_map<const graph_node*, uint32_t> node_ids;
 
  public:
   subgraph() {}
@@ -263,14 +271,14 @@ class subgraph {
     node->set_parent(this);
   }
 
-  uint32_t get_node_id(const graph_node *node) const { return node_ids.at(node); }
+  uint32_t get_node_id(const graph_node* node) const { return node_ids.at(node); }
 
   uint32_t get_node_count() const { return nodes.size(); }
 
   graph_node_ptr get_node(uint32_t idx) const { return nodes[idx]; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     archive(nodes);
 
     using node_port = std::tuple<uint32_t, std::string>;
@@ -316,7 +324,7 @@ class subgraph {
   }
 
   template <class Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     archive(nodes);
 
     for (size_t i = 0; i < nodes.size(); i++) {
@@ -365,22 +373,22 @@ class subgraph {
     }
   }
 
-  void save_to(std::ostream &s) const {
+  void save_to(std::ostream& s) const {
     cereal::BinaryOutputArchive oarchive(s);
     oarchive(*this);
   }
 
-  void load_from(std::istream &s) {
+  void load_from(std::istream& s) {
     cereal::BinaryInputArchive iarchive(s);
     iarchive(*this);
   }
 
   void run() {
-    std::unordered_set<graph_node *> visited;
-    std::vector<graph_node *> ordered_nodes;
-    for (auto &node : nodes) {
+    std::unordered_set<graph_node*> visited;
+    std::vector<graph_node*> ordered_nodes;
+    for (auto& node : nodes) {
       dfs_postorder(node.get(), visited,
-                    [&ordered_nodes](graph_node *node) { ordered_nodes.push_back(node); });
+                    [&ordered_nodes](graph_node* node) { ordered_nodes.push_back(node); });
     }
     std::reverse(ordered_nodes.begin(), ordered_nodes.end());
     for (auto node : ordered_nodes) {
@@ -414,6 +422,113 @@ class subgraph {
   }
 };
 
+class subgraph_node : public graph_node {
+  std::shared_ptr<subgraph> g;
+  std::unordered_map<std::string, graph_edge_ptr> output_map;
+
+ public:
+  subgraph_node() : graph_node(), g(std::make_shared<subgraph>()) {}
+
+  subgraph& get_subgraph() const { return *g; }
+
+  virtual std::string get_proc_name() const override { return "subgraph"; }
+
+  void set_output(graph_edge_ptr output, std::string name) {
+    output_map[name] = output;
+    graph_node::set_output(output, name);
+  }
+
+  graph_edge_ptr get_output(std::string name) const {
+    if (output_map.find(name) == output_map.end()) {
+      throw std::invalid_argument("name");
+    }
+    return output_map.at(name);
+  }
+
+  graph_edge_ptr find_output(std::string name) const {
+    if (output_map.find(name) == output_map.end()) {
+      return nullptr;
+    }
+    return output_map.at(name);
+  }
+
+  virtual void initialize() override {
+    const auto outputs = get_outputs();
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->set_resources(resources);
+        node->initialize();
+      }
+    }
+  }
+
+  virtual void finalize() override {
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->finalize();
+      }
+    }
+  }
+
+  virtual void run() override {
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->run();
+      }
+    }
+  }
+
+  virtual void stop() override {
+    if (g) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        node->stop();
+      }
+    }
+  }
+
+  template <typename Archive>
+  void save(Archive& archive) const {
+    archive(g);
+
+    auto output_size = static_cast<uint32_t>(output_map.size());
+    archive(output_size);
+    for (const auto& [name, output] : output_map) {
+      archive(name);
+      uint32_t node_id = 0;
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        if (node.get() == output->get_source()) {
+          node_id = i + 1;
+          break;
+        }
+      }
+      archive(node_id);
+    }
+  }
+
+  template <class Archive>
+  void load(Archive& archive) {
+    archive(g);
+
+    uint32_t output_size = 0;
+    archive(output_size);
+    for (uint32_t i = 0; i < output_size; i++) {
+      std::string name;
+      uint32_t node_id = 0;
+      archive(name);
+      archive(node_id);
+      auto node = g->get_node(node_id - 1);
+      auto output = node->get_output();
+      output_map[name] = output;
+      graph_node::set_output(output, name);
+    }
+  }
+};
+
 enum class GRAPH_PROC_RPC_FUNC : uint32_t {
   DEPLOY = 0,
   INITIALIZE = 1,
@@ -428,14 +543,14 @@ class graph_proc {
   std::shared_ptr<resource_list> resources;
 
  public:
-  graph_proc(const std::shared_ptr<resource_list> &resources = std::make_shared<resource_list>())
+  graph_proc(const std::shared_ptr<resource_list>& resources = std::make_shared<resource_list>())
       : g(new subgraph()), resources(resources) {}
 
   std::shared_ptr<subgraph> get_graph() const { return g; }
 
   std::shared_ptr<resource_list> get_resources() const { return resources; }
 
-  void deploy(const std::shared_ptr<subgraph> &g) { this->g = g; }
+  void deploy(const std::shared_ptr<subgraph>& g) { this->g = g; }
 
   void run() {
     initialize();
@@ -447,12 +562,12 @@ class graph_proc {
     finalize();
   }
 
-  void process(const graph_node *node, const graph_message_ptr &message) {
+  void process(const graph_node* node, const graph_message_ptr& message) {
     process(node, "default", message);
   }
 
-  void process(const graph_node *node, const std::string &input_name,
-               const graph_message_ptr &message) {
+  void process(const graph_node* node, const std::string& input_name,
+               const graph_message_ptr& message) {
     auto g = node->get_parent();
     auto node_id = node->get_parent()->get_node_id(node);
 
@@ -463,18 +578,18 @@ class graph_proc {
   }
 
  private:
-  void topological_sort(std::vector<graph_node *> &nodes) {
-    std::unordered_set<graph_node *> visited;
-    std::vector<graph_node *> result;
+  void topological_sort(std::vector<graph_node*>& nodes) {
+    std::unordered_set<graph_node*> visited;
+    std::vector<graph_node*> result;
     for (auto node : nodes) {
-      dfs_postorder(node, visited, [&result](graph_node *node) { result.push_back(node); });
+      dfs_postorder(node, visited, [&result](graph_node* node) { result.push_back(node); });
     }
     std::reverse(result.begin(), result.end());
     nodes = result;
   }
 
   void initialize() {
-    std::vector<graph_node *> nodes;
+    std::vector<graph_node*> nodes;
     for (uint32_t i = 0; i < g->get_node_count(); i++) {
       auto node = g->get_node(i);
       nodes.push_back(node.get());
@@ -495,14 +610,14 @@ class graph_proc {
     }
   }
 
-  void run(subgraph *g) {
+  void run(subgraph* g) {
     for (uint32_t i = 0; i < g->get_node_count(); i++) {
       auto node = g->get_node(i);
       node->run();
     }
   }
 
-  void stop(subgraph *g) {
+  void stop(subgraph* g) {
     for (uint32_t i = 0; i < g->get_node_count(); i++) {
       auto node = g->get_node(i);
       node->stop();
@@ -518,12 +633,12 @@ class graph_proc_server {
 
  public:
   graph_proc_server(
-      boost::asio::io_context &io_context, std::string address, uint16_t port,
-      const std::shared_ptr<resource_list> &resources = std::make_shared<resource_list>())
+      boost::asio::io_context& io_context, std::string address, uint16_t port,
+      const std::shared_ptr<resource_list>& resources = std::make_shared<resource_list>())
       : rpc_server_(io_context, address, port), resources_(resources) {
     rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::DEPLOY,
-                                 [this](uint32_t session, const std::vector<uint8_t> &arg,
-                                        std::vector<uint8_t> &res) -> uint32_t {
+                                 [this](uint32_t session, const std::vector<uint8_t>& arg,
+                                        [[maybe_unused]] std::vector<uint8_t>& res) -> uint32_t {
                                    spdlog::debug("Deploy graph (session = {0})", session);
 
                                    std::stringstream ss(std::string(arg.begin(), arg.end()));
@@ -540,11 +655,11 @@ class graph_proc_server {
 
     rpc_server_.register_handler(
         (uint32_t)GRAPH_PROC_RPC_FUNC::INITIALIZE,
-        [this](uint32_t session, const std::vector<uint8_t> &arg,
-               std::vector<uint8_t> &res) -> uint32_t {
+        [this](uint32_t session, const std::vector<uint8_t>& arg,
+               std::vector<uint8_t>& res) -> uint32_t {
           spdlog::debug("Initialize graph (session = {0})", session);
 
-          std::stringstream arg_ss(std::string((const char *)arg.data(), arg.size()));
+          std::stringstream arg_ss(std::string((const char*)arg.data(), arg.size()));
           auto node_id = read_uint32(arg_ss);
 
           auto g_ = graphs_.at(session);
@@ -590,35 +705,37 @@ class graph_proc_server {
           return 0;
         });
 
-    rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::RUN,
-                                 [this](uint32_t session, const std::vector<uint8_t> &arg,
-                                        std::vector<uint8_t> &res) -> uint32_t {
-                                   spdlog::debug("Run graph (session = {0})", session);
+    rpc_server_.register_handler(
+        (uint32_t)GRAPH_PROC_RPC_FUNC::RUN,
+        [this](uint32_t session, [[maybe_unused]] const std::vector<uint8_t>& arg,
+               [[maybe_unused]] std::vector<uint8_t>& res) -> uint32_t {
+          spdlog::debug("Run graph (session = {0})", session);
 
-                                   auto g_ = graphs_.at(session);
-                                   g_->run();
+          auto g_ = graphs_.at(session);
+          g_->run();
 
-                                   return 0;
-                                 });
+          return 0;
+        });
 
-    rpc_server_.register_handler((uint32_t)GRAPH_PROC_RPC_FUNC::STOP,
-                                 [this](uint32_t session, const std::vector<uint8_t> &arg,
-                                        std::vector<uint8_t> &res) -> uint32_t {
-                                   spdlog::debug("Stop graph (session = {0})", session);
+    rpc_server_.register_handler(
+        (uint32_t)GRAPH_PROC_RPC_FUNC::STOP,
+        [this](uint32_t session, [[maybe_unused]] const std::vector<uint8_t>& arg,
+               [[maybe_unused]] std::vector<uint8_t>& res) -> uint32_t {
+          spdlog::debug("Stop graph (session = {0})", session);
 
-                                   auto g_ = graphs_.at(session);
-                                   g_->stop();
+          auto g_ = graphs_.at(session);
+          g_->stop();
 
-                                   return 0;
-                                 });
+          return 0;
+        });
 
     rpc_server_.register_handler(
         (uint32_t)GRAPH_PROC_RPC_FUNC::FINALIZE,
-        [this](uint32_t session, const std::vector<uint8_t> &arg,
-               std::vector<uint8_t> &res) -> uint32_t {
+        [this](uint32_t session, const std::vector<uint8_t>& arg,
+               std::vector<uint8_t>& res) -> uint32_t {
           spdlog::debug("Finalize graph (session = {0})", session);
 
-          std::stringstream arg_ss(std::string((const char *)arg.data(), arg.size()));
+          std::stringstream arg_ss(std::string((const char*)arg.data(), arg.size()));
           auto node_id = read_uint32(arg_ss);
 
           auto g_ = graphs_.at(session);
@@ -665,9 +782,9 @@ class graph_proc_server {
 
     rpc_server_.register_handler(
         (uint32_t)GRAPH_PROC_RPC_FUNC::PROCESS,
-        [this](uint32_t session, const std::vector<uint8_t> &arg,
-               std::vector<uint8_t> &res) -> uint32_t {
-          std::stringstream arg_ss(std::string((const char *)arg.data(), arg.size()));
+        [this](uint32_t session, const std::vector<uint8_t>& arg,
+               [[maybe_unused]] std::vector<uint8_t>& res) -> uint32_t {
+          std::stringstream arg_ss(std::string((const char*)arg.data(), arg.size()));
           const auto node_id = read_uint32(arg_ss);
           const auto input_name = read_string(arg_ss);
           spdlog::debug("Process node (session = {0}, node = {1}, input_name = {2})", session,
@@ -708,10 +825,10 @@ class graph_proc_server {
 
 class graph_proc_client {
   std::vector<std::shared_ptr<subgraph>> graphs_;
-  std::unordered_map<subgraph *, std::shared_ptr<rpc_client>> rpcs_;
+  std::unordered_map<subgraph*, std::shared_ptr<rpc_client>> rpcs_;
 
  public:
-  void deploy(asio::io_context &io_context, std::string ipaddress, uint16_t port,
+  void deploy(asio::io_context& io_context, std::string ipaddress, uint16_t port,
               std::shared_ptr<subgraph> g) {
     g->validate();
 
@@ -739,12 +856,12 @@ class graph_proc_client {
     finalize();
   }
 
-  void process(const graph_node *node, const graph_message_ptr &message) {
+  void process(const graph_node* node, const graph_message_ptr& message) {
     process(node, "default", message);
   }
 
-  void process(const graph_node *node, const std::string &input_name,
-               const graph_message_ptr &message) {
+  void process(const graph_node* node, const std::string& input_name,
+               const graph_message_ptr& message) {
     auto g = node->get_parent();
     auto node_idx = node->get_parent()->get_node_id(node);
 
@@ -752,18 +869,18 @@ class graph_proc_client {
   }
 
  private:
-  void topological_sort(std::vector<graph_node *> &nodes) {
-    std::unordered_set<graph_node *> visited;
-    std::vector<graph_node *> result;
+  void topological_sort(std::vector<graph_node*>& nodes) {
+    std::unordered_set<graph_node*> visited;
+    std::vector<graph_node*> result;
     for (auto node : nodes) {
-      dfs_postorder(node, visited, [&result](graph_node *node) { result.push_back(node); });
+      dfs_postorder(node, visited, [&result](graph_node* node) { result.push_back(node); });
     }
     std::reverse(result.begin(), result.end());
     nodes = result;
   }
 
   void initialize() {
-    std::vector<graph_node *> nodes;
+    std::vector<graph_node*> nodes;
     for (auto g : graphs_) {
       for (uint32_t i = 0; i < g->get_node_count(); i++) {
         auto node = g->get_node(i);
@@ -781,7 +898,7 @@ class graph_proc_client {
   }
 
   void finalize() {
-    std::vector<graph_node *> nodes;
+    std::vector<graph_node*> nodes;
     for (auto g : graphs_) {
       for (uint32_t i = 0; i < g->get_node_count(); i++) {
         auto node = g->get_node(i);
@@ -798,7 +915,7 @@ class graph_proc_client {
     }
   }
 
-  void invoke_deploy(rpc_client &rpc, subgraph &g) {
+  void invoke_deploy(rpc_client& rpc, subgraph& g) {
     std::vector<uint8_t> arg, res;
 
     {
@@ -812,7 +929,7 @@ class graph_proc_client {
     rpc.invoke((uint32_t)GRAPH_PROC_RPC_FUNC::DEPLOY, arg, res);
   }
 
-  void invoke_initialize_node(subgraph *g, uint32_t node_id) {
+  void invoke_initialize_node(subgraph* g, uint32_t node_id) {
     std::vector<uint8_t> arg, res;
 
     {
@@ -841,7 +958,7 @@ class graph_proc_client {
     auto rpc = rpcs_.at(g);
     rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::INITIALIZE, arg, res);
     {
-      std::stringstream input(std::string((const char *)res.data(), res.size()));
+      std::stringstream input(std::string((const char*)res.data(), res.size()));
 
       std::unordered_map<std::string, subscribe_request> input_reqs;
       {
@@ -861,7 +978,7 @@ class graph_proc_client {
     }
   }
 
-  void invoke_finalize_node(subgraph *g, uint32_t node_id) {
+  void invoke_finalize_node(subgraph* g, uint32_t node_id) {
     std::vector<uint8_t> arg, res;
 
     {
@@ -890,7 +1007,7 @@ class graph_proc_client {
     auto rpc = rpcs_.at(g);
     rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::FINALIZE, arg, res);
     {
-      std::stringstream input(std::string((const char *)res.data(), res.size()));
+      std::stringstream input(std::string((const char*)res.data(), res.size()));
 
       std::unordered_map<std::string, subscribe_request> input_reqs;
       {
@@ -910,22 +1027,22 @@ class graph_proc_client {
     }
   }
 
-  void invoke_run_graph(subgraph *g) {
+  void invoke_run_graph(subgraph* g) {
     std::vector<uint8_t> arg, res;
 
     auto rpc = rpcs_.at(g);
     rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::RUN, arg, res);
   }
 
-  void invoke_stop_graph(subgraph *g) {
+  void invoke_stop_graph(subgraph* g) {
     std::vector<uint8_t> arg, res;
 
     auto rpc = rpcs_.at(g);
     rpc->invoke((uint32_t)GRAPH_PROC_RPC_FUNC::STOP, arg, res);
   }
 
-  void invoke_process(subgraph *g, uint32_t node_id, const std::string &input_name,
-                      const graph_message_ptr &message) {
+  void invoke_process(subgraph* g, uint32_t node_id, const std::string& input_name,
+                      const graph_message_ptr& message) {
     std::vector<uint8_t> arg, res;
 
     {
@@ -960,7 +1077,7 @@ class text_message : public graph_message {
   static std::string get_type() { return "text"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(text);
   }
 };
@@ -976,7 +1093,7 @@ class number_message : public graph_message {
   static std::string get_type() { return "number"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(value);
   }
 };
@@ -994,7 +1111,7 @@ class list_message : public graph_message {
   static std::string get_type() { return "list"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(list);
   }
 };
@@ -1010,12 +1127,12 @@ class object_message : public graph_message {
   }
   graph_message_ptr get_field(std::string name) const { return fields.at(name); }
   void set_field(std::string name, graph_message_ptr value) { fields[name] = value; }
-  const std::unordered_map<std::string, graph_message_ptr> &get_fields() const { return fields; }
+  const std::unordered_map<std::string, graph_message_ptr>& get_fields() const { return fields; }
 
   static std::string get_type() { return "object"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(fields);
   }
 };
@@ -1026,13 +1143,13 @@ class blob_message : public graph_message {
  public:
   blob_message() : data() {}
 
-  void set_data(const std::vector<uint8_t> &data) { this->data = data; }
-  void set_data(std::vector<uint8_t> &&data) { this->data = std::move(data); }
-  const std::vector<uint8_t> &get_data() const { return data; }
+  void set_data(const std::vector<uint8_t>& data) { this->data = data; }
+  void set_data(std::vector<uint8_t>&& data) { this->data = std::move(data); }
+  const std::vector<uint8_t>& get_data() const { return data; }
   static std::string get_type() { return "blob"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(data);
   }
 };
@@ -1049,10 +1166,8 @@ class passthrough_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "passthrough"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     output->send(message);
   }
 };
@@ -1096,7 +1211,8 @@ class p2p_talker_node : public graph_node {
     transmitter->open(remote_address, remote_port);
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     source_identifier id{0, 0};
     std::stringstream ss;
     {
@@ -1109,13 +1225,10 @@ class p2p_talker_node : public graph_node {
                   std::chrono::system_clock::now().time_since_epoch())
                   .count();
 
-    transmitter->send(id, (double)(ns / 100), (uint8_t *)str.data(), str.size());
+    transmitter->send(id, (double)(ns / 100), (uint8_t*)str.data(), str.size());
   }
 
   virtual std::string get_proc_name() const override { return "data_talker"; }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
 
   virtual void run() override {
     running = true;
@@ -1167,7 +1280,8 @@ class p2p_tcp_talker_node : public graph_node {
     transmitter->open(address, port);
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     source_identifier id{0, 0};
     std::stringstream ss;
     {
@@ -1180,13 +1294,10 @@ class p2p_tcp_talker_node : public graph_node {
                   std::chrono::system_clock::now().time_since_epoch())
                   .count();
 
-    transmitter->send(id, (double)(ns / 100), (uint8_t *)str.data(), str.size());
+    transmitter->send(id, (double)(ns / 100), (uint8_t*)str.data(), str.size());
   }
 
   virtual std::string get_proc_name() const override { return "data_tcp_talker"; }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
 
   virtual void run() override {
     running = true;
@@ -1223,7 +1334,7 @@ class p2p_listener_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(address);
     archive(port);
   }
@@ -1253,22 +1364,12 @@ class p2p_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream) {
-      this->on_receive_handler(timestamp, id, stream);
-    });
+    receiver->start([this](asio::streambuf& stream) { this->on_receive_data_handler(stream); });
   }
 
   virtual void stop() override { receiver->stop(); }
 
-  void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
-    if (id.data_id == 0) {
-      on_receive_data_handler(timestamp, id, stream);
-    } else {
-      spdlog::error("Received unknown data");
-    }
-  }
-
-  void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
+  void on_receive_data_handler(asio::streambuf& stream) {
     if (stream.size() < sizeof(int)) {
       return;
     }
@@ -1306,7 +1407,7 @@ class p2p_tcp_listener_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(address);
     archive(port);
   }
@@ -1337,22 +1438,12 @@ class p2p_tcp_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream) {
-      this->on_receive_handler(timestamp, id, stream);
-    });
+    receiver->start([this](asio::streambuf& stream) { this->on_receive_data_handler(stream); });
   }
 
   virtual void stop() override { receiver->stop(); }
 
-  void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
-    if (id.data_id == 0) {
-      on_receive_data_handler(timestamp, id, stream);
-    } else {
-      spdlog::error("Received unknown data");
-    }
-  }
-
-  void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
+  void on_receive_data_handler(asio::streambuf& stream) {
     if (stream.size() < sizeof(int)) {
       return;
     }
@@ -1406,7 +1497,8 @@ class broadcast_talker_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     source_identifier id{0, 0};
     std::stringstream ss;
     {
@@ -1419,13 +1511,13 @@ class broadcast_talker_node : public graph_node {
                   std::chrono::system_clock::now().time_since_epoch())
                   .count();
 
-    transmitter->send(id, (double)(ns / 100), (uint8_t *)str.data(), str.size());
+    transmitter->send(id, (double)(ns / 100), (uint8_t*)str.data(), str.size());
   }
 
   virtual std::string get_proc_name() const override { return "broadcast_talker"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(address);
     archive(port);
   }
@@ -1468,7 +1560,7 @@ class broadcast_listener_node : public graph_node {
   }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(address);
     archive(port);
     archive(multicast_address);
@@ -1486,22 +1578,12 @@ class broadcast_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](double timestamp, source_identifier id, asio::streambuf &stream) {
-      this->on_receive_handler(timestamp, id, stream);
-    });
+    receiver->start([this](asio::streambuf& stream) { this->on_receive_data_handler(stream); });
   }
 
   virtual void stop() override { receiver->stop(); }
 
-  void on_receive_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
-    if (id.data_id == 0) {
-      on_receive_data_handler(timestamp, id, stream);
-    } else {
-      spdlog::error("Received unknown data");
-    }
-  }
-
-  void on_receive_data_handler(double timestamp, source_identifier id, asio::streambuf &stream) {
+  void on_receive_data_handler(asio::streambuf& stream) {
     if (stream.size() < sizeof(int)) {
       return;
     }
@@ -1520,6 +1602,96 @@ class broadcast_listener_node : public graph_node {
   }
 };
 
+class annonymous_callback_list : public resource_base {
+  using callback_func = std::function<void(graph_message_ptr)>;
+  std::vector<callback_func> callbacks;
+
+ public:
+  virtual std::string get_name() const { return "annonymous_callback_list"; }
+
+  void add(callback_func callback) { callbacks.push_back(callback); }
+
+  void invoke(graph_message_ptr message) const {
+    for (auto& callback : callbacks) {
+      callback(message);
+    }
+  }
+};
+
+class callback_caller_node : public graph_node {
+  graph_edge_ptr output;
+  std::shared_ptr<annonymous_callback_list> callbacks;
+
+ public:
+  callback_caller_node()
+      : graph_node(), output(std::make_shared<graph_edge>(this, EDGE_TYPE::CHAIN)) {
+    set_output(output);
+  }
+
+  virtual void initialize() override {
+    auto output_req = get_output()->request;
+    auto data = output_req.get_data();
+    std::stringstream ss(std::string(data.begin(), data.end()));
+
+    if (data.size() == 0) {
+      return;
+    }
+
+    auto resource_name = read_string(ss);
+
+    if (const auto resource = resources->get(resource_name)) {
+      callbacks = std::dynamic_pointer_cast<annonymous_callback_list>(resource);
+    }
+  }
+
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
+    if (callbacks) {
+      callbacks->invoke(message);
+    }
+  }
+
+  virtual std::string get_proc_name() const override { return "callback_caller"; }
+
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
+};
+
+class callback_callee_node : public graph_node {
+  graph_edge_ptr output;
+
+ public:
+  callback_callee_node() : graph_node(), output(std::make_shared<graph_edge>(this)) {
+    set_output(output);
+  }
+
+  virtual std::string get_proc_name() const override { return "callback_callee"; }
+
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
+
+  virtual void initialize() override {
+    auto callback_list = std::make_shared<annonymous_callback_list>();
+    callback_list->add([this](graph_message_ptr message) { this->output->send(message); });
+
+    const auto resource_name = "callback_list_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+    resources->add(callback_list, resource_name);
+
+    std::stringstream ss;
+    write_string(ss, resource_name);
+
+    std::string str = ss.str();
+    std::vector<uint8_t> data(str.begin(), str.end());
+
+    subscribe_request req;
+    auto input = get_input();
+    req.set_proc_name(get_proc_name());
+    req.set_msg_type(text_message::get_type());
+    req.set_data(data);
+    input->request = req;
+  }
+};
+
 class heartbeat_node : public graph_node {
   uint32_t interval;
   std::shared_ptr<std::thread> th;
@@ -1535,7 +1707,7 @@ class heartbeat_node : public graph_node {
   uint32_t get_interval() const { return interval; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(interval);
   }
 
@@ -1577,7 +1749,7 @@ class text_heartbeat_node : public heartbeat_node {
   virtual std::string get_proc_name() const override { return "text_heartbeat"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(cereal::base_class<heartbeat_node>(this));
     archive(message);
   }
@@ -1590,21 +1762,19 @@ class text_heartbeat_node : public heartbeat_node {
 };
 
 class console_node : public graph_node {
-  std::ostream *output;
+  std::ostream* output;
 
  public:
   console_node() : graph_node(), output(&std::cout) {}
 
   virtual std::string get_proc_name() const override { return "console"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
   virtual void run() override {}
 
   virtual void stop() override {}
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto text = std::dynamic_pointer_cast<text_message>(message)) {
       (*output) << text->get_text();
     }
@@ -1624,11 +1794,12 @@ class buffer_node : public heartbeat_node {
   virtual std::string get_proc_name() const override { return "buffer"; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(cereal::base_class<heartbeat_node>(this));
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     std::lock_guard<std::mutex> lock(mtx);
 
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
@@ -1636,7 +1807,7 @@ class buffer_node : public heartbeat_node {
         this->message = message;
       } else {
         auto current_obj_msg = std::dynamic_pointer_cast<object_message>(this->message);
-        for (auto &[name, field] : obj_msg->get_fields()) {
+        for (auto& [name, field] : obj_msg->get_fields()) {
           current_obj_msg->set_field(name, field);
         }
       }
@@ -1687,9 +1858,6 @@ class clock_buffer_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "clock_buffer"; }
 
-  template <typename Archive>
-  void serialize(Archive &archive) {}
-
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (input_name == "default") {
       std::lock_guard<std::mutex> lock(mtx);
@@ -1711,10 +1879,7 @@ class mux_node : public graph_node {
  public:
   mux_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
-  virtual std::string get_proc_name() const override { return "mux_node"; }
-
-  template <typename Archive>
-  void serialize(Archive &archive) {}
+  virtual std::string get_proc_name() const override { return "mux"; }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     auto msg = std::make_shared<object_message>();
@@ -1738,10 +1903,10 @@ class demux_node : public graph_node {
     return it->second;
   }
 
-  virtual std::string get_proc_name() const override { return "demux_node"; }
+  virtual std::string get_proc_name() const override { return "demux"; }
 
   template <typename Archive>
-  void save(Archive &archive) const {
+  void save(Archive& archive) const {
     std::vector<std::string> output_names;
     auto outputs = get_outputs();
     for (auto output : outputs) {
@@ -1751,7 +1916,7 @@ class demux_node : public graph_node {
   }
 
   template <typename Archive>
-  void load(Archive &archive) {
+  void load(Archive& archive) {
     std::vector<std::string> output_names;
     archive(output_names);
     for (auto output_name : output_names) {
@@ -1759,12 +1924,13 @@ class demux_node : public graph_node {
     }
   }
 
-  virtual void process(std::string input_name, graph_message_ptr message) override {
+  virtual void process([[maybe_unused]] std::string input_name,
+                       graph_message_ptr message) override {
     if (auto obj_msg = std::dynamic_pointer_cast<object_message>(message)) {
       for (auto field : obj_msg->get_fields()) {
         try {
           get_output(field.first)->send(field.second);
-        } catch (const std::invalid_argument &e) {
+        } catch (const std::invalid_argument& e) {
           spdlog::warn(e.what());
         }
       }
@@ -1786,13 +1952,13 @@ class fifo_node : public graph_node {
     set_output(output);
   }
 
-  virtual std::string get_proc_name() const override { return "fifo_node"; }
+  virtual std::string get_proc_name() const override { return "fifo"; }
 
   void set_max_size(std::uint32_t value) { max_size = value; }
   std::uint32_t get_max_size() const { return max_size; }
 
   template <typename Archive>
-  void serialize(Archive &archive) {
+  void serialize(Archive& archive) {
     archive(max_size);
   }
 
@@ -1853,62 +2019,29 @@ class fifo_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::text_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::text_message)
+#include "graph_proc_registry.h"
 
-CEREAL_REGISTER_TYPE(coalsack::number_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::number_message)
+COALSACK_REGISTER_MESSAGE(coalsack::text_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::number_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::list_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::object_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::blob_message, coalsack::graph_message)
 
-CEREAL_REGISTER_TYPE(coalsack::list_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::list_message)
-
-CEREAL_REGISTER_TYPE(coalsack::object_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::object_message)
-
-CEREAL_REGISTER_TYPE(coalsack::blob_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::blob_message)
-
-CEREAL_REGISTER_TYPE(coalsack::passthrough_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::passthrough_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_talker_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_talker_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_tcp_talker_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_tcp_talker_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_listener_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_listener_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_tcp_listener_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_tcp_listener_node)
-
-CEREAL_REGISTER_TYPE(coalsack::broadcast_talker_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_talker_node)
-
-CEREAL_REGISTER_TYPE(coalsack::broadcast_listener_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_listener_node)
-
-CEREAL_REGISTER_TYPE(coalsack::heartbeat_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::heartbeat_node)
-
-CEREAL_REGISTER_TYPE(coalsack::text_heartbeat_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::text_heartbeat_node)
-
-CEREAL_REGISTER_TYPE(coalsack::console_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::console_node)
-
-CEREAL_REGISTER_TYPE(coalsack::buffer_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::buffer_node)
-
-CEREAL_REGISTER_TYPE(coalsack::clock_buffer_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::clock_buffer_node)
-
-CEREAL_REGISTER_TYPE(coalsack::mux_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::mux_node)
-
-CEREAL_REGISTER_TYPE(coalsack::demux_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::demux_node)
-
-CEREAL_REGISTER_TYPE(coalsack::fifo_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::fifo_node)
+COALSACK_REGISTER_NODE(coalsack::passthrough_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_talker_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_tcp_talker_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_listener_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_tcp_listener_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::broadcast_talker_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::broadcast_listener_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::heartbeat_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::text_heartbeat_node, coalsack::heartbeat_node)
+COALSACK_REGISTER_NODE(coalsack::console_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::buffer_node, coalsack::heartbeat_node)
+COALSACK_REGISTER_NODE(coalsack::clock_buffer_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::mux_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::demux_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::fifo_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::subgraph_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::callback_caller_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::callback_callee_node, coalsack::graph_node)

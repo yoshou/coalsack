@@ -162,5 +162,4 @@ class depthai_color_camera_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::depthai_color_camera_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::depthai_color_camera_node)
+COALSACK_REGISTER_NODE(coalsack::depthai_color_camera_node, coalsack::graph_node)

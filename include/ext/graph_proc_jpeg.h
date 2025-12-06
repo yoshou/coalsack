@@ -287,8 +287,6 @@ class decode_jpeg_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::encode_jpeg_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::encode_jpeg_node)
+COALSACK_REGISTER_NODE(coalsack::encode_jpeg_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::decode_jpeg_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::decode_jpeg_node)
+COALSACK_REGISTER_NODE(coalsack::decode_jpeg_node, coalsack::graph_node)

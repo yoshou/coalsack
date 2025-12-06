@@ -1032,47 +1032,32 @@ class video_capture_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::image_viz_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::image_viz_node)
+COALSACK_REGISTER_NODE(coalsack::image_viz_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::image_write_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::image_write_node)
+COALSACK_REGISTER_NODE(coalsack::image_write_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::video_viz_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::video_viz_node)
+COALSACK_REGISTER_NODE(coalsack::video_viz_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::image_transform_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::image_transform_node)
+COALSACK_REGISTER_NODE(coalsack::image_transform_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::threshold_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::threshold_node)
+COALSACK_REGISTER_NODE(coalsack::threshold_node, coalsack::image_transform_node)
 
-CEREAL_REGISTER_TYPE(coalsack::mask_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::mask_node)
+COALSACK_REGISTER_NODE(coalsack::mask_node, coalsack::image_transform_node)
 
-CEREAL_REGISTER_TYPE(coalsack::gaussian_blur_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::gaussian_blur_node)
+COALSACK_REGISTER_NODE(coalsack::gaussian_blur_node, coalsack::image_transform_node)
 
-CEREAL_REGISTER_TYPE(coalsack::resize_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::resize_node)
+COALSACK_REGISTER_NODE(coalsack::resize_node, coalsack::image_transform_node)
 
-CEREAL_REGISTER_TYPE(coalsack::scale_abs_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::scale_abs_node)
+COALSACK_REGISTER_NODE(coalsack::scale_abs_node, coalsack::image_transform_node)
 
-CEREAL_REGISTER_TYPE(coalsack::scale_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::image_transform_node, coalsack::scale_node)
+COALSACK_REGISTER_NODE(coalsack::scale_node, coalsack::image_transform_node)
 
-CEREAL_REGISTER_TYPE(coalsack::keypoint_frame_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::frame_message_base, coalsack::keypoint_frame_message)
+COALSACK_REGISTER_MESSAGE(coalsack::keypoint_frame_message, coalsack::frame_message_base)
 
-CEREAL_REGISTER_TYPE(coalsack::orb_detector_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::orb_detector_node)
+COALSACK_REGISTER_NODE(coalsack::orb_detector_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::simple_blob_detector_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::simple_blob_detector_node)
+COALSACK_REGISTER_NODE(coalsack::simple_blob_detector_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::detect_circle_grid_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::detect_circle_grid_node)
+COALSACK_REGISTER_NODE(coalsack::detect_circle_grid_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::video_capture_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::video_capture_node)
+COALSACK_REGISTER_NODE(coalsack::video_capture_node, coalsack::graph_node)

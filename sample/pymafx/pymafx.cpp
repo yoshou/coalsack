@@ -199,8 +199,7 @@ class image_loader_node : public heartbeat_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(image_loader_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, image_loader_node)
+COALSACK_REGISTER_NODE(image_loader_node, graph_node)
 
 class parameter_loader_node : public graph_node {
   std::string filename;
@@ -263,8 +262,7 @@ class parameter_loader_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(parameter_loader_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, parameter_loader_node)
+COALSACK_REGISTER_NODE(parameter_loader_node, graph_node)
 
 class normalize_node : public graph_node {
   std::vector<float> mean;
@@ -309,8 +307,7 @@ class normalize_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(normalize_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, normalize_node)
+COALSACK_REGISTER_NODE(normalize_node, graph_node)
 
 class onnx_runtime_session {
  public:
@@ -611,8 +608,7 @@ class onnx_runtime_node : public graph_node {
 
 onnx_runtime_session_pool onnx_runtime_node::sessions;
 
-CEREAL_REGISTER_TYPE(onnx_runtime_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, onnx_runtime_node)
+COALSACK_REGISTER_NODE(onnx_runtime_node, graph_node)
 
 template <typename T>
 static T l2norm(T a, T b, T c) {
@@ -809,8 +805,7 @@ class prepare_body_mesh_parameter_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(prepare_body_mesh_parameter_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, prepare_body_mesh_parameter_node)
+COALSACK_REGISTER_NODE(prepare_body_mesh_parameter_node, graph_node)
 
 class prepare_face_mesh_parameter_node : public graph_node {
   graph_edge_ptr output;
@@ -893,8 +888,7 @@ class prepare_face_mesh_parameter_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(prepare_face_mesh_parameter_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, prepare_face_mesh_parameter_node)
+COALSACK_REGISTER_NODE(prepare_face_mesh_parameter_node, graph_node)
 
 class prepare_hand_mesh_parameter_node : public graph_node {
   graph_edge_ptr output;
@@ -961,8 +955,7 @@ class prepare_hand_mesh_parameter_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(prepare_hand_mesh_parameter_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, prepare_hand_mesh_parameter_node)
+COALSACK_REGISTER_NODE(prepare_hand_mesh_parameter_node, graph_node)
 
 class optimize_body_mesh_parameter_node : public graph_node {
   std::string filename;
@@ -1717,8 +1710,7 @@ class optimize_body_mesh_parameter_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(optimize_body_mesh_parameter_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, optimize_body_mesh_parameter_node)
+COALSACK_REGISTER_NODE(optimize_body_mesh_parameter_node, graph_node)
 
 class object_map_node : public graph_node {
  public:
@@ -1770,8 +1762,7 @@ class object_map_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(object_map_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, object_map_node)
+COALSACK_REGISTER_NODE(object_map_node, graph_node)
 
 class render_node : public graph_node {
   graph_edge_ptr output;
@@ -1790,8 +1781,7 @@ class render_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(render_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, render_node)
+COALSACK_REGISTER_NODE(render_node, graph_node)
 
 class project_joint_iwp_node : public graph_node {
   graph_edge_ptr output;
@@ -1908,8 +1898,7 @@ class project_joint_iwp_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(project_joint_iwp_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_joint_iwp_node)
+COALSACK_REGISTER_NODE(project_joint_iwp_node, graph_node)
 
 class extract_point_2d_node : public graph_node {
   graph_edge_ptr output;
@@ -1957,8 +1946,7 @@ class extract_point_2d_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(extract_point_2d_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, extract_point_2d_node)
+COALSACK_REGISTER_NODE(extract_point_2d_node, graph_node)
 
 class local_server {
   asio::io_context io_context;

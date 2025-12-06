@@ -759,41 +759,28 @@ class frame_number_ordering_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::image_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::image_message)
+COALSACK_REGISTER_MESSAGE(coalsack::image_message, coalsack::graph_message)
 
-CEREAL_REGISTER_TYPE(coalsack::frame_message_base)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::frame_message_base)
+COALSACK_REGISTER_MESSAGE(coalsack::frame_message_base, coalsack::graph_message)
 
-CEREAL_REGISTER_TYPE(coalsack::blob_frame_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::frame_message_base, coalsack::blob_frame_message)
+COALSACK_REGISTER_MESSAGE(coalsack::blob_frame_message, coalsack::frame_message_base)
 
-CEREAL_REGISTER_TYPE(coalsack::image_frame_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::frame_message_base, coalsack::image_frame_message)
+COALSACK_REGISTER_MESSAGE(coalsack::image_frame_message, coalsack::frame_message_base)
 
-CEREAL_REGISTER_TYPE(coalsack::image_heartbeat_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::image_heartbeat_node)
+COALSACK_REGISTER_NODE(coalsack::image_heartbeat_node, coalsack::heartbeat_node)
 
-CEREAL_REGISTER_TYPE(coalsack::approximate_time_sync_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::approximate_time_sync_node)
+COALSACK_REGISTER_NODE(coalsack::approximate_time_sync_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::frame_number_sync_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_number_sync_node)
+COALSACK_REGISTER_NODE(coalsack::frame_number_sync_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::tiling_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::tiling_node)
+COALSACK_REGISTER_NODE(coalsack::tiling_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::timestamp_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::timestamp_node)
+COALSACK_REGISTER_NODE(coalsack::timestamp_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::frame_demux_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_demux_node)
+COALSACK_REGISTER_NODE(coalsack::frame_demux_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::frame_number_numbering_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_number_numbering_node)
+COALSACK_REGISTER_NODE(coalsack::frame_number_numbering_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::parallel_queue_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::parallel_queue_node)
+COALSACK_REGISTER_NODE(coalsack::parallel_queue_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::frame_number_ordering_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::frame_number_ordering_node)
+COALSACK_REGISTER_NODE(coalsack::frame_number_ordering_node, coalsack::graph_node)

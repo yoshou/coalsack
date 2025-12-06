@@ -341,8 +341,7 @@ class panoptic_data_loader_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(panoptic_data_loader_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, panoptic_data_loader_node)
+COALSACK_REGISTER_NODE(panoptic_data_loader_node, graph_node)
 
 class object_map_node : public graph_node {
  public:
@@ -394,8 +393,7 @@ class object_map_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(object_map_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, object_map_node)
+COALSACK_REGISTER_NODE(object_map_node, graph_node)
 
 class normalize_node : public graph_node {
   std::vector<float> mean;
@@ -440,8 +438,7 @@ class normalize_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(normalize_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, normalize_node)
+COALSACK_REGISTER_NODE(normalize_node, graph_node)
 
 class onnx_runtime_session {
  public:
@@ -742,8 +739,7 @@ class onnx_runtime_node : public graph_node {
 
 onnx_runtime_session_pool onnx_runtime_node::sessions;
 
-CEREAL_REGISTER_TYPE(onnx_runtime_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, onnx_runtime_node)
+COALSACK_REGISTER_NODE(onnx_runtime_node, graph_node)
 
 #ifdef ENABLE_TFLITE_EXT
 #define TFLITE_MINIMAL_CHECK(x)                              \
@@ -938,8 +934,7 @@ class tensorflow_lite_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(tensorflow_lite_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, tensorflow_lite_node)
+COALSACK_REGISTER_NODE(tensorflow_lite_node, graph_node)
 #endif
 
 class pre_project_whole_node : public graph_node {
@@ -1023,8 +1018,7 @@ class pre_project_whole_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(pre_project_whole_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, pre_project_whole_node)
+COALSACK_REGISTER_NODE(pre_project_whole_node, graph_node)
 
 class project_whole_node : public graph_node {
   graph_edge_ptr output;
@@ -1295,8 +1289,7 @@ class project_whole_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(project_whole_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_whole_node)
+COALSACK_REGISTER_NODE(project_whole_node, graph_node)
 
 class center_decode_node : public graph_node {
   graph_edge_ptr output;
@@ -1409,8 +1402,7 @@ class center_decode_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(center_decode_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, center_decode_node)
+COALSACK_REGISTER_NODE(center_decode_node, graph_node)
 
 class proposal_node : public graph_node {
   graph_edge_ptr output;
@@ -1501,8 +1493,7 @@ class proposal_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(proposal_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, proposal_node)
+COALSACK_REGISTER_NODE(proposal_node, graph_node)
 
 class iterate_proposal_node : public graph_node {
   graph_edge_ptr output;
@@ -1566,8 +1557,7 @@ class iterate_proposal_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(iterate_proposal_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, iterate_proposal_node)
+COALSACK_REGISTER_NODE(iterate_proposal_node, graph_node)
 
 class project_individual_node : public graph_node {
   graph_edge_ptr output;
@@ -1934,8 +1924,7 @@ class project_individual_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(project_individual_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_individual_node)
+COALSACK_REGISTER_NODE(project_individual_node, graph_node)
 
 class project_orthogonal_node : public graph_node {
   graph_edge_ptr output;
@@ -1969,8 +1958,7 @@ class project_orthogonal_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(project_orthogonal_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, project_orthogonal_node)
+COALSACK_REGISTER_NODE(project_orthogonal_node, graph_node)
 
 class soft_argmax_node : public graph_node {
   float beta;
@@ -2032,8 +2020,7 @@ class soft_argmax_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(soft_argmax_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, soft_argmax_node)
+COALSACK_REGISTER_NODE(soft_argmax_node, graph_node)
 
 class fusion_node : public graph_node {
   graph_edge_ptr output;
@@ -2163,8 +2150,7 @@ class fusion_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(fusion_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, fusion_node)
+COALSACK_REGISTER_NODE(fusion_node, graph_node)
 
 class local_server {
   asio::io_context io_context;

@@ -357,8 +357,6 @@ class video_time_sync_control_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::libcamera_capture_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::libcamera_capture_node)
+COALSACK_REGISTER_NODE(coalsack::libcamera_capture_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::video_time_sync_control_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::video_time_sync_control_node)
+COALSACK_REGISTER_NODE(coalsack::video_time_sync_control_node, coalsack::graph_node)
