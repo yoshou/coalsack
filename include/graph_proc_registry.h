@@ -29,6 +29,9 @@ class type_registry {
 
   void register_type(const std::string& name, registered_type_category category,
                      const std::string& base_type = "") {
+    if (type_map_.find(name) != type_map_.end()) {
+      return;
+    }
     registered_type_info info{name, category, base_type};
     types_.push_back(info);
     type_map_[name] = info;
