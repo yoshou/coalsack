@@ -345,8 +345,7 @@ class panoptic_data_loader_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(panoptic_data_loader_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, panoptic_data_loader_node)
+COALSACK_REGISTER_NODE(panoptic_data_loader_node, graph_node)
 
 class object_map_node : public graph_node {
  public:
@@ -398,8 +397,7 @@ class object_map_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(object_map_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, object_map_node)
+COALSACK_REGISTER_NODE(object_map_node, graph_node)
 
 class normalize_node : public graph_node {
   std::vector<float> mean;
@@ -444,8 +442,7 @@ class normalize_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(normalize_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, normalize_node)
+COALSACK_REGISTER_NODE(normalize_node, graph_node)
 
 class onnx_runtime_session {
  public:
@@ -777,8 +774,7 @@ class onnx_runtime_node : public graph_node {
 
 onnx_runtime_session_pool onnx_runtime_node::sessions;
 
-CEREAL_REGISTER_TYPE(onnx_runtime_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, onnx_runtime_node)
+COALSACK_REGISTER_NODE(onnx_runtime_node, graph_node)
 
 class pre_inference_node : public graph_node {
   graph_edge_ptr output;
@@ -948,8 +944,7 @@ class pre_inference_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(pre_inference_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, pre_inference_node)
+COALSACK_REGISTER_NODE(pre_inference_node, graph_node)
 
 class post_inference_node : public graph_node {
   graph_edge_ptr output;
@@ -1052,8 +1047,7 @@ class post_inference_node : public graph_node {
   }
 };
 
-CEREAL_REGISTER_TYPE(post_inference_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(graph_node, post_inference_node)
+COALSACK_REGISTER_NODE(post_inference_node, graph_node)
 
 class local_server {
   asio::io_context io_context;

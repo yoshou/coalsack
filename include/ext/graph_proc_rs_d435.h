@@ -611,5 +611,4 @@ class rs_d435_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::rs_d435_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::rs_d435_node)
+COALSACK_REGISTER_NODE(coalsack::rs_d435_node, coalsack::graph_node)

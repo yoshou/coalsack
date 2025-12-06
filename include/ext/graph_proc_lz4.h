@@ -123,8 +123,6 @@ class decode_lz4_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::encode_lz4_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::encode_lz4_node)
+COALSACK_REGISTER_NODE(coalsack::encode_lz4_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::decode_lz4_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::decode_lz4_node)
+COALSACK_REGISTER_NODE(coalsack::decode_lz4_node, coalsack::graph_node)

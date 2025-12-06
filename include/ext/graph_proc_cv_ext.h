@@ -231,8 +231,6 @@ class charuco_detector_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::fast_blob_detector_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::fast_blob_detector_node)
+COALSACK_REGISTER_NODE(coalsack::fast_blob_detector_node, coalsack::graph_node)
 
-CEREAL_REGISTER_TYPE(coalsack::charuco_detector_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::charuco_detector_node)
+COALSACK_REGISTER_NODE(coalsack::charuco_detector_node, coalsack::graph_node)

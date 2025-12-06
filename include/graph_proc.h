@@ -2019,71 +2019,29 @@ class fifo_node : public graph_node {
 };
 }  // namespace coalsack
 
-CEREAL_REGISTER_TYPE(coalsack::text_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::text_message)
+#include "graph_proc_registry.h"
 
-CEREAL_REGISTER_TYPE(coalsack::number_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::number_message)
+COALSACK_REGISTER_MESSAGE(coalsack::text_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::number_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::list_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::object_message, coalsack::graph_message)
+COALSACK_REGISTER_MESSAGE(coalsack::blob_message, coalsack::graph_message)
 
-CEREAL_REGISTER_TYPE(coalsack::list_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::list_message)
-
-CEREAL_REGISTER_TYPE(coalsack::object_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::object_message)
-
-CEREAL_REGISTER_TYPE(coalsack::blob_message)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::blob_message)
-
-CEREAL_REGISTER_TYPE(coalsack::passthrough_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::passthrough_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_talker_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_talker_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_tcp_talker_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_tcp_talker_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_listener_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_listener_node)
-
-CEREAL_REGISTER_TYPE(coalsack::p2p_tcp_listener_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::p2p_tcp_listener_node)
-
-CEREAL_REGISTER_TYPE(coalsack::broadcast_talker_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_talker_node)
-
-CEREAL_REGISTER_TYPE(coalsack::broadcast_listener_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::broadcast_listener_node)
-
-CEREAL_REGISTER_TYPE(coalsack::heartbeat_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::heartbeat_node)
-
-CEREAL_REGISTER_TYPE(coalsack::text_heartbeat_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::text_heartbeat_node)
-
-CEREAL_REGISTER_TYPE(coalsack::console_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::console_node)
-
-CEREAL_REGISTER_TYPE(coalsack::buffer_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::heartbeat_node, coalsack::buffer_node)
-
-CEREAL_REGISTER_TYPE(coalsack::clock_buffer_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::clock_buffer_node)
-
-CEREAL_REGISTER_TYPE(coalsack::mux_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::mux_node)
-
-CEREAL_REGISTER_TYPE(coalsack::demux_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::demux_node)
-
-CEREAL_REGISTER_TYPE(coalsack::fifo_node)
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::fifo_node)
-
-CEREAL_REGISTER_TYPE(coalsack::subgraph_node);
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::subgraph_node);
-
-CEREAL_REGISTER_TYPE(coalsack::callback_caller_node);
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::callback_caller_node);
-
-CEREAL_REGISTER_TYPE(coalsack::callback_callee_node);
-CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_node, coalsack::callback_callee_node);
+COALSACK_REGISTER_NODE(coalsack::passthrough_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_talker_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_tcp_talker_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_listener_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::p2p_tcp_listener_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::broadcast_talker_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::broadcast_listener_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::heartbeat_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::text_heartbeat_node, coalsack::heartbeat_node)
+COALSACK_REGISTER_NODE(coalsack::console_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::buffer_node, coalsack::heartbeat_node)
+COALSACK_REGISTER_NODE(coalsack::clock_buffer_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::mux_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::demux_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::fifo_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::subgraph_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::callback_caller_node, coalsack::graph_node)
+COALSACK_REGISTER_NODE(coalsack::callback_callee_node, coalsack::graph_node)

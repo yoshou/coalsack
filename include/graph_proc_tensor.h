@@ -1278,9 +1278,8 @@ using tensor_u8_4 = tensor<uint8_t, 4>;
 using tensor_f32_4 = tensor<float, 4>;
 }  // namespace coalsack
 
-#define REGISTER_FRAME_MESSAGE_SUBTYPE(type)          \
-  CEREAL_REGISTER_TYPE(coalsack::frame_message<type>) \
-  CEREAL_REGISTER_POLYMORPHIC_RELATION(coalsack::graph_message, coalsack::frame_message<type>)
+#define REGISTER_FRAME_MESSAGE_SUBTYPE(type) \
+  COALSACK_REGISTER_MESSAGE(coalsack::frame_message<type>, coalsack::graph_message)
 
 REGISTER_FRAME_MESSAGE_SUBTYPE(coalsack::tensor_u8_4)
 REGISTER_FRAME_MESSAGE_SUBTYPE(coalsack::tensor_f32_4)
