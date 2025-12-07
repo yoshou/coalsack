@@ -1364,7 +1364,9 @@ class p2p_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](asio::streambuf& stream) { this->on_receive_data_handler(stream); });
+    receiver->start([this](double timestamp, source_identifier id, asio::streambuf& stream) {
+      this->on_receive_data_handler(stream);
+    });
   }
 
   virtual void stop() override { receiver->stop(); }
@@ -1438,7 +1440,9 @@ class p2p_tcp_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](asio::streambuf& stream) { this->on_receive_data_handler(stream); });
+    receiver->start([this](double timestamp, source_identifier id, asio::streambuf& stream) {
+      this->on_receive_data_handler(stream);
+    });
   }
 
   virtual void stop() override { receiver->stop(); }
@@ -1578,7 +1582,9 @@ class broadcast_listener_node : public graph_node {
   }
 
   virtual void run() override {
-    receiver->start([this](asio::streambuf& stream) { this->on_receive_data_handler(stream); });
+    receiver->start([this](double timestamp, source_identifier id, asio::streambuf& stream) {
+      this->on_receive_data_handler(stream);
+    });
   }
 
   virtual void stop() override { receiver->stop(); }
