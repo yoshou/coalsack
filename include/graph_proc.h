@@ -1166,6 +1166,9 @@ class passthrough_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "passthrough"; }
 
+  template <typename Archive>
+  void serialize(Archive& archive) {}
+
   virtual void process([[maybe_unused]] std::string input_name,
                        graph_message_ptr message) override {
     output->send(message);
@@ -1229,6 +1232,9 @@ class p2p_talker_node : public graph_node {
   }
 
   virtual std::string get_proc_name() const override { return "data_talker"; }
+
+  template <typename Archive>
+  void serialize(Archive& archive) {}
 
   virtual void run() override {
     running = true;
@@ -1298,6 +1304,9 @@ class p2p_tcp_talker_node : public graph_node {
   }
 
   virtual std::string get_proc_name() const override { return "data_tcp_talker"; }
+
+  template <typename Archive>
+  void serialize(Archive& archive) {}
 
   virtual void run() override {
     running = true;
