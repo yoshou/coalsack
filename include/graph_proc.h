@@ -201,7 +201,7 @@ class graph_node {
 
   graph_edge_ptr get_output(std::string name) const {
     if (outputs.find(name) == outputs.end()) {
-      throw std::invalid_argument("name");
+      throw std::invalid_argument("Output not found: " + name);
     }
     return outputs.at(name);
   }
@@ -418,6 +418,14 @@ class subgraph {
           }
         }
       }
+    }
+  }
+
+  void merge(const subgraph& other) {
+    for (uint32_t i = 0; i < other.get_node_count(); i++) {
+      auto node = other.get_node(i);
+      node->set_parent(nullptr);
+      add_node(node);
     }
   }
 };
