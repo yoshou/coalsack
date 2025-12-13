@@ -703,7 +703,7 @@ inline moments_t compute_contour_moments(const std::vector<u32vec2> &contour) {
   return m;
 }
 
-float compute_arc_length(const std::vector<u32vec2> &contour) {
+inline float compute_arc_length(const std::vector<u32vec2> &contour) {
   float perimeter = 0;
 
   if (contour.size() < 2) {
