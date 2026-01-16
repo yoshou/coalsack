@@ -874,6 +874,10 @@ class tensor {
     reduced_tensor new_tensor(new_tensor_shape);
     stride_type new_tensor_assign_stride;
 
+    // Initialize with -infinity for max operation
+    std::fill_n(new_tensor.data.data(), new_tensor.get_size(),
+                -std::numeric_limits<elem_type>::infinity());
+
     for (size_t i = 0, j = 0; i < num_dims; i++) {
       if (drop[i] == false) {
         new_tensor_assign_stride[i] = new_tensor.stride[j];
