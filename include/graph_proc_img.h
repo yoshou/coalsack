@@ -300,13 +300,20 @@ class sync_node : public graph_node {
   using sync_config = Config;
   using sync_info = typename sync_config::sync_info;
   using syncer_type = stream_syncer<graph_message_ptr, std::string, sync_info>;
+  using stream_id_type = std::string;
 
   syncer_type syncer;
   graph_edge_ptr output;
   sync_config config;
+  std::vector<stream_id_type> initial_ids;
 
  public:
-  sync_node() : graph_node(), syncer(), output(std::make_shared<graph_edge>(this)), config() {
+  sync_node()
+      : graph_node(),
+        syncer(),
+        output(std::make_shared<graph_edge>(this)),
+        config(),
+        initial_ids() {
     set_output(output);
   }
 
@@ -316,20 +323,24 @@ class sync_node : public graph_node {
   const sync_config &get_config() const { return config; }
   sync_config &get_config() { return config; }
 
+  void set_initial_ids(const std::vector<stream_id_type> &ids) { this->initial_ids = ids; }
+  const std::vector<stream_id_type> &get_initial_ids() const { return initial_ids; }
+
   template <typename Archive>
   void serialize(Archive &archive) {
-    archive(config);
+    archive(config, initial_ids);
   }
 
   virtual void run() override {
     syncer.start(std::make_shared<typename syncer_type::callback_type>(
-        [this](const std::map<std::string, graph_message_ptr> &frames) {
-          auto msg = std::make_shared<object_message>();
-          for (auto frame : frames) {
-            msg->add_field(frame.first, frame.second);
-          }
-          output->send(msg);
-        }));
+                     [this](const std::map<std::string, graph_message_ptr> &frames) {
+                       auto msg = std::make_shared<object_message>();
+                       for (auto frame : frames) {
+                         msg->add_field(frame.first, frame.second);
+                       }
+                       output->send(msg);
+                     }),
+                 initial_ids);
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
