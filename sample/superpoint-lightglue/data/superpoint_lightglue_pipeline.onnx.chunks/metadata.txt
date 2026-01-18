@@ -1,0 +1,4 @@
+original_file=superpoint_lightglue_pipeline.onnx
+num_chunks=5
+md5=eb47d2533528e229807d697c75845a86
+chunk_size=10485760

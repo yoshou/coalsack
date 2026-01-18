@@ -3,4 +3,5 @@ build/
 # Generated ONNX files (restored from chunks at build time)
 sample/voxelpose/data/*.onnx
 sample/faster-voxelpose/data/*.onnx
+sample/superpoint-lightglue/data/*.onnx
 
