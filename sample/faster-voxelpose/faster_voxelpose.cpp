@@ -2263,9 +2263,8 @@ class pose_visualize_node : public graph_node {
 
   static std::vector<cv::Point2f> project_to_input_image(
       const std::vector<std::array<float, 3>> &points3d, const camera_data &camera,
-      const roi_data &roi) {
+      const roi_data &roi, const cv::Size2f &image_size) {
     const auto proj = project_whole_node::project_point(points3d, camera);
-    const auto image_size = cv::Size2f(960, 512);
     const auto center =
         cv::Point2f(static_cast<float>(roi.center[0]), static_cast<float>(roi.center[1]));
     const auto scale =
@@ -2370,7 +2369,7 @@ class pose_visualize_node : public graph_node {
 
       const auto points3d = pose_tensor_to_points3d(pose_tensor);
       if (!points3d.empty()) {
-        const auto pts2d = project_to_input_image(points3d, camera, roi);
+        const auto pts2d = project_to_input_image(points3d, camera, roi, cv::Size2f(bgr.size()));
         draw_skeleton(bgr, pts2d, cv::Scalar(0, 0, 255));
       }
 
