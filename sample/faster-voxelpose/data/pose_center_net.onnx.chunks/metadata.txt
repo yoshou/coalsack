@@ -1,0 +1,4 @@
+original_file=pose_center_net.onnx
+num_chunks=1
+md5=b958fb4a5b5729b7b2a95411828165af
+chunk_size=10485760

@@ -1,0 +1,4 @@
+original_file=pose_c2c_net.onnx
+num_chunks=1
+md5=67022f9eeae31b3855e46ffcc8a37a97
+chunk_size=10485760

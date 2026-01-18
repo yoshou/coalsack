@@ -1,0 +1,4 @@
+original_file=joint_weight_net.onnx
+num_chunks=1
+md5=e8a79ee8c38785c824ab5383cd9876d0
+chunk_size=10485760

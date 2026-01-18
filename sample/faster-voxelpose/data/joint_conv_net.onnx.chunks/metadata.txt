@@ -1,0 +1,4 @@
+original_file=joint_conv_net.onnx
+num_chunks=1
+md5=d8054ae6c0fa218c3faaf76ec3c6ff4b
+chunk_size=10485760
