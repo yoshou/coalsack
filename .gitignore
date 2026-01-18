@@ -1,1 +1,5 @@
 build/
+
+# Generated ONNX files (restored from chunks at build time)
+sample/voxelpose/data/*.onnx
+

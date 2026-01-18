@@ -1,0 +1,4 @@
+original_file=backbone.onnx
+num_chunks=13
+md5=bab8517224c6a039df0e23c18eea7290
+chunk_size=10485760

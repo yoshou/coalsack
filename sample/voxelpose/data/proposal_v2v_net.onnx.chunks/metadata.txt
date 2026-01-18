@@ -1,0 +1,4 @@
+original_file=proposal_v2v_net.onnx
+num_chunks=2
+md5=1ebb847baaa1c326688902a24ca637b0
+chunk_size=10485760

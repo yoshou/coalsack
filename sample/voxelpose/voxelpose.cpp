@@ -1439,7 +1439,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> backbone_model_data;
   {
-    const auto model_path = "../sample/voxelpose/data/voxelpose/backbone.onnx";
+    const auto model_path = "../sample/voxelpose/data/backbone.onnx";
     std::ifstream ifs;
     ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
     if (ifs.fail()) {
@@ -1460,7 +1460,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> proposal_v2v_net_model_data;
   {
-    const auto model_path = "../sample/voxelpose/data/voxelpose/proposal_v2v_net.onnx";
+    const auto model_path = "../sample/voxelpose/data/proposal_v2v_net.onnx";
     std::ifstream ifs;
     ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
     if (ifs.fail()) {
@@ -1481,7 +1481,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> pose_v2v_net_model_data;
   {
-    const auto model_path = "../sample/voxelpose/data/voxelpose/pose_v2v_net.onnx";
+    const auto model_path = "../sample/voxelpose/data/pose_v2v_net.onnx";
     std::ifstream ifs;
     ifs.open(model_path, std::ios_base::in | std::ios_base::binary);
     if (ifs.fail()) {
@@ -1501,7 +1501,7 @@ int main(int argc, char *argv[]) try {
   }
 
   std::shared_ptr<panoptic_data_loader_node> data_loader(new panoptic_data_loader_node());
-  data_loader->set_data_dir("/workspace/panoptic-toolbox/data");
+  data_loader->set_data_dir("../data");
   data_loader->set_sequence_list({"171204_pose1"});
   data_loader->set_camera_list(camera_list);
   g->add_node(data_loader);
