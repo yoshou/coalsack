@@ -639,7 +639,7 @@ class onnx_runtime_node : public graph_node {
         if (auto frame_msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
           assert(session->input_names.size() == 1);
           {
-            const auto name = session->input_names.at(0);
+            const auto &name = session->input_names.at(0);
             const auto dims = session->input_dims.at(name);
             const auto type = session->input_types.at(name);
             assert(type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
@@ -2222,7 +2222,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> backbone_model_data;
   {
-    const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/backbone.onnx";
+    const auto model_path = "../sample/faster-voxelpose/data/backbone.onnx";
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2231,7 +2231,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> pose_center_net_model_data;
   {
-    const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/pose_center_net.onnx";
+    const auto model_path = "../sample/faster-voxelpose/data/pose_center_net.onnx";
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2240,7 +2240,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> pose_c2c_net_model_data;
   {
-    const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/pose_c2c_net.onnx";
+    const auto model_path = "../sample/faster-voxelpose/data/pose_c2c_net.onnx";
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2249,7 +2249,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> joint_conv_net_model_data;
   {
-    const auto model_path = "../sample/faster-voxelpose/data/faster-voxelpose/joint_conv_net.onnx";
+    const auto model_path = "../sample/faster-voxelpose/data/joint_conv_net.onnx";
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2259,7 +2259,7 @@ int main(int argc, char *argv[]) try {
   std::vector<uint8_t> joint_weight_net_model_data;
   {
     const auto model_path =
-        "../sample/faster-voxelpose/data/faster-voxelpose/joint_weight_net.onnx";
+        "../sample/faster-voxelpose/data/joint_weight_net.onnx";
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2267,7 +2267,7 @@ int main(int argc, char *argv[]) try {
   }
 
   std::shared_ptr<panoptic_data_loader_node> data_loader(new panoptic_data_loader_node());
-  data_loader->set_data_dir("/workspace/panoptic-toolbox/data");
+  data_loader->set_data_dir("../data");
   data_loader->set_sequence_list({"171204_pose1"});
   data_loader->set_camera_list(camera_list);
   g->add_node(data_loader);
@@ -2300,9 +2300,12 @@ int main(int argc, char *argv[]) try {
 
   const auto all_heatmaps = [&]() {
     std::shared_ptr<frame_number_sync_node> sync(new frame_number_sync_node());
+    std::vector<std::string> sync_ids;
     for (const auto &[camera_name, heatmaps] : heatmaps_list) {
       sync->set_input(heatmaps, camera_name);
+      sync_ids.push_back(camera_name);
     }
+    sync->set_initial_ids(sync_ids);
     g->add_node(sync);
 
     return sync->get_output();
@@ -2329,6 +2332,7 @@ int main(int argc, char *argv[]) try {
     sync->set_input(inference_pose_center_net->add_output("hm"), "hm");
     sync->set_input(inference_pose_center_net->add_output("size"), "size");
     sync->set_input(project->get_output(), "feats");
+    sync->set_initial_ids({"hm", "size", "feats"});
     g->add_node(sync);
 
     return sync->get_output();
@@ -2354,6 +2358,7 @@ int main(int argc, char *argv[]) try {
     sync->set_input(pose_center_decode_item->add_output("topk_2d_confs"), "topk_2d_confs");
     sync->set_input(pose_center_decode_item->add_output("topk_size"), "topk_size");
     sync->set_input(inference_pose_c2c_net->add_output("output"), "feat_1d");
+    sync->set_initial_ids({"topk_2d_index", "topk_2d_confs", "topk_size", "feat_1d"});
     g->add_node(sync);
 
     return sync->get_output();
@@ -2375,6 +2380,7 @@ int main(int argc, char *argv[]) try {
   std::shared_ptr<frame_number_sync_node> heatmap_proposal_sync(new frame_number_sync_node());
   heatmap_proposal_sync->set_input(pre_project_item->add_output("heatmaps"), "heatmaps");
   heatmap_proposal_sync->set_input(proposal->get_output(), "proposal");
+  heatmap_proposal_sync->set_initial_ids({"heatmaps", "proposal"});
   g->add_node(heatmap_proposal_sync);
 
   std::shared_ptr<iterate_proposal_node> iterate_proposal(new iterate_proposal_node());
@@ -2420,6 +2426,7 @@ int main(int argc, char *argv[]) try {
     sync->set_input(soft_argmax_item->add_output("pose_preds"), "pose_preds");
     sync->set_input(soft_argmax_item->add_output("confs"), "confs");
     sync->set_input(project_proposal->get_output(), "cubes");
+    sync->set_initial_ids({"weights", "pose_preds", "confs", "cubes"});
     g->add_node(sync);
 
     return sync->get_output();
