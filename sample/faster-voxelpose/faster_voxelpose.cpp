@@ -11,6 +11,8 @@
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -2146,11 +2148,246 @@ class fusion_node : public graph_node {
               << fused_pose_preds.get({2, j}) << " " << 16711680 << std::endl;
         }
       }
+
+      // Convert to tensor<float, 3> shape: {3, num_joints, 1} for visualization
+      auto pose_output = tensor<float, 3>({3, fused_pose_preds.shape[1], 1});
+      for (uint32_t i = 0; i < 3; i++) {
+        for (uint32_t j = 0; j < fused_pose_preds.shape[1]; j++) {
+          pose_output.set({i, j, 0}, fused_pose_preds.get({i, j}));
+        }
+      }
+
+      auto out_msg = std::make_shared<frame_message<tensor<float, 3>>>();
+      out_msg->set_data(std::move(pose_output));
+      out_msg->set_profile(frame_msg->get_profile());
+      out_msg->set_timestamp(frame_msg->get_timestamp());
+      out_msg->set_frame_number(frame_msg->get_frame_number());
+      out_msg->set_metadata(*frame_msg);
+
+      output->send(out_msg);
     }
   }
 };
 
 COALSACK_REGISTER_NODE(fusion_node, graph_node)
+
+class pose_visualize_node : public graph_node {
+  std::string output_dir = "runs/faster_voxelpose_vis";
+  std::string data_dir = "../data";
+  uint64_t max_frames = 0;  // 0 = no limit
+
+  std::atomic<uint64_t> written_frames = 0;
+
+ public:
+  pose_visualize_node() : graph_node() {}
+
+  void set_output_dir(const std::string &value) { output_dir = value; }
+  void set_data_dir(const std::string &value) { data_dir = value; }
+  void set_max_frames(uint64_t value) { max_frames = value; }
+
+  virtual std::string get_proc_name() const override { return "pose_visualize_node"; }
+
+  template <typename Archive>
+  void serialize(Archive &archive) {
+    archive(output_dir);
+    archive(data_dir);
+    archive(max_frames);
+  }
+
+  static cv::Mat tensor_to_bgr_u8(const tensor<float, 4> &src) {
+    const int width = static_cast<int>(src.shape[0]);
+    const int height = static_cast<int>(src.shape[1]);
+    const int channels = static_cast<int>(src.shape[2]);
+    cv::Mat bgr(height, width, CV_8UC3);
+
+    if (channels < 3) {
+      bgr.setTo(cv::Scalar(0, 0, 0));
+      return bgr;
+    }
+
+    for (int y = 0; y < height; y++) {
+      auto *row = bgr.ptr<cv::Vec3b>(y);
+      for (int x = 0; x < width; x++) {
+        const float r = std::clamp(
+            src.get({static_cast<uint32_t>(x), static_cast<uint32_t>(y), 0u, 0u}), 0.0f, 1.0f);
+        const float g = std::clamp(
+            src.get({static_cast<uint32_t>(x), static_cast<uint32_t>(y), 1u, 0u}), 0.0f, 1.0f);
+        const float b = std::clamp(
+            src.get({static_cast<uint32_t>(x), static_cast<uint32_t>(y), 2u, 0u}), 0.0f, 1.0f);
+        row[x] = cv::Vec3b(static_cast<uint8_t>(b * 255.0f), static_cast<uint8_t>(g * 255.0f),
+                           static_cast<uint8_t>(r * 255.0f));
+      }
+    }
+
+    return bgr;
+  }
+
+  static std::vector<std::array<int, 2>> coco19_skeleton_edges() {
+    // Panoptic Toolbox (hdPose3d_stage1_coco19) edge definition.
+    // Ref: third-party/panoptic-toolbox/python/demo_3Dkeypoints_reprojection_hd.py
+    // body_edges =
+    // [[1,2],[1,4],[4,5],[5,6],[1,3],[3,7],[7,8],[8,9],[3,13],[13,14],[14,15],[1,10],[10,11],[11,12]]
+    // - 1
+    return {
+        {0, 1},    // 1-2
+        {0, 3},    // 1-4
+        {3, 4},    // 4-5
+        {4, 5},    // 5-6
+        {0, 2},    // 1-3
+        {2, 6},    // 3-7
+        {6, 7},    // 7-8
+        {7, 8},    // 8-9
+        {2, 12},   // 3-13
+        {12, 13},  // 13-14
+        {13, 14},  // 14-15
+        {0, 9},    // 1-10
+        {9, 10},   // 10-11
+        {10, 11},  // 11-12
+    };
+  }
+
+  static std::vector<std::array<float, 3>> pose_tensor_to_points3d(const tensor<float, 3> &pose) {
+    // Expected shape: {3, num_joints, num_people}. Use first person.
+    if (pose.shape[0] < 3 || pose.shape[1] == 0 || pose.shape[2] == 0) {
+      return {};
+    }
+
+    const uint32_t num_joints = pose.shape[1];
+    std::vector<std::array<float, 3>> points;
+    points.reserve(num_joints);
+    for (uint32_t j = 0; j < num_joints; j++) {
+      points.push_back({pose.get({0u, j, 0u}), pose.get({1u, j, 0u}), pose.get({2u, j, 0u})});
+    }
+    return points;
+  }
+
+  static std::vector<cv::Point2f> project_to_input_image(
+      const std::vector<std::array<float, 3>> &points3d, const camera_data &camera,
+      const roi_data &roi) {
+    const auto proj = project_whole_node::project_point(points3d, camera);
+    const auto image_size = cv::Size2f(960, 512);
+    const auto center =
+        cv::Point2f(static_cast<float>(roi.center[0]), static_cast<float>(roi.center[1]));
+    const auto scale =
+        cv::Size2f(static_cast<float>(roi.scale[0]), static_cast<float>(roi.scale[1]));
+    const auto trans = get_transform(center, scale, image_size);
+    cv::Mat transf;
+    trans.convertTo(transf, cv::DataType<float>::type);
+
+    std::vector<cv::Point2f> out;
+    out.reserve(proj.size());
+    for (const auto &p : proj) {
+      const float x = p[0];
+      const float y = p[1];
+      const float x2 =
+          x * transf.at<float>(0, 0) + y * transf.at<float>(0, 1) + transf.at<float>(0, 2);
+      const float y2 =
+          x * transf.at<float>(1, 0) + y * transf.at<float>(1, 1) + transf.at<float>(1, 2);
+      out.emplace_back(x2, y2);
+    }
+    return out;
+  }
+
+  static void draw_skeleton(cv::Mat &bgr, const std::vector<cv::Point2f> &pts,
+                            const cv::Scalar &color) {
+    const auto edges = coco19_skeleton_edges();
+
+    for (const auto &e : edges) {
+      const int a = e[0];
+      const int b = e[1];
+      if (a < 0 || b < 0 || a >= static_cast<int>(pts.size()) ||
+          b >= static_cast<int>(pts.size())) {
+        continue;
+      }
+      const auto &pa = pts[a];
+      const auto &pb = pts[b];
+      if (!std::isfinite(pa.x) || !std::isfinite(pa.y) || !std::isfinite(pb.x) ||
+          !std::isfinite(pb.y)) {
+        continue;
+      }
+      cv::line(bgr, pa, pb, color, 2, cv::LINE_AA);
+    }
+
+    for (size_t i = 0; i < pts.size(); i++) {
+      const auto &p = pts[i];
+      if (!std::isfinite(p.x) || !std::isfinite(p.y)) {
+        continue;
+      }
+      cv::circle(bgr, p, 3, color, cv::FILLED, cv::LINE_AA);
+    }
+  }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (max_frames != 0 && written_frames.load() >= max_frames) {
+      return;
+    }
+
+    auto obj_msg = std::dynamic_pointer_cast<object_message>(message);
+    if (!obj_msg) {
+      return;
+    }
+
+    std::shared_ptr<frame_message<tensor<float, 3>>> poses_msg;
+    std::vector<std::pair<std::string, std::shared_ptr<frame_message<tensor<float, 4>>>>> cameras;
+
+    for (const auto &[name, field] : obj_msg->get_fields()) {
+      if (name == "poses") {
+        poses_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 3>>>(field);
+      } else if (name.rfind("camera_", 0) == 0) {
+        if (auto cam_msg = std::dynamic_pointer_cast<frame_message<tensor<float, 4>>>(field)) {
+          cameras.emplace_back(name, cam_msg);
+        }
+      }
+    }
+
+    if (!poses_msg || cameras.empty()) {
+      return;
+    }
+
+    const auto frame_number = poses_msg->get_frame_number();
+    const auto &pose_tensor = poses_msg->get_data();
+
+    fs::path output_base(output_dir);
+    if (output_base.is_relative()) {
+      auto repo_root = fs::absolute(fs::path(data_dir)).lexically_normal();
+      for (int i = 0; i < 2 && repo_root.has_parent_path(); i++) {
+        repo_root = repo_root.parent_path();
+      }
+      output_base = repo_root / output_base;
+    }
+
+    for (const auto &[camera_name, cam_msg] : cameras) {
+      cv::Mat bgr = tensor_to_bgr_u8(cam_msg->get_data());
+
+      const auto camera_meta = cam_msg->get_metadata<camera_data_message>("camera");
+      const auto roi_meta = cam_msg->get_metadata<roi_data_message>("roi");
+      if (!camera_meta || !roi_meta) {
+        continue;
+      }
+
+      const auto &camera = camera_meta->get_data();
+      const auto &roi = roi_meta->get_data();
+
+      const auto points3d = pose_tensor_to_points3d(pose_tensor);
+      if (!points3d.empty()) {
+        const auto pts2d = project_to_input_image(points3d, camera, roi);
+        draw_skeleton(bgr, pts2d, cv::Scalar(0, 0, 255));
+      }
+
+      const auto out_root = output_base / camera_name;
+      fs::create_directories(out_root);
+
+      const auto out_file =
+          out_root / fmt::format("pose_frame_{:06d}.jpg", static_cast<int>(frame_number));
+
+      cv::imwrite(out_file.string(), bgr);
+    }
+
+    written_frames.fetch_add(1);
+  }
+};
+
+COALSACK_REGISTER_NODE(pose_visualize_node, graph_node)
 
 class local_server {
   asio::io_context io_context;
@@ -2258,8 +2495,7 @@ int main(int argc, char *argv[]) try {
 
   std::vector<uint8_t> joint_weight_net_model_data;
   {
-    const auto model_path =
-        "../sample/faster-voxelpose/data/joint_weight_net.onnx";
+    const auto model_path = "../sample/faster-voxelpose/data/joint_weight_net.onnx";
     std::vector<uint8_t> data;
     load_model(model_path, data);
 
@@ -2435,6 +2671,26 @@ int main(int argc, char *argv[]) try {
   std::shared_ptr<fusion_node> fusion(new fusion_node());
   fusion->set_input(fusion_input);
   g->add_node(fusion);
+
+  // Sync all camera images with pose list and save visualization images.
+  std::shared_ptr<frame_number_sync_node> vis_sync(new frame_number_sync_node());
+  std::vector<std::string> vis_sync_ids;
+  for (const auto &[camera_panel, camera_node] : camera_list) {
+    const auto camera_name = fmt::format("camera_{:02d}_{:02d}", camera_panel, camera_node);
+    vis_sync->set_input(map_data->add_output(camera_name), camera_name);
+    vis_sync_ids.push_back(camera_name);
+  }
+  vis_sync->set_input(fusion->get_output(), "poses");
+  vis_sync_ids.push_back("poses");
+  vis_sync->set_initial_ids(vis_sync_ids);
+  g->add_node(vis_sync);
+
+  std::shared_ptr<pose_visualize_node> visualize(new pose_visualize_node());
+  visualize->set_input(vis_sync->get_output());
+  visualize->set_data_dir("../data");
+  visualize->set_output_dir("runs/faster_voxelpose_vis");
+  visualize->set_max_frames(300);
+  g->add_node(visualize);
 
   graph_proc_client client;
   client.deploy(io_context, "127.0.0.1", 31400, g);
