@@ -323,7 +323,8 @@ class video_time_sync_control_node : public graph_node {
       const auto sign = diff > 0 ? -1.0 : 1.0;
       adj_diff = sign * (interval - std::abs(diff));
     }
-    double interval_ref = std::min(std::max(interval - adj_diff * gain, min_interval), max_interval);
+    double interval_ref =
+        std::min(std::max(interval - adj_diff * gain, min_interval), max_interval);
     spdlog::debug("Video timing diff: {0} [ms], Interval ref: {1}", adj_diff, interval_ref);
     return interval_ref;
   }

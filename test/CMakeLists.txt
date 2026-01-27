@@ -21,3 +21,80 @@ target_link_libraries(tests
 target_compile_definitions(tests PUBLIC
     FMT_HEADER_ONLY
 )
+
+add_executable(test_superpoint_lightglue
+    ${CMAKE_CURRENT_LIST_DIR}/test_superpoint_lightglue.cpp
+)
+
+add_dependencies(test_superpoint_lightglue
+    spdlog
+)
+
+target_include_directories(test_superpoint_lightglue PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_superpoint_lightglue
+    coalsack
+    pthread
+    protobuf::libprotobuf
+    ONNX::onnx
+    ONNX::onnx_proto
+    opencv_core
+    opencv_imgcodecs
+    opencv_imgproc
+)
+
+target_compile_definitions(test_superpoint_lightglue PUBLIC
+    FMT_HEADER_ONLY
+    ENABLE_ONNX_IMPORT
+)
+
+add_executable(test_frame_sync
+    ${CMAKE_CURRENT_LIST_DIR}/test_frame_sync.cpp
+)
+
+add_dependencies(test_frame_sync
+    googletest
+    spdlog
+)
+
+target_include_directories(test_frame_sync PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_frame_sync
+    coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
+    pthread
+)
+
+target_compile_definitions(test_frame_sync PUBLIC
+    FMT_HEADER_ONLY
+)
+
+add_executable(test_nn_nodes
+    ${CMAKE_CURRENT_LIST_DIR}/test_nn_nodes.cpp
+)
+
+add_dependencies(test_nn_nodes
+    googletest
+    spdlog
+)
+
+target_include_directories(test_nn_nodes PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_nn_nodes
+    coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
+    pthread
+)
+
+target_compile_definitions(test_nn_nodes PUBLIC
+    FMT_HEADER_ONLY
+)
