@@ -7,6 +7,7 @@ find_package(OpenCV 4.0 REQUIRED)
 find_package(Boost REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(ONNX CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -31,6 +32,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/onnx_importer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gguf_loader.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt2_tokenizer.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/chat_template.cpp
 )
 
 add_dependencies(${PROJECT_NAME}
@@ -55,6 +57,7 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/gguf_types.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gguf_loader.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gpt2_tokenizer.h"
+    "${CMAKE_CURRENT_LIST_DIR}/include/chat_template.h"
 )
 
 include_directories(

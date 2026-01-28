@@ -92,6 +92,28 @@ target_compile_definitions(test_tokenizer PUBLIC
     FMT_HEADER_ONLY
 )
 
+add_executable(test_chat_template
+    ${CMAKE_CURRENT_LIST_DIR}/test_chat_template.cpp
+)
+
+add_dependencies(test_chat_template
+    spdlog
+)
+
+target_include_directories(test_chat_template PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_chat_template
+    coalsack
+    nlohmann_json::nlohmann_json
+    pthread
+)
+
+target_compile_definitions(test_chat_template PUBLIC
+    FMT_HEADER_ONLY
+)
+
 add_executable(test_frame_sync
     ${CMAKE_CURRENT_LIST_DIR}/test_frame_sync.cpp
 )
