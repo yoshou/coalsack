@@ -29,6 +29,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_server.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_client.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/onnx_importer.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/gguf_loader.cpp
 )
 
 add_dependencies(${PROJECT_NAME}
@@ -50,6 +51,8 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/data_stream_transmitter.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/graph_proc.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/graph_proc_img.h"
+    "${CMAKE_CURRENT_LIST_DIR}/include/gguf_types.h"
+    "${CMAKE_CURRENT_LIST_DIR}/include/gguf_loader.h"
 )
 
 include_directories(

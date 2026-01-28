@@ -50,6 +50,27 @@ target_compile_definitions(test_superpoint_lightglue PUBLIC
     ENABLE_ONNX_IMPORT
 )
 
+add_executable(test_gguf_loader
+    ${CMAKE_CURRENT_LIST_DIR}/test_gguf_loader.cpp
+)
+
+add_dependencies(test_gguf_loader
+    spdlog
+)
+
+target_include_directories(test_gguf_loader PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_gguf_loader
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_gguf_loader PUBLIC
+    FMT_HEADER_ONLY
+)
+
 add_executable(test_frame_sync
     ${CMAKE_CURRENT_LIST_DIR}/test_frame_sync.cpp
 )
