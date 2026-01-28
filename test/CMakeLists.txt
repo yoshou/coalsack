@@ -162,3 +162,28 @@ target_link_libraries(test_nn_nodes
 target_compile_definitions(test_nn_nodes PUBLIC
     FMT_HEADER_ONLY
 )
+
+add_executable(test_llama_backend
+    ${CMAKE_CURRENT_LIST_DIR}/test_llama_backend.cpp
+)
+
+target_link_libraries(test_llama_backend
+    coalsack
+    llama
+    pthread
+)
+
+add_executable(test_generation
+    ${CMAKE_CURRENT_LIST_DIR}/test_generation.cpp
+)
+
+target_include_directories(test_generation PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_generation
+    coalsack
+    llama
+    nlohmann_json::nlohmann_json
+    pthread
+)

@@ -34,14 +34,10 @@ struct chat_template::impl {
 
   std::string format_message(const message& msg) const {
     std::ostringstream oss;
-    oss << MARKER_START << role_to_string(msg.role_type);
-
-    if (!msg.channel.empty()) {
-      oss << MARKER_CHANNEL << msg.channel;
-    }
-
-    oss << MARKER_MESSAGE << msg.content << MARKER_END;
-
+    // Format: <|start|>{role}\n{content}<|end|>\n
+    // Note: No <|message|> marker, to match Python version
+    oss << MARKER_START << role_to_string(msg.role_type) << "\n";
+    oss << msg.content << MARKER_END << "\n";
     return oss.str();
   }
 };
@@ -79,6 +75,8 @@ std::string chat_template::build_prompt() const {
     oss << pimpl_->format_message(msg);
   }
 
+  // Format: <|start|>assistant<|channel|>final<|message|>
+  // This matches Python version
   oss << pimpl_->MARKER_START << "assistant" << pimpl_->MARKER_CHANNEL << "final"
       << pimpl_->MARKER_MESSAGE;
 

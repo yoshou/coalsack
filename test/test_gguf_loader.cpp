@@ -174,6 +174,19 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Test: Chat template
+  std::cout << "\nChat Template:\n";
+  auto chat_template = loader.get_string("tokenizer.chat_template");
+  if (chat_template) {
+    std::cout << "  Template found: " << chat_template->substr(0, 100);
+    if (chat_template->size() > 100) {
+      std::cout << "... (length: " << chat_template->size() << " chars)";
+    }
+    std::cout << "\n";
+  } else {
+    std::cout << "  No chat template found\n";
+  }
+
   std::cout << "\n✓ All tests passed!\n";
 
   return 0;
