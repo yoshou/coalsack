@@ -71,6 +71,27 @@ target_compile_definitions(test_gguf_loader PUBLIC
     FMT_HEADER_ONLY
 )
 
+add_executable(test_tokenizer
+    ${CMAKE_CURRENT_LIST_DIR}/test_tokenizer.cpp
+)
+
+add_dependencies(test_tokenizer
+    spdlog
+)
+
+target_include_directories(test_tokenizer PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_tokenizer
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_tokenizer PUBLIC
+    FMT_HEADER_ONLY
+)
+
 add_executable(test_frame_sync
     ${CMAKE_CURRENT_LIST_DIR}/test_frame_sync.cpp
 )
