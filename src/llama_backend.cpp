@@ -71,62 +71,6 @@ bool llama_backend::load(const std::string& model_path, int n_ctx, int n_gpu_lay
   return true;
 }
 
-std::vector<uint32_t> llama_backend::tokenize(const std::string& text, bool add_special) const {
-  if (!pimpl_->loaded) {
-    std::cerr << "Error: Model not loaded\n";
-    return {};
-  }
-
-  const llama_vocab* vocab = llama_model_get_vocab(pimpl_->model);
-  int n_max_tokens = text.size() + (add_special ? 2 : 0);
-  std::vector<llama_token> tokens(n_max_tokens);
-
-  int n_tokens = llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), n_max_tokens,
-                                add_special,  // add_special
-                                true          // parse_special - important for control tokens!
-  );
-
-  if (n_tokens < 0) {
-    n_tokens = -n_tokens;
-    tokens.resize(n_tokens);
-    n_tokens = llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), n_tokens,
-                              add_special, true);
-  }
-
-  tokens.resize(n_tokens);
-  return std::vector<uint32_t>(tokens.begin(), tokens.end());
-}
-
-std::string llama_backend::detokenize(const std::vector<uint32_t>& tokens) const {
-  if (!pimpl_->loaded) {
-    std::cerr << "Error: Model not loaded\n";
-    return "";
-  }
-
-  const llama_vocab* vocab = llama_model_get_vocab(pimpl_->model);
-  std::vector<llama_token> llama_tokens(tokens.begin(), tokens.end());
-
-  // Allocate buffer for detokenization
-  int buffer_size = tokens.size() * 16 + 1;  // Conservative estimate
-  std::vector<char> buffer(buffer_size);
-
-  int result_len =
-      llama_detokenize(vocab, llama_tokens.data(), llama_tokens.size(), buffer.data(), buffer_size,
-                       false,  // remove_special
-                       true    // unparse_special - important for control tokens!
-      );
-
-  if (result_len < 0) {
-    // Buffer was too small, resize and retry
-    buffer_size = -result_len;
-    buffer.resize(buffer_size);
-    result_len = llama_detokenize(vocab, llama_tokens.data(), llama_tokens.size(), buffer.data(),
-                                  buffer_size, false, true);
-  }
-
-  return std::string(buffer.data(), result_len > 0 ? result_len : 0);
-}
-
 std::vector<float> llama_backend::eval(const std::vector<uint32_t>& tokens, int n_past) {
   if (!pimpl_->loaded) {
     std::cerr << "Error: Model not loaded\n";

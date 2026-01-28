@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "chat_template.h"
+#include "gguf_loader.h"
+#include "gpt2_tokenizer.h"
 #include "llama_backend.h"
 
 using namespace coalsack;
@@ -48,7 +50,24 @@ int main(int argc, char** argv) {
   tpl.add_user(config["user"]);
 
   std::string prompt = tpl.build_prompt();
-  std::cout << "  Prompt built (" << prompt.size() << " chars)\n";
+  std::cout << "  Prompt built (" << prompt.size() << " chars)\n\n";
+
+  // Load tokenizer
+  std::cout << "Loading tokenizer...\n";
+  gguf_loader loader;
+  if (!loader.load(model_path)) {
+    std::cerr << "Failed to load GGUF for tokenizer\n";
+    return 1;
+  }
+  gpt2_tokenizer tokenizer;
+  if (!tokenizer.load_from_gguf(loader)) {
+    std::cerr << "Failed to load tokenizer\n";
+    return 1;
+  }
+
+  // Tokenize prompt
+  std::vector<uint32_t> prompt_tokens = tokenizer.encode(prompt);
+  std::cout << "  Tokenized: " << prompt_tokens.size() << " tokens\n\n";
 
   // Load llama.cpp backend
   std::cout << "Loading llama.cpp backend...\n";
@@ -59,10 +78,6 @@ int main(int argc, char** argv) {
   }
   std::cout << "  Backend loaded (vocab: " << backend.get_n_vocab()
             << ", ctx: " << backend.get_n_ctx() << ")\n\n";
-
-  // Tokenize using llama.cpp's tokenizer (which handles control tokens correctly)
-  std::vector<uint32_t> prompt_tokens = backend.tokenize(prompt, false);
-  std::cout << "  Prompt tokenized (" << prompt_tokens.size() << " tokens)\n\n";
 
   std::cout << "Generating (max " << max_tokens << " tokens, temp=" << temperature << ")...\n";
   std::cout << "Response: " << std::flush;
@@ -98,7 +113,7 @@ int main(int argc, char** argv) {
 
     // Decode and print
     std::vector<uint32_t> single_token = {static_cast<uint32_t>(next_token)};
-    std::string piece = backend.detokenize(single_token);
+    std::string piece = tokenizer.decode(single_token);
     std::cout << piece << std::flush;
 
     // Evaluate next token

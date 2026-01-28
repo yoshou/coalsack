@@ -21,6 +21,9 @@ struct gpt2_tokenizer::impl {
   std::vector<std::pair<std::string, std::string>> bpe_merges;
   std::unordered_map<std::pair<std::string, std::string>, int, pair_hash> bpe_ranks;
 
+  // Special/control tokens sorted by length (longest first) for greedy matching
+  std::vector<std::pair<std::string, uint32_t>> special_tokens;
+
   uint32_t bos_id = 0;
   uint32_t eos_id = 0;
 
@@ -190,9 +193,22 @@ bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
   pimpl_->bos_id = bos.value_or(0);
   pimpl_->eos_id = eos.value_or(0);
 
+  // Load token types and register special/control tokens
+  auto token_types = loader.get_array_int32("tokenizer.ggml.token_type");
+  for (size_t i = 0; i < token_types.size() && i < pimpl_->vocab.size(); ++i) {
+    // token_type 3 = control token
+    if (token_types[i] == 3) {
+      pimpl_->special_tokens.push_back({pimpl_->vocab[i], static_cast<uint32_t>(i)});
+    }
+  }
+  // Sort by length descending for greedy matching
+  std::sort(pimpl_->special_tokens.begin(), pimpl_->special_tokens.end(),
+            [](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });
+
   pimpl_->loaded = true;
   std::cout << "Tokenizer loaded: " << pimpl_->vocab.size() << " tokens, "
-            << pimpl_->bpe_merges.size() << " merges\n";
+            << pimpl_->bpe_merges.size() << " merges, " << pimpl_->special_tokens.size()
+            << " special tokens\n";
 
   return true;
 }
@@ -202,21 +218,48 @@ std::vector<uint32_t> gpt2_tokenizer::encode(const std::string& text) const {
     return {};
   }
 
-  auto byte_tokens = pimpl_->byte_encode_text(text);
-  auto bpe_tokens = pimpl_->apply_bpe(byte_tokens);
-
   std::vector<uint32_t> ids;
-  for (const auto& token : bpe_tokens) {
-    auto it = pimpl_->token_to_id.find(token);
-    if (it != pimpl_->token_to_id.end()) {
-      ids.push_back(it->second);
-    } else {
-      std::cerr << "Warning: Unknown token: '" << token << "' (bytes:";
-      for (unsigned char c : token) {
-        std::cerr << " " << static_cast<int>(c);
+
+  // Split text by special tokens, apply BPE only to non-special segments
+  size_t pos = 0;
+  while (pos < text.size()) {
+    // Try to match a special token at current position
+    bool found_special = false;
+    for (const auto& [token_str, token_id] : pimpl_->special_tokens) {
+      if (pos + token_str.size() <= text.size() &&
+          text.compare(pos, token_str.size(), token_str) == 0) {
+        ids.push_back(token_id);
+        pos += token_str.size();
+        found_special = true;
+        break;
       }
-      std::cerr << ")\n";
     }
+    if (found_special) {
+      continue;
+    }
+
+    // Find the next special token to determine segment boundary
+    size_t next_special = text.size();
+    for (const auto& [token_str, token_id] : pimpl_->special_tokens) {
+      size_t found = text.find(token_str, pos);
+      if (found != std::string::npos && found < next_special) {
+        next_special = found;
+      }
+    }
+
+    // Encode the non-special segment with BPE
+    std::string segment = text.substr(pos, next_special - pos);
+    auto byte_tokens = pimpl_->byte_encode_text(segment);
+    auto bpe_tokens = pimpl_->apply_bpe(byte_tokens);
+
+    for (const auto& token : bpe_tokens) {
+      auto it = pimpl_->token_to_id.find(token);
+      if (it != pimpl_->token_to_id.end()) {
+        ids.push_back(it->second);
+      }
+    }
+
+    pos = next_special;
   }
 
   return ids;

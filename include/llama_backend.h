@@ -15,9 +15,6 @@ class llama_backend {
 
   std::vector<float> eval(const std::vector<uint32_t>& tokens, int n_past = 0);
 
-  std::vector<uint32_t> tokenize(const std::string& text, bool add_special = false) const;
-  std::string detokenize(const std::vector<uint32_t>& tokens) const;
-
   void reset();
 
   bool is_loaded() const;
