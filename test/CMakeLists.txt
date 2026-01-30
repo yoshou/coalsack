@@ -187,3 +187,108 @@ target_link_libraries(test_generation
     nlohmann_json::nlohmann_json
     pthread
 )
+
+add_executable(test_rmsnorm
+    ${CMAKE_CURRENT_LIST_DIR}/test_rmsnorm.cpp
+)
+
+add_dependencies(test_rmsnorm
+    spdlog
+)
+
+target_include_directories(test_rmsnorm PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_rmsnorm
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_rmsnorm PUBLIC
+    FMT_HEADER_ONLY
+)
+
+add_executable(test_rope
+    ${CMAKE_CURRENT_LIST_DIR}/test_rope.cpp
+)
+
+add_dependencies(test_rope
+    spdlog
+)
+
+target_include_directories(test_rope PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_rope
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_rope PUBLIC
+    FMT_HEADER_ONLY
+)
+
+add_executable(test_grouped_attention
+    ${CMAKE_CURRENT_LIST_DIR}/test_grouped_attention.cpp
+)
+
+add_dependencies(test_grouped_attention
+    spdlog
+)
+
+target_include_directories(test_grouped_attention PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_grouped_attention
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_grouped_attention PUBLIC
+    FMT_HEADER_ONLY
+)
+
+add_executable(test_moe_router
+    ${CMAKE_CURRENT_LIST_DIR}/test_moe_router.cpp
+)
+
+add_dependencies(test_moe_router
+    spdlog
+)
+
+target_include_directories(test_moe_router PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_moe_router
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_moe_router PUBLIC
+    FMT_HEADER_ONLY
+)
+
+add_executable(test_expert_mlp
+    ${CMAKE_CURRENT_LIST_DIR}/test_expert_mlp.cpp
+)
+
+add_dependencies(test_expert_mlp
+    spdlog
+)
+
+target_include_directories(test_expert_mlp PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_expert_mlp
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_expert_mlp PUBLIC
+    FMT_HEADER_ONLY
+)
