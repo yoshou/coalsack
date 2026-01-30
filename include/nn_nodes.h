@@ -45,6 +45,8 @@
 #include "nn_ops/grouped_attention_node.h"
 #include "nn_ops/moe_router_node.h"
 #include "nn_ops/expert_mlp_node.h"
+#include "nn_ops/embedding_lookup_node.h"
+#include "nn_ops/expert_merge_node.h"
 #include "nn_ops/scatter_nd_node.h"
 #include "nn_ops/shape_node.h"
 #include "nn_ops/sigmoid_node.h"
