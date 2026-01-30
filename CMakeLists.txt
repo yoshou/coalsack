@@ -51,6 +51,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt2_tokenizer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/chat_template.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/llama_backend.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/gpt_oss_engine.cpp
 )
 
 add_dependencies(${PROJECT_NAME}
@@ -77,6 +78,7 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/gpt2_tokenizer.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/chat_template.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/llama_backend.h"
+    "${CMAKE_CURRENT_LIST_DIR}/include/gpt_oss_engine.h"
 )
 
 include_directories(
