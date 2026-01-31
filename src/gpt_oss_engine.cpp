@@ -1,5 +1,7 @@
 #include "gpt_oss_engine.h"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -7,14 +9,13 @@
 #include <iostream>
 #include <random>
 
-#include <spdlog/spdlog.h>
-
 #include "gguf_dequant.h"
 #include "gguf_loader.h"
 #include "gpt2_tokenizer.h"
 #include "graph_proc.h"
 #include "model_io_nodes.h"
 #include "nn_nodes.h"
+#include "nn_ops/matmul_mixed_node.h"
 #include "result_message_nodes.h"
 
 namespace coalsack {
@@ -182,60 +183,85 @@ bool gpt_oss_engine::load_weights_from_gguf() {
   try {
     for (const auto& name : tensor_names) {
       ++tensor_idx;
-    auto info_opt = loader.get_tensor_info(name);
-    if (!info_opt) {
-      std::cerr << "WARNING: Failed to get tensor info for: " << name << "\n";
-      continue;
+      auto info_opt = loader.get_tensor_info(name);
+      if (!info_opt) {
+        std::cerr << "WARNING: Failed to get tensor info for: " << name << "\n";
+        continue;
+      }
+      const auto& info = *info_opt;
+
+      // Build shape from tensor info
+      std::vector<int64_t> shape;
+      for (auto dim : info.shape) {
+        shape.push_back(static_cast<int64_t>(dim));
+      }
+
+      // Calculate number of elements
+      int64_t numel = 1;
+      for (auto dim : shape) {
+        numel *= dim;
+      }
+
+      // Read raw data from file
+      file.seekg(info.offset);
+      if (!file) {
+        std::cerr << "ERROR: Failed to seek to tensor data for: " << name << "\n";
+        continue;
+      }
+
+      std::vector<uint8_t> raw_data(info.size);
+      file.read(reinterpret_cast<char*>(raw_data.data()), info.size);
+      if (!file) {
+        std::cerr << "ERROR: Failed to read tensor data for: " << name << "\n";
+        continue;
+      }
+
+      // Determine output dtype based on GGUF tensor type
+      dtype output_dtype = dtype::float32;  // Default
+
+      if (info.type == ggml_type::F16 || info.type == ggml_type::MXFP4) {
+        output_dtype = dtype::float16;  // Keep as float16 for memory savings
+      }
+
+      dynamic_tensor tensor(output_dtype, shape);
+
+      if (info.type == ggml_type::F32) {
+        // Direct copy for float32
+        float* data = tensor.data_ptr<float>();
+        std::memcpy(data, raw_data.data(), info.size);
+        ++loaded_count;
+      } else if (info.type == ggml_type::F16) {
+        // Direct copy for float16 (no conversion)
+        uint16_t* data = tensor.data_ptr<uint16_t>();
+        std::memcpy(data, raw_data.data(), info.size);
+        ++loaded_count;
+      } else if (info.type == ggml_type::MXFP4) {
+        // Convert MXFP4 → float16
+        uint16_t* data = tensor.data_ptr<uint16_t>();
+        if (dequantize_mxfp4_to_fp16(raw_data.data(), data, numel)) {
+          ++dequantized_count;
+        } else {
+          std::cerr << "WARNING: Failed to convert MXFP4 to float16 for: " << name << "\n";
+          ++skipped_count;
+          continue;
+        }
+      } else {
+        // Other quantized formats → dequantize to float32
+        float* data = tensor.data_ptr<float>();
+        if (dequantize_tensor(raw_data.data(), data, numel, info.type)) {
+          ++dequantized_count;
+        } else {
+          std::cerr << "WARNING: Unsupported quantization type for: " << name << "\n";
+          ++skipped_count;
+          continue;
+        }
+      }
+
+      pimpl_->weights[name] = std::move(tensor);
     }
-    const auto& info = *info_opt;
-
-    // Build shape from tensor info
-    std::vector<int64_t> shape;
-    for (auto dim : info.shape) {
-      shape.push_back(static_cast<int64_t>(dim));
-    }
-
-    // Calculate number of elements
-    int64_t numel = 1;
-    for (auto dim : shape) {
-      numel *= dim;
-    }
-
-    // Read raw data from file
-    file.seekg(info.offset);
-    if (!file) {
-      std::cerr << "ERROR: Failed to seek to tensor data for: " << name << "\n";
-      continue;
-    }
-
-    std::vector<uint8_t> raw_data(info.size);
-    file.read(reinterpret_cast<char*>(raw_data.data()), info.size);
-    if (!file) {
-      std::cerr << "ERROR: Failed to read tensor data for: " << name << "\n";
-      continue;
-    }
-
-    // Create output tensor
-    dynamic_tensor tensor(dtype::float32, shape);
-    float* data = tensor.data_ptr<float>();
-
-    // Dequantize or copy data
-    if (info.type == ggml_type::F32) {
-      // Direct copy for float32
-      std::memcpy(data, raw_data.data(), info.size);
-      ++loaded_count;
-    } else if (dequantize_tensor(raw_data.data(), data, numel, info.type)) {
-      ++dequantized_count;
-    } else {
-      std::cerr << "WARNING: Unsupported quantization type for: " << name << "\n";
-      ++skipped_count;
-      continue;
-    }
-
-    pimpl_->weights[name] = std::move(tensor);
-  }
   } catch (const std::exception& e) {
-    std::cerr << "EXCEPTION during weight loading at tensor " << tensor_idx << ": " << e.what() << "\n";
+    std::cerr << "EXCEPTION during weight loading at tensor " << tensor_idx << ": " << e.what()
+              << "\n";
     return false;
   }
 
@@ -326,7 +352,7 @@ void gpt_oss_engine::build_minimal_test_graph() {
   // embeddings: [batch, seq_len, hidden_dim] = [1, 1, 2880]
   // output.weight: [hidden_dim, vocab_size] = [2880, 201088]
   // logits: [batch, seq_len, vocab_size] = [1, 1, 201088]
-  auto output_proj = std::make_shared<matmul_node>();
+  auto output_proj = std::make_shared<matmul_mixed_node>();
 
   auto proj_sync = std::make_shared<result_message_sync_node>();
   proj_sync->set_input(embeddings_edge, "embeddings");
@@ -360,8 +386,7 @@ void gpt_oss_engine::build_minimal_test_graph() {
   pimpl_->proc->deploy(pimpl_->graph);
 }
 
-void gpt_oss_engine::wire_io_nodes(graph_edge_ptr input_placeholder,
-                                    graph_edge_ptr logits_output) {
+void gpt_oss_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr logits_output) {
   // Create I/O nodes
   pimpl_->input_node = std::make_shared<model_input_node>();
   pimpl_->output_node = std::make_shared<model_output_node>();
@@ -496,8 +521,7 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
   return generated_text;
 }
 
-uint32_t gpt_oss_engine::sample_token(const float* logits, int64_t vocab_size,
-                                      float temperature) {
+uint32_t gpt_oss_engine::sample_token(const float* logits, int64_t vocab_size, float temperature) {
   if (temperature < 1e-6f) {
     // Greedy sampling
     return static_cast<uint32_t>(

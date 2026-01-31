@@ -376,7 +376,7 @@ inline void dequantize_block_q2_K(const uint8_t* src, float* dst, int64_t k) {
 // MXFP4 lookup table (E2M1 format, doubled values)
 // Reference: https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf
 static constexpr int8_t kvalues_mxfp4[16] = {
-  0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12,
+    0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12,
 };
 
 // Convert E8M0 (8-bit exponent, 0 mantissa) to float32, divided by 2
@@ -405,18 +405,69 @@ inline void dequantize_block_mxfp4(const uint8_t* src, float* dst, int64_t k) {
   for (int i = 0; i < nb; ++i) {
     const uint8_t e = src[0];
     const uint8_t* qs = src + 1;
-    src += 17; // 1 byte exponent + 16 bytes quants
+    src += 17;  // 1 byte exponent + 16 bytes quants
 
     const float scale = e8m0_to_fp32_half(e);
 
     for (int j = 0; j < QK_MXFP4 / 2; ++j) {
-      const int8_t v0 = kvalues_mxfp4[qs[j] & 0x0F];       // Lower 4 bits
-      const int8_t v1 = kvalues_mxfp4[qs[j] >> 4];         // Upper 4 bits
+      const int8_t v0 = kvalues_mxfp4[qs[j] & 0x0F];  // Lower 4 bits
+      const int8_t v1 = kvalues_mxfp4[qs[j] >> 4];    // Upper 4 bits
 
       dst[i * QK_MXFP4 + j] = v0 * scale;
       dst[i * QK_MXFP4 + j + QK_MXFP4 / 2] = v1 * scale;
     }
   }
+}
+
+// Convert fp32 to fp16 (uint16_t)
+inline uint16_t fp32_to_fp16(float f) {
+  uint32_t bits;
+  std::memcpy(&bits, &f, sizeof(f));
+
+  uint32_t sign = (bits >> 16) & 0x8000;
+  int32_t exponent = ((bits >> 23) & 0xFF) - 127 + 15;
+  uint32_t mantissa = (bits >> 13) & 0x3FF;
+
+  if (exponent <= 0) {
+    // Underflow -> zero or subnormal
+    if (exponent < -10) {
+      return static_cast<uint16_t>(sign);  // Zero
+    }
+    // Subnormal
+    mantissa |= 0x400;  // Add implicit 1
+    mantissa >>= (1 - exponent);
+    return static_cast<uint16_t>(sign | mantissa);
+  } else if (exponent >= 31) {
+    // Overflow -> infinity
+    return static_cast<uint16_t>(sign | 0x7C00);
+  } else {
+    // Normal number
+    return static_cast<uint16_t>(sign | (exponent << 10) | mantissa);
+  }
+}
+
+// Dequantize MXFP4 to float16 (instead of float32)
+inline bool dequantize_mxfp4_to_fp16(const uint8_t* src, uint16_t* dst, int64_t k) {
+  const int nb = k / QK_MXFP4;
+
+  for (int i = 0; i < nb; ++i) {
+    const uint8_t e = src[0];
+    const uint8_t* qs = src + 1;
+    src += 17;  // 1 byte exponent + 16 bytes quants
+
+    const float scale = e8m0_to_fp32_half(e);
+
+    for (int j = 0; j < QK_MXFP4 / 2; ++j) {
+      const int8_t v0 = kvalues_mxfp4[qs[j] & 0x0F];
+      const int8_t v1 = kvalues_mxfp4[qs[j] >> 4];
+
+      // Convert float32 to float16
+      dst[i * QK_MXFP4 + j] = fp32_to_fp16(v0 * scale);
+      dst[i * QK_MXFP4 + j + QK_MXFP4 / 2] = fp32_to_fp16(v1 * scale);
+    }
+  }
+
+  return true;
 }
 
 // Dequantize F16 to F32
@@ -428,8 +479,7 @@ inline void dequantize_f16(const uint8_t* src, float* dst, int64_t k) {
 }
 
 // Main dequantization function
-inline bool dequantize_tensor(const uint8_t* src, float* dst, int64_t numel,
-                               ggml_type type) {
+inline bool dequantize_tensor(const uint8_t* src, float* dst, int64_t numel, ggml_type type) {
   switch (type) {
     case ggml_type::F32:
       std::memcpy(dst, src, numel * sizeof(float));

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../gguf_dequant.h"
 #include "../nn_op_node.h"
 
 namespace coalsack {
@@ -14,8 +15,7 @@ class embedding_lookup_node : public binary_op_node {
   }
 
  protected:
-  dynamic_tensor compute(const dynamic_tensor& input_ids,
-                        const dynamic_tensor& weight) override {
+  dynamic_tensor compute(const dynamic_tensor& input_ids, const dynamic_tensor& weight) override {
     // input_ids: [batch, seq_len] (int32)
     // weight: [vocab_size, hidden_dim] (float32)
     // output: [batch, seq_len, hidden_dim] (float32)
@@ -37,30 +37,57 @@ class embedding_lookup_node : public binary_op_node {
     std::vector<int64_t> output_shape = {batch, seq_len, hidden_dim};
     dynamic_tensor output(dtype::float32, output_shape);
 
-    if (input_ids.get_dtype() == dtype::int32 && weight.get_dtype() == dtype::float32) {
-      const int32_t* ids = input_ids.data_ptr<int32_t>();
-      const float* w = weight.data_ptr<float>();
-      float* out = output.data_ptr<float>();
+    if (input_ids.get_dtype() != dtype::int32) {
+      throw std::runtime_error("embedding_lookup: input_ids must be int32");
+    }
+
+    const int32_t* ids = input_ids.data_ptr<int32_t>();
+    float* out = output.data_ptr<float>();
+
+    // Handle both fp32 and fp16 weights
+    if (weight.get_dtype() == dtype::float16) {
+      // fp16 weight
+      const uint16_t* w_fp16 = weight.data_ptr<uint16_t>();
 
       for (int64_t b = 0; b < batch; ++b) {
         for (int64_t s = 0; s < seq_len; ++s) {
           int64_t token_id = static_cast<int64_t>(ids[b * seq_len + s]);
 
-          // Bounds check
           if (token_id < 0 || token_id >= vocab_size) {
             throw std::runtime_error("embedding_lookup: token_id out of range: " +
                                      std::to_string(token_id));
           }
 
-          // Copy embedding vector
+          // Convert fp16 embedding to fp32 and copy
+          const uint16_t* embedding_fp16 = w_fp16 + token_id * hidden_dim;
+          float* output_pos = out + (b * seq_len + s) * hidden_dim;
+
+          for (int64_t d = 0; d < hidden_dim; ++d) {
+            output_pos[d] = fp16_to_fp32(embedding_fp16[d]);
+          }
+        }
+      }
+    } else if (weight.get_dtype() == dtype::float32) {
+      // fp32 weight (existing logic)
+      const float* w = weight.data_ptr<float>();
+
+      for (int64_t b = 0; b < batch; ++b) {
+        for (int64_t s = 0; s < seq_len; ++s) {
+          int64_t token_id = static_cast<int64_t>(ids[b * seq_len + s]);
+
+          if (token_id < 0 || token_id >= vocab_size) {
+            throw std::runtime_error("embedding_lookup: token_id out of range: " +
+                                     std::to_string(token_id));
+          }
+
           const float* embedding = w + token_id * hidden_dim;
           float* output_pos = out + (b * seq_len + s) * hidden_dim;
           std::memcpy(output_pos, embedding, hidden_dim * sizeof(float));
         }
       }
     } else {
-      throw std::runtime_error(
-          "embedding_lookup: only int32 input_ids and float32 weight supported");
+      throw std::runtime_error("embedding_lookup: weight must be fp32 or fp16, got " +
+                               dtype_name(weight.get_dtype()));
     }
 
     return output;

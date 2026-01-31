@@ -14,6 +14,7 @@ namespace coalsack {
 // Dynamic tensor data type enumeration
 enum class dtype {
   float32,
+  float16,
   int64,
   int32,
   bool_,
@@ -25,6 +26,8 @@ inline size_t dtype_size(dtype dt) {
   switch (dt) {
     case dtype::float32:
       return sizeof(float);
+    case dtype::float16:
+      return 2;
     case dtype::int64:
       return sizeof(int64_t);
     case dtype::int32:
@@ -44,6 +47,8 @@ inline std::string dtype_name(dtype dt) {
   switch (dt) {
     case dtype::float32:
       return "float32";
+    case dtype::float16:
+      return "float16";
     case dtype::int64:
       return "int64";
     case dtype::int32:

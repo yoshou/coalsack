@@ -310,3 +310,28 @@ target_link_libraries(test_gpt_oss_engine
 target_compile_definitions(test_gpt_oss_engine PUBLIC
     FMT_HEADER_ONLY
 )
+
+add_executable(test_float16
+    ${CMAKE_CURRENT_LIST_DIR}/test_float16.cpp
+)
+
+add_dependencies(test_float16
+    googletest
+    spdlog
+)
+
+target_include_directories(test_float16 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_float16
+    coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
+    pthread
+)
+
+target_compile_definitions(test_float16 PUBLIC
+    FMT_HEADER_ONLY
+)
