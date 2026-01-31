@@ -290,9 +290,550 @@ bool gpt_oss_engine::load_weights_from_gguf() {
 }
 
 void gpt_oss_engine::build_transformer_graph() {
-  // Start with single-layer test graph for validation
-  // Later can switch to full 24-layer graph
-  build_single_layer_test_graph();
+  // Full 24-layer transformer: embedding → 24 layers → final norm → output
+
+  pimpl_->graph = std::make_shared<subgraph>();
+
+  // Create I/O nodes first
+  pimpl_->input_node = std::make_shared<model_input_node>();
+  pimpl_->output_node = std::make_shared<model_output_node>();
+
+  // Collect required weights for all 24 layers
+  std::vector<std::string> required_weights = {
+      "token_embd.weight",
+      "output_norm.weight",
+      "output.weight",
+  };
+
+  // Add weights for all 24 layers
+  for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
+    std::string layer_prefix = "blk." + std::to_string(layer);
+    required_weights.push_back(layer_prefix + ".attn_norm.weight");
+    required_weights.push_back(layer_prefix + ".attn_q.weight");
+    required_weights.push_back(layer_prefix + ".attn_k.weight");
+    required_weights.push_back(layer_prefix + ".attn_v.weight");
+    required_weights.push_back(layer_prefix + ".attn_output.weight");
+    required_weights.push_back(layer_prefix + ".post_attention_norm.weight");
+    required_weights.push_back(layer_prefix + ".ffn_gate_inp.weight");
+    required_weights.push_back(layer_prefix + ".ffn_up_exps.weight");
+    required_weights.push_back(layer_prefix + ".ffn_gate_exps.weight");
+    required_weights.push_back(layer_prefix + ".ffn_down_exps.weight");
+  }
+
+  // Add all required weights to input_node
+  for (const auto& name : required_weights) {
+    auto it = pimpl_->weights.find(name);
+    if (it == pimpl_->weights.end()) {
+      std::cerr << "WARNING: Weight not found (continuing anyway): " << name << "\n";
+      continue;
+    }
+    pimpl_->input_node->set_tensor(name, it->second);
+  }
+
+  // Create extractor to extract fields from input_node
+  auto extractor = std::make_shared<result_field_extractor_node>();
+  pimpl_->graph->add_node(extractor);
+  extractor->set_input(pimpl_->input_node->get_output(), "default");
+
+  // Extract input_ids and common weights
+  auto input_ids_edge = extractor->add_output("input_ids");
+  auto token_embd_weight_edge_raw = extractor->add_output("token_embd.weight");
+  auto output_norm_weight_edge = extractor->add_output("output_norm.weight");
+  auto output_weight_edge = extractor->add_output("output.weight");
+
+  // Transpose token_embd.weight from [hidden_dim, vocab_size] to [vocab_size, hidden_dim]
+  auto embd_transpose = std::make_shared<transpose_node>();
+  embd_transpose->set_perm({1, 0});
+  embd_transpose->set_input(token_embd_weight_edge_raw, "default");
+  embd_transpose->set_input_name("token_embd.weight");
+  embd_transpose->set_output_name("token_embd.weight_t");
+  embd_transpose->set_node_name("embd_transpose");
+  pimpl_->graph->add_node(embd_transpose);
+  auto token_embd_weight_edge = embd_transpose->get_output("default");
+
+  // Extract all layer weights
+  std::vector<std::unordered_map<std::string, graph_edge_ptr>> layer_weights(pimpl_->num_layers);
+  for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
+    std::string layer_prefix = "blk." + std::to_string(layer);
+    std::vector<std::string> layer_weight_names = {
+        layer_prefix + ".attn_norm.weight",
+        layer_prefix + ".attn_q.weight",
+        layer_prefix + ".attn_k.weight",
+        layer_prefix + ".attn_v.weight",
+        layer_prefix + ".attn_output.weight",
+        layer_prefix + ".post_attention_norm.weight",
+        layer_prefix + ".ffn_gate_inp.weight",
+        layer_prefix + ".ffn_up_exps.weight",
+        layer_prefix + ".ffn_gate_exps.weight",
+        layer_prefix + ".ffn_down_exps.weight",
+    };
+
+    for (const auto& name : layer_weight_names) {
+      if (pimpl_->weights.find(name) != pimpl_->weights.end()) {
+        layer_weights[layer][name] = extractor->add_output(name);
+      }
+    }
+  }
+
+  // ========== 1. Embedding layer ==========
+  auto embedding = std::make_shared<embedding_lookup_node>();
+  auto emb_sync = std::make_shared<result_message_sync_node>();
+  emb_sync->set_input(input_ids_edge, "input_ids");
+  emb_sync->set_input(token_embd_weight_edge, "token_embd.weight_t");
+  emb_sync->set_initial_ids({"input_ids", "token_embd.weight_t"});
+  pimpl_->graph->add_node(emb_sync);
+
+  embedding->set_input(emb_sync->get_output(), "default");
+  embedding->set_input_names("input_ids", "token_embd.weight_t");
+  embedding->set_output_name("embeddings");
+  embedding->set_node_name("embedding_lookup");
+  pimpl_->graph->add_node(embedding);
+
+  graph_edge_ptr current = embedding->get_output("default");
+  std::string current_name = "embeddings";
+
+  // ========== 2. All 24 Transformer Layers ==========
+  for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
+    std::string layer_str = std::to_string(layer);
+    std::string layer_prefix = "blk." + layer_str;
+
+    // Calculate head_dim for this layer from attn_q.weight shape
+    int64_t layer_head_dim = pimpl_->head_dim;  // Default fallback
+    auto q_weight_it = pimpl_->weights.find(layer_prefix + ".attn_q.weight");
+    if (q_weight_it != pimpl_->weights.end() && pimpl_->num_q_heads > 0) {
+      const auto& q_shape = q_weight_it->second.shape();
+      if (q_shape.size() == 2 && q_shape[0] == pimpl_->hidden_dim) {
+        int64_t q_output_dim = q_shape[1];
+        layer_head_dim = q_output_dim / pimpl_->num_q_heads;
+      }
+    }
+
+    // Store input to this layer for residual connections
+    graph_edge_ptr layer_input = current;
+    std::string layer_input_name = current_name;
+
+    // 2.1 Input RMSNorm (before attention)
+    auto input_norm = std::make_shared<rmsnorm_node>();
+    input_norm->set_epsilon(1e-5f);
+
+    auto norm_sync = std::make_shared<result_message_sync_node>();
+    norm_sync->set_input(current, current_name);
+    norm_sync->set_input(layer_weights[layer][layer_prefix + ".attn_norm.weight"], layer_prefix + ".attn_norm.weight");
+    norm_sync->set_initial_ids({current_name, layer_prefix + ".attn_norm.weight"});
+    pimpl_->graph->add_node(norm_sync);
+
+    input_norm->set_input(norm_sync->get_output(), "default");
+    input_norm->set_input_names(current_name, layer_prefix + ".attn_norm.weight");
+    input_norm->set_output_name(layer_prefix + ".attn_norm_out");
+    input_norm->set_node_name(layer_prefix + ".attn_norm");
+    pimpl_->graph->add_node(input_norm);
+
+    graph_edge_ptr norm_out = input_norm->get_output("default");
+
+    // 2.2 Q/K/V projections
+    // Q projection
+    auto q_proj = std::make_shared<matmul_mixed_node>();
+    auto q_sync = std::make_shared<result_message_sync_node>();
+    q_sync->set_input(norm_out, layer_prefix + ".attn_norm_out");
+    q_sync->set_input(layer_weights[layer][layer_prefix + ".attn_q.weight"], layer_prefix + ".attn_q.weight");
+    q_sync->set_initial_ids({layer_prefix + ".attn_norm_out", layer_prefix + ".attn_q.weight"});
+    pimpl_->graph->add_node(q_sync);
+
+    q_proj->set_input(q_sync->get_output(), "default");
+    q_proj->set_input_names(layer_prefix + ".attn_norm_out", layer_prefix + ".attn_q.weight");
+    q_proj->set_output_name(layer_prefix + ".q_proj_out");
+    q_proj->set_node_name(layer_prefix + ".q_proj");
+    pimpl_->graph->add_node(q_proj);
+    graph_edge_ptr q_out = q_proj->get_output("default");
+
+    // K projection
+    auto k_proj = std::make_shared<matmul_mixed_node>();
+    auto k_sync = std::make_shared<result_message_sync_node>();
+    k_sync->set_input(norm_out, layer_prefix + ".attn_norm_out");
+    k_sync->set_input(layer_weights[layer][layer_prefix + ".attn_k.weight"], layer_prefix + ".attn_k.weight");
+    k_sync->set_initial_ids({layer_prefix + ".attn_norm_out", layer_prefix + ".attn_k.weight"});
+    pimpl_->graph->add_node(k_sync);
+
+    k_proj->set_input(k_sync->get_output(), "default");
+    k_proj->set_input_names(layer_prefix + ".attn_norm_out", layer_prefix + ".attn_k.weight");
+    k_proj->set_output_name(layer_prefix + ".k_proj_out");
+    k_proj->set_node_name(layer_prefix + ".k_proj");
+    pimpl_->graph->add_node(k_proj);
+    graph_edge_ptr k_out = k_proj->get_output("default");
+
+    // V projection
+    auto v_proj = std::make_shared<matmul_mixed_node>();
+    auto v_sync = std::make_shared<result_message_sync_node>();
+    v_sync->set_input(norm_out, layer_prefix + ".attn_norm_out");
+    v_sync->set_input(layer_weights[layer][layer_prefix + ".attn_v.weight"], layer_prefix + ".attn_v.weight");
+    v_sync->set_initial_ids({layer_prefix + ".attn_norm_out", layer_prefix + ".attn_v.weight"});
+    pimpl_->graph->add_node(v_sync);
+
+    v_proj->set_input(v_sync->get_output(), "default");
+    v_proj->set_input_names(layer_prefix + ".attn_norm_out", layer_prefix + ".attn_v.weight");
+    v_proj->set_output_name(layer_prefix + ".v_proj_out");
+    v_proj->set_node_name(layer_prefix + ".v_proj");
+    pimpl_->graph->add_node(v_proj);
+    graph_edge_ptr v_out = v_proj->get_output("default");
+
+    // 2.3 Reshape Q/K for RoPE (3D → 4D → transpose → RoPE → transpose → 4D → 3D)
+
+    // Create shape constants for reshape operations
+    // Q: [batch, seq_len, 2880] → [batch, seq_len, 64, 45]
+    dynamic_tensor q_reshape_shape(dtype::int64, {4});
+    auto q_reshape_shape_data = q_reshape_shape.data_ptr<int64_t>();
+    q_reshape_shape_data[0] = 0;                      // Copy batch from input[0]
+    q_reshape_shape_data[1] = 0;                      // Copy seq_len from input[1]
+    q_reshape_shape_data[2] = pimpl_->num_q_heads;   // 64 (explicit)
+    q_reshape_shape_data[3] = -1;                     // 45 (inferred from total elements)
+
+    auto q_reshape_shape_const = std::make_shared<constant_node>(q_reshape_shape, layer_prefix + ".q_reshape_shape");
+    q_reshape_shape_const->set_input(q_out, "default");
+    pimpl_->graph->add_node(q_reshape_shape_const);
+    auto q_reshape_shape_edge = q_reshape_shape_const->get_output("default");
+
+    // K: [batch, seq_len, 360] → [batch, seq_len, 8, 45]
+    dynamic_tensor k_reshape_shape(dtype::int64, {4});
+    auto k_reshape_shape_data = k_reshape_shape.data_ptr<int64_t>();
+    k_reshape_shape_data[0] = 0;                      // Copy batch from input[0]
+    k_reshape_shape_data[1] = 0;                      // Copy seq_len from input[1]
+    k_reshape_shape_data[2] = pimpl_->num_kv_heads;  // 8 (explicit)
+    k_reshape_shape_data[3] = -1;                     // 45 (inferred from total elements)
+
+    auto k_reshape_shape_const = std::make_shared<constant_node>(k_reshape_shape, layer_prefix + ".k_reshape_shape");
+    k_reshape_shape_const->set_input(k_out, "default");
+    pimpl_->graph->add_node(k_reshape_shape_const);
+    auto k_reshape_shape_edge = k_reshape_shape_const->get_output("default");
+
+    // Reshape back: [batch, seq_len, num_heads, head_dim] → [batch, seq_len, -1]
+    dynamic_tensor reshape_back_shape(dtype::int64, {3});
+    auto reshape_back_shape_data = reshape_back_shape.data_ptr<int64_t>();
+    reshape_back_shape_data[0] = 0;   // Copy batch
+    reshape_back_shape_data[1] = 0;   // Copy seq_len
+    reshape_back_shape_data[2] = -1;  // Infer from total elements
+
+    auto reshape_back_shape_const = std::make_shared<constant_node>(reshape_back_shape, layer_prefix + ".reshape_back_shape");
+    reshape_back_shape_const->set_input(q_out, "default");
+    pimpl_->graph->add_node(reshape_back_shape_const);
+    auto reshape_back_shape_edge = reshape_back_shape_const->get_output("default");
+
+    // Process Q: reshape → transpose → RoPE → transpose → reshape
+    auto q_reshape_4d = std::make_shared<reshape_node>();
+    auto q_reshape_4d_sync = std::make_shared<result_message_sync_node>();
+    q_reshape_4d_sync->set_input(q_out, layer_prefix + ".q_proj_out");
+    q_reshape_4d_sync->set_input(q_reshape_shape_edge, layer_prefix + ".q_reshape_shape");
+    q_reshape_4d_sync->set_initial_ids({layer_prefix + ".q_proj_out", layer_prefix + ".q_reshape_shape"});
+    pimpl_->graph->add_node(q_reshape_4d_sync);
+
+    q_reshape_4d->set_input(q_reshape_4d_sync->get_output(), "default");
+    q_reshape_4d->set_input_names(layer_prefix + ".q_proj_out", layer_prefix + ".q_reshape_shape");
+    q_reshape_4d->set_output_name(layer_prefix + ".q_4d");
+    q_reshape_4d->set_node_name(layer_prefix + ".q_reshape_4d");
+    pimpl_->graph->add_node(q_reshape_4d);
+    graph_edge_ptr q_4d = q_reshape_4d->get_output("default");
+
+    // Transpose Q: [batch, seq_len, num_heads, head_dim] → [batch, num_heads, seq_len, head_dim]
+    auto q_transpose = std::make_shared<transpose_node>();
+    q_transpose->set_perm({0, 2, 1, 3});
+    q_transpose->set_input(q_4d, "default");
+    q_transpose->set_input_name(layer_prefix + ".q_4d");
+    q_transpose->set_output_name(layer_prefix + ".q_transposed");
+    q_transpose->set_node_name(layer_prefix + ".q_transpose");
+    pimpl_->graph->add_node(q_transpose);
+    graph_edge_ptr q_transposed = q_transpose->get_output("default");
+
+    // RoPE Q
+    auto rope_q = std::make_shared<rope_node>();
+    rope_q->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
+                       pimpl_->rope_scaling_factor);
+    rope_q->set_input(q_transposed, "default");
+    rope_q->set_input_name(layer_prefix + ".q_transposed");
+    rope_q->set_output_name(layer_prefix + ".q_rope");
+    rope_q->set_node_name(layer_prefix + ".rope_q");
+    pimpl_->graph->add_node(rope_q);
+    graph_edge_ptr q_rope = rope_q->get_output("default");
+
+    // Transpose Q back: [batch, num_heads, seq_len, head_dim] → [batch, seq_len, num_heads, head_dim]
+    auto q_transpose_back = std::make_shared<transpose_node>();
+    q_transpose_back->set_perm({0, 2, 1, 3});
+    q_transpose_back->set_input(q_rope, "default");
+    q_transpose_back->set_input_name(layer_prefix + ".q_rope");
+    q_transpose_back->set_output_name(layer_prefix + ".q_rope_4d");
+    q_transpose_back->set_node_name(layer_prefix + ".q_transpose_back");
+    pimpl_->graph->add_node(q_transpose_back);
+    graph_edge_ptr q_rope_4d = q_transpose_back->get_output("default");
+
+    // Reshape Q back to 3D
+    auto q_reshape_3d = std::make_shared<reshape_node>();
+    auto q_reshape_3d_sync = std::make_shared<result_message_sync_node>();
+    q_reshape_3d_sync->set_input(q_rope_4d, layer_prefix + ".q_rope_4d");
+    q_reshape_3d_sync->set_input(reshape_back_shape_edge, layer_prefix + ".reshape_back_shape");
+    q_reshape_3d_sync->set_initial_ids({layer_prefix + ".q_rope_4d", layer_prefix + ".reshape_back_shape"});
+    pimpl_->graph->add_node(q_reshape_3d_sync);
+
+    q_reshape_3d->set_input(q_reshape_3d_sync->get_output(), "default");
+    q_reshape_3d->set_input_names(layer_prefix + ".q_rope_4d", layer_prefix + ".reshape_back_shape");
+    q_reshape_3d->set_output_name(layer_prefix + ".q_rope_out");
+    q_reshape_3d->set_node_name(layer_prefix + ".q_reshape_3d");
+    pimpl_->graph->add_node(q_reshape_3d);
+    graph_edge_ptr q_rope_out = q_reshape_3d->get_output("default");
+
+    // Process K: reshape → transpose → RoPE → transpose → reshape
+    auto k_reshape_4d = std::make_shared<reshape_node>();
+    auto k_reshape_4d_sync = std::make_shared<result_message_sync_node>();
+    k_reshape_4d_sync->set_input(k_out, layer_prefix + ".k_proj_out");
+    k_reshape_4d_sync->set_input(k_reshape_shape_edge, layer_prefix + ".k_reshape_shape");
+    k_reshape_4d_sync->set_initial_ids({layer_prefix + ".k_proj_out", layer_prefix + ".k_reshape_shape"});
+    pimpl_->graph->add_node(k_reshape_4d_sync);
+
+    k_reshape_4d->set_input(k_reshape_4d_sync->get_output(), "default");
+    k_reshape_4d->set_input_names(layer_prefix + ".k_proj_out", layer_prefix + ".k_reshape_shape");
+    k_reshape_4d->set_output_name(layer_prefix + ".k_4d");
+    k_reshape_4d->set_node_name(layer_prefix + ".k_reshape_4d");
+    pimpl_->graph->add_node(k_reshape_4d);
+    graph_edge_ptr k_4d = k_reshape_4d->get_output("default");
+
+    // Transpose K: [batch, seq_len, num_heads, head_dim] → [batch, num_heads, seq_len, head_dim]
+    auto k_transpose = std::make_shared<transpose_node>();
+    k_transpose->set_perm({0, 2, 1, 3});
+    k_transpose->set_input(k_4d, "default");
+    k_transpose->set_input_name(layer_prefix + ".k_4d");
+    k_transpose->set_output_name(layer_prefix + ".k_transposed");
+    k_transpose->set_node_name(layer_prefix + ".k_transpose");
+    pimpl_->graph->add_node(k_transpose);
+    graph_edge_ptr k_transposed = k_transpose->get_output("default");
+
+    // RoPE K
+    auto rope_k = std::make_shared<rope_node>();
+    rope_k->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
+                       pimpl_->rope_scaling_factor);
+    rope_k->set_input(k_transposed, "default");
+    rope_k->set_input_name(layer_prefix + ".k_transposed");
+    rope_k->set_output_name(layer_prefix + ".k_rope");
+    rope_k->set_node_name(layer_prefix + ".rope_k");
+    pimpl_->graph->add_node(rope_k);
+    graph_edge_ptr k_rope = rope_k->get_output("default");
+
+    // Transpose K back: [batch, num_heads, seq_len, head_dim] → [batch, seq_len, num_heads, head_dim]
+    auto k_transpose_back = std::make_shared<transpose_node>();
+    k_transpose_back->set_perm({0, 2, 1, 3});
+    k_transpose_back->set_input(k_rope, "default");
+    k_transpose_back->set_input_name(layer_prefix + ".k_rope");
+    k_transpose_back->set_output_name(layer_prefix + ".k_rope_4d");
+    k_transpose_back->set_node_name(layer_prefix + ".k_transpose_back");
+    pimpl_->graph->add_node(k_transpose_back);
+    graph_edge_ptr k_rope_4d = k_transpose_back->get_output("default");
+
+    // Reshape K back to 3D
+    auto k_reshape_3d = std::make_shared<reshape_node>();
+    auto k_reshape_3d_sync = std::make_shared<result_message_sync_node>();
+    k_reshape_3d_sync->set_input(k_rope_4d, layer_prefix + ".k_rope_4d");
+    k_reshape_3d_sync->set_input(reshape_back_shape_edge, layer_prefix + ".reshape_back_shape");
+    k_reshape_3d_sync->set_initial_ids({layer_prefix + ".k_rope_4d", layer_prefix + ".reshape_back_shape"});
+    pimpl_->graph->add_node(k_reshape_3d_sync);
+
+    k_reshape_3d->set_input(k_reshape_3d_sync->get_output(), "default");
+    k_reshape_3d->set_input_names(layer_prefix + ".k_rope_4d", layer_prefix + ".reshape_back_shape");
+    k_reshape_3d->set_output_name(layer_prefix + ".k_rope_out");
+    k_reshape_3d->set_node_name(layer_prefix + ".k_reshape_3d");
+    pimpl_->graph->add_node(k_reshape_3d);
+    graph_edge_ptr k_rope_out = k_reshape_3d->get_output("default");
+
+    // 2.4 Grouped Query Attention
+    auto attn = std::make_shared<grouped_attention_node>();
+    attn->set_config(pimpl_->num_q_heads, pimpl_->num_kv_heads, layer_head_dim);
+
+    auto attn_sync = std::make_shared<result_message_sync_node>();
+    attn_sync->set_input(q_rope_out, layer_prefix + ".q_rope_out");
+    attn_sync->set_input(k_rope_out, layer_prefix + ".k_rope_out");
+    attn_sync->set_input(v_out, layer_prefix + ".v_proj_out");
+    attn_sync->set_initial_ids({layer_prefix + ".q_rope_out", layer_prefix + ".k_rope_out", layer_prefix + ".v_proj_out"});
+    pimpl_->graph->add_node(attn_sync);
+
+    attn->set_input(attn_sync->get_output(), "default");
+    attn->set_input_names({layer_prefix + ".q_rope_out", layer_prefix + ".k_rope_out", layer_prefix + ".v_proj_out"});
+    attn->set_output_name(layer_prefix + ".attn_out");
+    attn->set_node_name(layer_prefix + ".grouped_attn");
+    pimpl_->graph->add_node(attn);
+    graph_edge_ptr attn_out = attn->get_output("default");
+
+    // 2.5 Attention output projection
+    auto attn_proj = std::make_shared<matmul_mixed_node>();
+    auto attn_proj_sync = std::make_shared<result_message_sync_node>();
+    attn_proj_sync->set_input(attn_out, layer_prefix + ".attn_out");
+    attn_proj_sync->set_input(layer_weights[layer][layer_prefix + ".attn_output.weight"], layer_prefix + ".attn_output.weight");
+    attn_proj_sync->set_initial_ids({layer_prefix + ".attn_out", layer_prefix + ".attn_output.weight"});
+    pimpl_->graph->add_node(attn_proj_sync);
+
+    attn_proj->set_input(attn_proj_sync->get_output(), "default");
+    attn_proj->set_input_names(layer_prefix + ".attn_out", layer_prefix + ".attn_output.weight");
+    attn_proj->set_output_name(layer_prefix + ".attn_proj_out");
+    attn_proj->set_node_name(layer_prefix + ".attn_proj");
+    pimpl_->graph->add_node(attn_proj);
+    graph_edge_ptr attn_proj_out = attn_proj->get_output("default");
+
+    // 2.6 Attention residual connection
+    auto attn_residual = std::make_shared<add_node>();
+    auto attn_res_sync = std::make_shared<result_message_sync_node>();
+    attn_res_sync->set_input(layer_input, layer_input_name);
+    attn_res_sync->set_input(attn_proj_out, layer_prefix + ".attn_proj_out");
+    attn_res_sync->set_initial_ids({layer_input_name, layer_prefix + ".attn_proj_out"});
+    pimpl_->graph->add_node(attn_res_sync);
+
+    attn_residual->set_input(attn_res_sync->get_output(), "default");
+    attn_residual->set_input_names(layer_input_name, layer_prefix + ".attn_proj_out");
+    attn_residual->set_output_name(layer_prefix + ".attn_residual_out");
+    attn_residual->set_node_name(layer_prefix + ".attn_residual");
+    pimpl_->graph->add_node(attn_residual);
+    graph_edge_ptr attn_res_out = attn_residual->get_output("default");
+
+    // 2.7 FFN RMSNorm (before MoE)
+    auto ffn_norm = std::make_shared<rmsnorm_node>();
+    ffn_norm->set_epsilon(1e-5f);
+
+    auto ffn_norm_sync = std::make_shared<result_message_sync_node>();
+    ffn_norm_sync->set_input(attn_res_out, layer_prefix + ".attn_residual_out");
+    ffn_norm_sync->set_input(layer_weights[layer][layer_prefix + ".post_attention_norm.weight"], layer_prefix + ".post_attention_norm.weight");
+    ffn_norm_sync->set_initial_ids({layer_prefix + ".attn_residual_out", layer_prefix + ".post_attention_norm.weight"});
+    pimpl_->graph->add_node(ffn_norm_sync);
+
+    ffn_norm->set_input(ffn_norm_sync->get_output(), "default");
+    ffn_norm->set_input_names(layer_prefix + ".attn_residual_out", layer_prefix + ".post_attention_norm.weight");
+    ffn_norm->set_output_name(layer_prefix + ".ffn_norm_out");
+    ffn_norm->set_node_name(layer_prefix + ".ffn_norm");
+    pimpl_->graph->add_node(ffn_norm);
+    graph_edge_ptr ffn_norm_out = ffn_norm->get_output("default");
+
+    // 2.8 MoE Router (top-k expert selection)
+    auto router = std::make_shared<moe_router_node>();
+    router->set_config(pimpl_->num_experts, pimpl_->expert_top_k);
+
+    auto router_sync = std::make_shared<result_message_sync_node>();
+    router_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
+    router_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_inp.weight"], layer_prefix + ".ffn_gate_inp.weight");
+    router_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_gate_inp.weight"});
+    pimpl_->graph->add_node(router_sync);
+
+    router->set_input(router_sync->get_output(), "default");
+    router->set_input_names(layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_gate_inp.weight");
+    router->set_output_name(layer_prefix + ".router_out");
+    router->set_node_name(layer_prefix + ".moe_router");
+    pimpl_->graph->add_node(router);
+    graph_edge_ptr router_out = router->get_output("default");
+
+    // 2.9 Expert MLPs (32 experts in parallel)
+    std::vector<graph_edge_ptr> expert_outputs;
+    for (int expert_id = 0; expert_id < pimpl_->num_experts; ++expert_id) {
+      auto expert = std::make_shared<expert_mlp_node>(expert_id);
+
+      auto expert_sync = std::make_shared<result_message_sync_node>();
+      expert_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
+      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.weight"], layer_prefix + ".ffn_up_exps.weight");
+      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.weight"], layer_prefix + ".ffn_gate_exps.weight");
+      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.weight"], layer_prefix + ".ffn_down_exps.weight");
+      expert_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight"});
+      pimpl_->graph->add_node(expert_sync);
+
+      expert->set_input(expert_sync->get_output(), "default");
+      expert->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight"});
+      expert->set_output_name(layer_prefix + ".expert_" + std::to_string(expert_id) + "_out");
+      expert->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id));
+      pimpl_->graph->add_node(expert);
+      expert_outputs.push_back(expert->get_output("default"));
+    }
+
+    // 2.10 Expert merge (weighted sum of top-k experts)
+    auto expert_merge = std::make_shared<expert_merge_node>();
+    expert_merge->set_config(pimpl_->num_experts, pimpl_->expert_top_k);
+
+    std::vector<std::string> merge_input_names = {layer_prefix + ".router_out"};
+    for (int i = 0; i < pimpl_->num_experts; ++i) {
+      merge_input_names.push_back(layer_prefix + ".expert_" + std::to_string(i) + "_out");
+    }
+
+    auto merge_sync = std::make_shared<result_message_sync_node>();
+    merge_sync->set_input(router_out, layer_prefix + ".router_out");
+    for (int i = 0; i < pimpl_->num_experts; ++i) {
+      merge_sync->set_input(expert_outputs[i], layer_prefix + ".expert_" + std::to_string(i) + "_out");
+    }
+    merge_sync->set_initial_ids(merge_input_names);
+    pimpl_->graph->add_node(merge_sync);
+
+    expert_merge->set_input(merge_sync->get_output(), "default");
+    expert_merge->set_input_names(merge_input_names);
+    expert_merge->set_output_name(layer_prefix + ".expert_merge_out");
+    expert_merge->set_node_name(layer_prefix + ".expert_merge");
+    pimpl_->graph->add_node(expert_merge);
+    graph_edge_ptr merge_out = expert_merge->get_output("default");
+
+    // 2.11 FFN residual connection
+    auto ffn_residual = std::make_shared<add_node>();
+    auto ffn_res_sync = std::make_shared<result_message_sync_node>();
+    ffn_res_sync->set_input(attn_res_out, layer_prefix + ".attn_residual_out");
+    ffn_res_sync->set_input(merge_out, layer_prefix + ".expert_merge_out");
+    ffn_res_sync->set_initial_ids({layer_prefix + ".attn_residual_out", layer_prefix + ".expert_merge_out"});
+    pimpl_->graph->add_node(ffn_res_sync);
+
+    ffn_residual->set_input(ffn_res_sync->get_output(), "default");
+    ffn_residual->set_input_names(layer_prefix + ".attn_residual_out", layer_prefix + ".expert_merge_out");
+    ffn_residual->set_output_name(layer_prefix + ".ffn_residual_out");
+    ffn_residual->set_node_name(layer_prefix + ".ffn_residual");
+    pimpl_->graph->add_node(ffn_residual);
+
+    current = ffn_residual->get_output("default");
+    current_name = layer_prefix + ".ffn_residual_out";
+  }
+
+  // ========== 3. Final RMSNorm ==========
+  auto final_norm = std::make_shared<rmsnorm_node>();
+  final_norm->set_epsilon(1e-5f);
+
+  auto final_norm_sync = std::make_shared<result_message_sync_node>();
+  final_norm_sync->set_input(current, current_name);
+  final_norm_sync->set_input(output_norm_weight_edge, "output_norm.weight");
+  final_norm_sync->set_initial_ids({current_name, "output_norm.weight"});
+  pimpl_->graph->add_node(final_norm_sync);
+
+  final_norm->set_input(final_norm_sync->get_output(), "default");
+  final_norm->set_input_names(current_name, "output_norm.weight");
+  final_norm->set_output_name("final_norm_out");
+  final_norm->set_node_name("final_norm");
+  pimpl_->graph->add_node(final_norm);
+  graph_edge_ptr final_norm_out = final_norm->get_output("default");
+
+  // ========== 4. Output projection ==========
+  auto output_proj = std::make_shared<matmul_mixed_node>();
+
+  auto output_proj_sync = std::make_shared<result_message_sync_node>();
+  output_proj_sync->set_input(final_norm_out, "final_norm_out");
+  output_proj_sync->set_input(output_weight_edge, "output.weight");
+  output_proj_sync->set_initial_ids({"final_norm_out", "output.weight"});
+  pimpl_->graph->add_node(output_proj_sync);
+
+  output_proj->set_input(output_proj_sync->get_output(), "default");
+  output_proj->set_input_names("final_norm_out", "output.weight");
+  output_proj->set_output_name("logits");
+  output_proj->set_node_name("output_projection");
+  pimpl_->graph->add_node(output_proj);
+  graph_edge_ptr logits_edge = output_proj->get_output("default");
+
+  // ========== 5. Output sync and I/O nodes ==========
+  auto output_sync = std::make_shared<result_message_sync_node>();
+  pimpl_->graph->add_node(output_sync);
+  output_sync->set_input(logits_edge, "logits");
+  output_sync->set_initial_ids({"logits"});
+
+  pimpl_->output_node->set_input(output_sync->get_output(), "default");
+
+  // Add I/O nodes to graph
+  pimpl_->graph->add_node(pimpl_->input_node);
+  pimpl_->graph->add_node(pimpl_->output_node);
+
+  // Deploy graph
+  pimpl_->proc = std::make_unique<graph_proc>();
+  pimpl_->proc->deploy(pimpl_->graph);
+
+  std::cout << "✓ Full 24-layer transformer graph built\n";
 }
 
 void gpt_oss_engine::build_minimal_test_graph() {
