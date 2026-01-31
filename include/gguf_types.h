@@ -52,6 +52,7 @@ enum class ggml_type : uint32_t {
   I64 = 27,
   F64 = 28,
   IQ1_M = 29,
+  MXFP4 = 39,
 };
 
 // Get string representation of tensor type

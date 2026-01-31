@@ -77,6 +77,8 @@ size_t ggml_type_size(ggml_type type) {
       return 210;
     case ggml_type::Q8_K:
       return 292;
+    case ggml_type::MXFP4:
+      return 17;  // 1 byte E8M0 + 16 bytes quants (32 values)
     default:
       return 0;
   }
