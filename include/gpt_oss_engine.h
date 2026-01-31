@@ -52,6 +52,9 @@ class gpt_oss_engine {
   // Build minimal test graph (embedding + output only)
   void build_minimal_test_graph();
 
+  // Build single-layer test graph (1 transformer layer)
+  void build_single_layer_test_graph();
+
   // Wire I/O nodes to the graph
   void wire_io_nodes(std::shared_ptr<class graph_edge> input_placeholder,
                      std::shared_ptr<class graph_edge> logits_output);

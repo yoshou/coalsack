@@ -38,7 +38,10 @@ class rope_node : public unary_op_node {
     int64_t head_dim = shape[3];
 
     if (head_dim != head_dim_) {
-      throw std::runtime_error("rope: head_dim mismatch");
+      throw std::runtime_error("rope: head_dim mismatch - expected " + std::to_string(head_dim_) +
+                               " but got " + std::to_string(head_dim) +
+                               " (shape: [" + std::to_string(batch) + ", " + std::to_string(num_heads) +
+                               ", " + std::to_string(seq_len) + ", " + std::to_string(head_dim) + "])");
     }
 
     if (seq_len > static_cast<int64_t>(cos_cache_.size() / (head_dim / 2))) {
