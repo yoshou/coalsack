@@ -43,7 +43,7 @@ set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(llama_cpp)
 
-add_library(${PROJECT_NAME}
+add_library(${PROJECT_NAME} STATIC
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_server.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_client.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/onnx_importer.cpp
@@ -61,6 +61,7 @@ add_dependencies(${PROJECT_NAME}
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     ENABLE_ONNX_IMPORT
+    FMT_HEADER_ONLY
 )
 
 target_sources(${PROJECT_NAME}

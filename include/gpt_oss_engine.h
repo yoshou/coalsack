@@ -40,11 +40,21 @@ class gpt_oss_engine {
   struct impl;
   std::unique_ptr<impl> pimpl_;
 
-  // Build the inference graph
-  void build_transformer_graph();
+  // Load model config from GGUF metadata
+  void load_config_from_gguf();
 
   // Load weights from GGUF
   bool load_weights_from_gguf();
+
+  // Build the inference graph
+  void build_transformer_graph();
+
+  // Build minimal test graph (embedding + output only)
+  void build_minimal_test_graph();
+
+  // Wire I/O nodes to the graph
+  void wire_io_nodes(std::shared_ptr<class graph_edge> input_placeholder,
+                     std::shared_ptr<class graph_edge> logits_output);
 
   // Sample next token from logits
   uint32_t sample_token(const float* logits, int64_t vocab_size, float temperature);

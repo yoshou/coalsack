@@ -13,7 +13,7 @@ ExternalProject_Add (cereal
 ExternalProject_Add (spdlog
     PREFIX spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG "v1.8.2"
+    GIT_TAG "v1.17.0"
     SOURCE_DIR "${CMAKE_BINARY_DIR}/third-party/spdlog"
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""

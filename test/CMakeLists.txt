@@ -292,3 +292,21 @@ target_link_libraries(test_expert_mlp
 target_compile_definitions(test_expert_mlp PUBLIC
     FMT_HEADER_ONLY
 )
+
+add_executable(test_gpt_oss_engine
+    ${CMAKE_CURRENT_LIST_DIR}/test_gpt_oss_engine.cpp
+)
+
+
+target_include_directories(test_gpt_oss_engine PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_gpt_oss_engine
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_gpt_oss_engine PUBLIC
+    FMT_HEADER_ONLY
+)
