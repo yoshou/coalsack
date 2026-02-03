@@ -31,20 +31,28 @@ bool test_moe_router_basic() {
   int64_t top_k = 2;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> gate_shape = {hidden_dim, num_experts};
+  std::vector<int64_t> gate_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> bias_shape = {num_experts};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor gate_weights(dtype::float32, gate_shape);
+  dynamic_tensor gate_bias(dtype::float32, bias_shape);
 
   fill_random(hidden_states);
   fill_random(gate_weights);
+  {
+    float* b = gate_bias.data_ptr<float>();
+    for (int64_t i = 0; i < gate_bias.numel(); ++i) {
+      b[i] = 0.0f;
+    }
+  }
 
   // Create MoE router node
   moe_router_node node;
   node.set_config(num_experts, top_k);
 
   // Compute
-  dynamic_tensor output = node.compute_test(hidden_states, gate_weights);
+  dynamic_tensor output = node.compute_test(hidden_states, gate_weights, gate_bias);
 
   // Verify output shape: [batch, seq_len, top_k, 2]
   std::vector<int64_t> expected_shape = {batch, seq_len, top_k, 2};
@@ -101,10 +109,12 @@ bool test_top_k_selection() {
   int64_t top_k = 3;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> gate_shape = {hidden_dim, num_experts};
+  std::vector<int64_t> gate_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> bias_shape = {num_experts};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor gate_weights(dtype::float32, gate_shape);
+  dynamic_tensor gate_bias(dtype::float32, bias_shape);
 
   // Set hidden_states to all 1s
   float* hidden_data = hidden_states.data_ptr<float>();
@@ -115,9 +125,17 @@ bool test_top_k_selection() {
   // Set gate_weights so that each expert's score is its index
   // (expert 5 gets highest score, expert 0 gets lowest)
   float* gate_data = gate_weights.data_ptr<float>();
-  for (int64_t d = 0; d < hidden_dim; ++d) {
-    for (int64_t e = 0; e < num_experts; ++e) {
-      gate_data[d * num_experts + e] = static_cast<float>(e) / hidden_dim;
+  for (int64_t e = 0; e < num_experts; ++e) {
+    for (int64_t d = 0; d < hidden_dim; ++d) {
+      gate_data[e * hidden_dim + d] = static_cast<float>(e) / hidden_dim;
+    }
+  }
+
+  // Zero bias
+  {
+    float* b = gate_bias.data_ptr<float>();
+    for (int64_t i = 0; i < gate_bias.numel(); ++i) {
+      b[i] = 0.0f;
     }
   }
 
@@ -126,7 +144,7 @@ bool test_top_k_selection() {
   node.set_config(num_experts, top_k);
 
   // Compute
-  dynamic_tensor output = node.compute_test(hidden_states, gate_weights);
+  dynamic_tensor output = node.compute_test(hidden_states, gate_weights, gate_bias);
 
   const float* out_data = output.data_ptr<float>();
 
@@ -159,20 +177,28 @@ bool test_gpt_oss_scale() {
   int64_t top_k = 4;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> gate_shape = {hidden_dim, num_experts};
+  std::vector<int64_t> gate_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> bias_shape = {num_experts};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor gate_weights(dtype::float32, gate_shape);
+  dynamic_tensor gate_bias(dtype::float32, bias_shape);
 
   fill_random(hidden_states);
   fill_random(gate_weights);
+  {
+    float* b = gate_bias.data_ptr<float>();
+    for (int64_t i = 0; i < gate_bias.numel(); ++i) {
+      b[i] = 0.0f;
+    }
+  }
 
   // Create MoE router node
   moe_router_node node;
   node.set_config(num_experts, top_k);
 
   // Compute
-  dynamic_tensor output = node.compute_test(hidden_states, gate_weights);
+  dynamic_tensor output = node.compute_test(hidden_states, gate_weights, gate_bias);
 
   // Verify output shape
   std::vector<int64_t> expected_shape = {batch, seq_len, top_k, 2};
@@ -237,20 +263,28 @@ bool test_weight_normalization() {
   int64_t top_k = 5;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> gate_shape = {hidden_dim, num_experts};
+  std::vector<int64_t> gate_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> bias_shape = {num_experts};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor gate_weights(dtype::float32, gate_shape);
+  dynamic_tensor gate_bias(dtype::float32, bias_shape);
 
   fill_random(hidden_states);
   fill_random(gate_weights);
+  {
+    float* b = gate_bias.data_ptr<float>();
+    for (int64_t i = 0; i < gate_bias.numel(); ++i) {
+      b[i] = 0.0f;
+    }
+  }
 
   // Create MoE router node
   moe_router_node node;
   node.set_config(num_experts, top_k);
 
   // Compute
-  dynamic_tensor output = node.compute_test(hidden_states, gate_weights);
+  dynamic_tensor output = node.compute_test(hidden_states, gate_weights, gate_bias);
 
   const float* out_data = output.data_ptr<float>();
 

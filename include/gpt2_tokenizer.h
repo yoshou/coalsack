@@ -24,6 +24,10 @@ class gpt2_tokenizer {
 
   uint32_t bos_token_id() const;
   uint32_t eos_token_id() const;
+
+  bool add_bos_token() const;
+  bool add_eos_token() const;
+
   size_t vocab_size() const;
 
  private:

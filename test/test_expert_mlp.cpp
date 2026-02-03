@@ -4,11 +4,12 @@
 #include <vector>
 
 #include "nn_nodes.h"
+#include "gguf_dequant.h"
 
 using namespace coalsack;
 
-// Helper function to fill tensor with random values
-void fill_random(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 1.0f) {
+// Helper function to fill fp32 tensor with random values
+void fill_random_fp32(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 1.0f) {
   std::random_device rd;
   std::mt19937 gen(42);  // Fixed seed for reproducibility
   std::uniform_real_distribution<float> dis(min_val, max_val);
@@ -19,42 +20,70 @@ void fill_random(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 
   }
 }
 
-// GELU function for reference
-float gelu_ref(float x) {
-  constexpr float sqrt_2_over_pi = 0.7978845608028654f;
-  constexpr float coeff = 0.044715f;
-  float x3 = x * x * x;
-  float inner = sqrt_2_over_pi * (x + coeff * x3);
-  return 0.5f * x * (1.0f + std::tanh(inner));
+// Helper function to fill fp16 tensor with random values
+void fill_random_fp16(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 1.0f) {
+  std::random_device rd;
+  std::mt19937 gen(42);  // Fixed seed for reproducibility
+  std::uniform_real_distribution<float> dis(min_val, max_val);
+
+  uint16_t* data = tensor.data_ptr<uint16_t>();
+  for (int64_t i = 0; i < tensor.numel(); ++i) {
+    data[i] = fp32_to_fp16(dis(gen));
+  }
 }
 
-// Test basic expert MLP operation
-bool test_expert_mlp_basic() {
-  std::cout << "Test 1: Basic expert MLP\n";
+// Modified SwiGLU for reference (with clipping)
+float modified_swiglu_ref(float gate_v, float up_v) {
+  constexpr float alpha = 1.702f;
+  constexpr float limit = 7.0f;
+  
+  float x = std::min(gate_v, limit);
+  float y = std::clamp(up_v, -limit, limit);
+  float out_glu = x / (1.0f + std::exp(alpha * (-x)));
+  
+  return out_glu * (y + 1.0f);
+}
 
-  // Simple setup: batch=1, seq_len=2, hidden_dim=8, expert_ffn_dim=16
+// Test basic expert MLP operation with 3D weights and biases
+bool test_expert_mlp_basic() {
+  std::cout << "Test 1: Basic expert MLP with 3D weights and biases\n";
+
+  // Simple setup: batch=1, seq_len=2, hidden_dim=8, expert_ffn_dim=16, num_experts=4
   int64_t batch = 1;
   int64_t seq_len = 2;
   int64_t hidden_dim = 8;
   int64_t expert_ffn_dim = 16;
+  int64_t num_experts = 4;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w1_shape = {hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> w2_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
-  dynamic_tensor w1(dtype::float32, w1_shape);
-  dynamic_tensor w2(dtype::float32, w2_shape);
+  dynamic_tensor w_up(dtype::float16, w_up_shape);
+  dynamic_tensor w_gate(dtype::float16, w_gate_shape);
+  dynamic_tensor w_down(dtype::float16, w_down_shape);
+  dynamic_tensor b_up(dtype::float32, b_up_shape);
+  dynamic_tensor b_gate(dtype::float32, b_gate_shape);
+  dynamic_tensor b_down(dtype::float32, b_down_shape);
 
-  fill_random(hidden_states, -0.5f, 0.5f);
-  fill_random(w1, -0.1f, 0.1f);
-  fill_random(w2, -0.1f, 0.1f);
+  fill_random_fp32(hidden_states, -0.5f, 0.5f);
+  fill_random_fp16(w_up, -0.1f, 0.1f);
+  fill_random_fp16(w_gate, -0.1f, 0.1f);
+  fill_random_fp16(w_down, -0.1f, 0.1f);
+  fill_random_fp32(b_up, -0.05f, 0.05f);
+  fill_random_fp32(b_gate, -0.05f, 0.05f);
+  fill_random_fp32(b_down, -0.05f, 0.05f);
 
-  // Create expert MLP node
+  // Create expert MLP node for expert 0
   expert_mlp_node node(0);
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w1, w2};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape matches input shape
@@ -82,95 +111,126 @@ bool test_expert_mlp_basic() {
   return true;
 }
 
-// Test GELU activation
-bool test_gelu_activation() {
-  std::cout << "\nTest 2: GELU activation\n";
+// Test modified SwiGLU activation
+bool test_modified_swiglu_activation() {
+  std::cout << "\nTest 2: Modified SwiGLU activation\n";
 
-  // Create simple case where we can verify GELU is applied
+  // Create simple case where we can verify the activation is applied correctly
   int64_t batch = 1;
   int64_t seq_len = 1;
   int64_t hidden_dim = 2;
   int64_t expert_ffn_dim = 2;
+  int64_t num_experts = 1;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w1_shape = {hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> w2_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
-  dynamic_tensor w1(dtype::float32, w1_shape);
-  dynamic_tensor w2(dtype::float32, w2_shape);
+  dynamic_tensor w_up(dtype::float16, w_up_shape);
+  dynamic_tensor w_gate(dtype::float16, w_gate_shape);
+  dynamic_tensor w_down(dtype::float16, w_down_shape);
+  dynamic_tensor b_up(dtype::float32, b_up_shape);
+  dynamic_tensor b_gate(dtype::float32, b_gate_shape);
+  dynamic_tensor b_down(dtype::float32, b_down_shape);
 
   // Set specific values
   float* hidden_data = hidden_states.data_ptr<float>();
   hidden_data[0] = 1.0f;
-  hidden_data[1] = 0.0f;
+  hidden_data[1] = 0.5f;
 
-  // Set w1 to identity-like (with some scaling)
-  float* w1_data = w1.data_ptr<float>();
-  for (int64_t i = 0; i < w1.numel(); ++i) w1_data[i] = 0.0f;
-  w1_data[0] = 1.0f;  // [0, 0] -> 1.0
-  w1_data[3] = 1.0f;  // [1, 1] -> 1.0
+  // Set weights to create specific gate and up values
+  uint16_t* w_up_data = w_up.data_ptr<uint16_t>();
+  uint16_t* w_gate_data = w_gate.data_ptr<uint16_t>();
+  uint16_t* w_down_data = w_down.data_ptr<uint16_t>();
+  float* b_up_data = b_up.data_ptr<float>();
+  float* b_gate_data = b_gate.data_ptr<float>();
+  float* b_down_data = b_down.data_ptr<float>();
 
-  // Set w2 to identity
-  float* w2_data = w2.data_ptr<float>();
-  for (int64_t i = 0; i < w2.numel(); ++i) w2_data[i] = 0.0f;
-  w2_data[0] = 1.0f;  // [0, 0] -> 1.0
-  w2_data[3] = 1.0f;  // [1, 1] -> 1.0
+  // Initialize all to zero
+  for (int64_t i = 0; i < w_up.numel(); ++i) w_up_data[i] = fp32_to_fp16(0.0f);
+  for (int64_t i = 0; i < w_gate.numel(); ++i) w_gate_data[i] = fp32_to_fp16(0.0f);
+  for (int64_t i = 0; i < w_down.numel(); ++i) w_down_data[i] = fp32_to_fp16(0.0f);
+  for (int64_t i = 0; i < b_up.numel(); ++i) b_up_data[i] = 0.0f;
+  for (int64_t i = 0; i < b_gate.numel(); ++i) b_gate_data[i] = 0.0f;
+  for (int64_t i = 0; i < b_down.numel(); ++i) b_down_data[i] = 0.0f;
+
+  // Set up projection: w_up[0][0][0] = 1.0, b_up[0][0] = 0.5
+  // This gives up_0 = 1.0 * 1.0 + 0.5 * 0.0 + 0.5 = 1.5
+  w_up_data[0] = fp32_to_fp16(1.0f);
+  b_up_data[0] = 0.5f;
+
+  // Set gate projection: w_gate[0][0][0] = 1.0, b_gate[0][0] = 0.0
+  // This gives gate_0 = 1.0 * 1.0 + 0.5 * 0.0 + 0.0 = 1.0
+  w_gate_data[0] = fp32_to_fp16(1.0f);
+
+  // Set down projection to identity
+  w_down_data[0] = fp32_to_fp16(1.0f);  // w_down[0][0][0]
+  w_down_data[2] = fp32_to_fp16(1.0f);  // w_down[0][1][1]
 
   // Create expert MLP node
   expert_mlp_node node(0);
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w1, w2};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
   dynamic_tensor output = node.compute_test(inputs);
 
   const float* output_data = output.data_ptr<float>();
 
-  // Expected: output[0] = gelu(1.0), output[1] = gelu(0.0)
-  float expected_0 = gelu_ref(1.0f);
-  float expected_1 = gelu_ref(0.0f);
+  // Expected: output[0] = modified_swiglu(gate=1.0, up=1.5)
+  float expected_0 = modified_swiglu_ref(1.0f, 1.5f);
 
   float diff_0 = std::abs(output_data[0] - expected_0);
-  float diff_1 = std::abs(output_data[1] - expected_1);
 
-  if (diff_0 > 1e-5f) {
-    std::cerr << "  ERROR: GELU not applied correctly at position 0: expected=" << expected_0
+  if (diff_0 > 1e-3f) {  // Relaxed tolerance due to fp16 conversion
+    std::cerr << "  ERROR: Modified SwiGLU not applied correctly at position 0: expected=" << expected_0
               << ", got=" << output_data[0] << ", diff=" << diff_0 << "\n";
     return false;
   }
 
-  if (diff_1 > 1e-5f) {
-    std::cerr << "  ERROR: GELU not applied correctly at position 1: expected=" << expected_1
-              << ", got=" << output_data[1] << ", diff=" << diff_1 << "\n";
-    return false;
-  }
-
-  std::cout << "  ✓ GELU activation correct\n";
+  std::cout << "  ✓ Modified SwiGLU activation correct\n";
   return true;
 }
 
-// Test multiple experts
+// Test multiple experts with 3D weights and biases
 bool test_multiple_experts() {
-  std::cout << "\nTest 3: Multiple expert IDs\n";
+  std::cout << "\nTest 3: Multiple expert IDs with 3D weights and biases\n";
 
   int64_t batch = 1;
   int64_t seq_len = 2;
   int64_t hidden_dim = 8;
   int64_t expert_ffn_dim = 16;
+  int64_t num_experts = 32;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w1_shape = {hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> w2_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
-  dynamic_tensor w1(dtype::float32, w1_shape);
-  dynamic_tensor w2(dtype::float32, w2_shape);
+  dynamic_tensor w_up(dtype::float16, w_up_shape);
+  dynamic_tensor w_gate(dtype::float16, w_gate_shape);
+  dynamic_tensor w_down(dtype::float16, w_down_shape);
+  dynamic_tensor b_up(dtype::float32, b_up_shape);
+  dynamic_tensor b_gate(dtype::float32, b_gate_shape);
+  dynamic_tensor b_down(dtype::float32, b_down_shape);
 
-  fill_random(hidden_states);
-  fill_random(w1);
-  fill_random(w2);
+  fill_random_fp32(hidden_states);
+  fill_random_fp16(w_up);
+  fill_random_fp16(w_gate);
+  fill_random_fp16(w_down);
+  fill_random_fp32(b_up);
+  fill_random_fp32(b_gate);
+  fill_random_fp32(b_down);
 
-  // Create multiple expert nodes with different IDs
+  // Test multiple expert IDs
   std::vector<int> expert_ids = {0, 5, 15, 31};
 
   for (int expert_id : expert_ids) {
@@ -182,8 +242,8 @@ bool test_multiple_experts() {
       return false;
     }
 
-    // Compute
-    std::vector<dynamic_tensor> inputs = {hidden_states, w1, w2};
+    // Compute with 3D weights and biases
+    std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
     dynamic_tensor output = node.compute_test(inputs);
 
     // Verify output shape
@@ -191,9 +251,24 @@ bool test_multiple_experts() {
       std::cerr << "  ERROR: Output shape mismatch for expert " << expert_id << "\n";
       return false;
     }
+
+    // Verify output is not all zeros
+    const float* output_data = output.data_ptr<float>();
+    bool has_nonzero = false;
+    for (int64_t i = 0; i < output.numel(); ++i) {
+      if (std::abs(output_data[i]) > 1e-6f) {
+        has_nonzero = true;
+        break;
+      }
+    }
+
+    if (!has_nonzero) {
+      std::cerr << "  ERROR: Output is all zeros for expert " << expert_id << "\n";
+      return false;
+    }
   }
 
-  std::cout << "  ✓ Multiple experts work correctly\n";
+  std::cout << "  ✓ Multiple experts with 3D weights and biases work correctly\n";
   return true;
 }
 
@@ -201,29 +276,42 @@ bool test_multiple_experts() {
 bool test_gpt_oss_scale() {
   std::cout << "\nTest 4: GPT-OSS scale dimensions\n";
 
-  // GPT-OSS: hidden_dim=2880, expert_ffn_dim=2880
+  // GPT-OSS: hidden_dim=2880, expert_ffn_dim=2880, num_experts=32
   int64_t batch = 2;
   int64_t seq_len = 4;
   int64_t hidden_dim = 128;     // Using smaller for testing
   int64_t expert_ffn_dim = 128;
+  int64_t num_experts = 32;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w1_shape = {hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> w2_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
-  dynamic_tensor w1(dtype::float32, w1_shape);
-  dynamic_tensor w2(dtype::float32, w2_shape);
+  dynamic_tensor w_up(dtype::float16, w_up_shape);
+  dynamic_tensor w_gate(dtype::float16, w_gate_shape);
+  dynamic_tensor w_down(dtype::float16, w_down_shape);
+  dynamic_tensor b_up(dtype::float32, b_up_shape);
+  dynamic_tensor b_gate(dtype::float32, b_gate_shape);
+  dynamic_tensor b_down(dtype::float32, b_down_shape);
 
-  fill_random(hidden_states);
-  fill_random(w1, -0.05f, 0.05f);
-  fill_random(w2, -0.05f, 0.05f);
+  fill_random_fp32(hidden_states);
+  fill_random_fp16(w_up, -0.05f, 0.05f);
+  fill_random_fp16(w_gate, -0.05f, 0.05f);
+  fill_random_fp16(w_down, -0.05f, 0.05f);
+  fill_random_fp32(b_up, -0.01f, 0.01f);
+  fill_random_fp32(b_gate, -0.01f, 0.01f);
+  fill_random_fp32(b_down, -0.01f, 0.01f);
 
   // Create expert MLP node
   expert_mlp_node node(0);
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w1, w2};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape
@@ -262,11 +350,11 @@ bool test_gpt_oss_scale() {
 }
 
 int main() {
-  std::cout << "Testing Expert MLP Node\n";
-  std::cout << "=======================\n\n";
+  std::cout << "Testing Expert MLP Node (3D Weights, Biases, Modified SwiGLU)\n";
+  std::cout << "=============================================================\n\n";
 
   bool test1 = test_expert_mlp_basic();
-  bool test2 = test_gelu_activation();
+  bool test2 = test_modified_swiglu_activation();
   bool test3 = test_multiple_experts();
   bool test4 = test_gpt_oss_scale();
 

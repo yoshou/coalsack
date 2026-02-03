@@ -31,6 +31,7 @@
 #include "nn_ops/log_node.h"
 #include "nn_ops/log_softmax_node.h"
 #include "nn_ops/matmul_mixed_node.h"
+#include "nn_ops/matmul_transpose_mixed_node.h"
 #include "nn_ops/matmul_node.h"
 #include "nn_ops/max_pool_node.h"
 #include "nn_ops/mod_node.h"

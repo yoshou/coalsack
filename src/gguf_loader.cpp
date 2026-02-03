@@ -41,6 +41,36 @@ const char* ggml_type_name(ggml_type type) {
       return "Q6_K";
     case ggml_type::Q8_K:
       return "Q8_K";
+    case ggml_type::IQ2_XXS:
+      return "IQ2_XXS";
+    case ggml_type::IQ2_XS:
+      return "IQ2_XS";
+    case ggml_type::IQ3_XXS:
+      return "IQ3_XXS";
+    case ggml_type::IQ1_S:
+      return "IQ1_S";
+    case ggml_type::IQ4_NL:
+      return "IQ4_NL";
+    case ggml_type::IQ3_S:
+      return "IQ3_S";
+    case ggml_type::IQ2_S:
+      return "IQ2_S";
+    case ggml_type::IQ4_XS:
+      return "IQ4_XS";
+    case ggml_type::I8:
+      return "I8";
+    case ggml_type::I16:
+      return "I16";
+    case ggml_type::I32:
+      return "I32";
+    case ggml_type::I64:
+      return "I64";
+    case ggml_type::F64:
+      return "F64";
+    case ggml_type::IQ1_M:
+      return "IQ1_M";
+    case ggml_type::MXFP4:
+      return "MXFP4";
     default:
       return "UNKNOWN";
   }
@@ -77,6 +107,34 @@ size_t ggml_type_size(ggml_type type) {
       return 210;
     case ggml_type::Q8_K:
       return 292;
+    case ggml_type::IQ2_XXS:
+      return 256 / 8 + 2;
+    case ggml_type::IQ2_XS:
+      return 256 / 8 + 2 + 2;
+    case ggml_type::IQ3_XXS:
+      return 256 / 8 + 256 / 4 + 4 + 2;
+    case ggml_type::IQ1_S:
+      return 256 / 8 + 2;
+    case ggml_type::IQ4_NL:
+      return 136;
+    case ggml_type::IQ3_S:
+      return 256 / 8 + 256 / 4 + 12 + 4;
+    case ggml_type::IQ2_S:
+      return 256 / 8 + 2 + 2;
+    case ggml_type::IQ4_XS:
+      return 136;
+    case ggml_type::I8:
+      return 1;
+    case ggml_type::I16:
+      return 2;
+    case ggml_type::I32:
+      return 4;
+    case ggml_type::I64:
+      return 8;
+    case ggml_type::F64:
+      return 8;
+    case ggml_type::IQ1_M:
+      return 256 / 8 + 2 + 1;
     case ggml_type::MXFP4:
       return 17;  // 1 byte E8M0 + 16 bytes quants (32 values)
     default:
@@ -84,7 +142,11 @@ size_t ggml_type_size(ggml_type type) {
   }
 }
 
-bool ggml_is_quantized(ggml_type type) { return type != ggml_type::F32 && type != ggml_type::F16; }
+bool ggml_is_quantized(ggml_type type) {
+  return type != ggml_type::F32 && type != ggml_type::F16 && type != ggml_type::F64 &&
+         type != ggml_type::I8 && type != ggml_type::I16 && type != ggml_type::I32 &&
+         type != ggml_type::I64;
+}
 
 // Internal implementation
 struct gguf_loader::impl {
@@ -135,6 +197,17 @@ struct gguf_loader::impl {
   template <typename T>
   bool read_value(T& value) {
     return static_cast<bool>(file.read(reinterpret_cast<char*>(&value), sizeof(T)));
+  }
+
+  static bool is_integer_type(gguf_type type) {
+    return type == gguf_type::UINT8 || type == gguf_type::INT8 ||
+           type == gguf_type::UINT16 || type == gguf_type::INT16 ||
+           type == gguf_type::UINT32 || type == gguf_type::INT32 ||
+           type == gguf_type::UINT64 || type == gguf_type::INT64;
+  }
+
+  static bool is_float_type(gguf_type type) {
+    return type == gguf_type::FLOAT32 || type == gguf_type::FLOAT64;
   }
 
   bool read_kv_entry(kv_entry& entry, gguf_type type) {
@@ -378,7 +451,7 @@ bool gguf_loader::load(const std::string& path) {
       info.size = n_elements * type_size;
     }
 
-    pimpl_->tensors[info.name] = info;
+    pimpl_->tensors[info.name] = std::move(info);
   }
 
   // Calculate alignment offset for tensor data
@@ -387,6 +460,11 @@ bool gguf_loader::load(const std::string& path) {
   size_t aligned_pos = (current_pos + alignment - 1) & ~(alignment - 1);
 
   std::cout << "Tensor data starts at offset: " << aligned_pos << "\n";
+
+  // Convert relative offsets to absolute offsets
+  for (auto& [name, info] : pimpl_->tensors) {
+    info.offset += aligned_pos;
+  }
 
   pimpl_->loaded = true;
   return true;
@@ -402,7 +480,10 @@ uint64_t gguf_loader::get_kv_count() const { return pimpl_->kv_count; }
 
 std::optional<std::string> gguf_loader::get_string(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
-  if (it == pimpl_->metadata.end() || it->second.type != gguf_type::STRING) {
+  if (it == pimpl_->metadata.end()) {
+    return std::nullopt;
+  }
+  if (it->second.type != gguf_type::STRING) {
     return std::nullopt;
   }
   return it->second.str_value;
@@ -413,12 +494,18 @@ std::optional<uint32_t> gguf_loader::get_uint32(const std::string& key) const {
   if (it == pimpl_->metadata.end()) {
     return std::nullopt;
   }
+  if (!impl::is_integer_type(it->second.type)) {
+    return std::nullopt;
+  }
   return static_cast<uint32_t>(it->second.uint_value);
 }
 
 std::optional<uint64_t> gguf_loader::get_uint64(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
   if (it == pimpl_->metadata.end()) {
+    return std::nullopt;
+  }
+  if (!impl::is_integer_type(it->second.type)) {
     return std::nullopt;
   }
   return it->second.uint_value;
@@ -429,12 +516,18 @@ std::optional<int32_t> gguf_loader::get_int32(const std::string& key) const {
   if (it == pimpl_->metadata.end()) {
     return std::nullopt;
   }
+  if (!impl::is_integer_type(it->second.type)) {
+    return std::nullopt;
+  }
   return static_cast<int32_t>(it->second.int_value);
 }
 
 std::optional<int64_t> gguf_loader::get_int64(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
   if (it == pimpl_->metadata.end()) {
+    return std::nullopt;
+  }
+  if (!impl::is_integer_type(it->second.type)) {
     return std::nullopt;
   }
   return it->second.int_value;
@@ -445,6 +538,9 @@ std::optional<float> gguf_loader::get_float32(const std::string& key) const {
   if (it == pimpl_->metadata.end()) {
     return std::nullopt;
   }
+  if (!impl::is_float_type(it->second.type)) {
+    return std::nullopt;
+  }
   return static_cast<float>(it->second.float_value);
 }
 
@@ -453,12 +549,18 @@ std::optional<double> gguf_loader::get_float64(const std::string& key) const {
   if (it == pimpl_->metadata.end()) {
     return std::nullopt;
   }
+  if (!impl::is_float_type(it->second.type)) {
+    return std::nullopt;
+  }
   return it->second.float_value;
 }
 
 std::optional<bool> gguf_loader::get_bool(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
-  if (it == pimpl_->metadata.end() || it->second.type != gguf_type::BOOL) {
+  if (it == pimpl_->metadata.end()) {
+    return std::nullopt;
+  }
+  if (it->second.type != gguf_type::BOOL) {
     return std::nullopt;
   }
   return it->second.bool_value;
@@ -466,7 +568,10 @@ std::optional<bool> gguf_loader::get_bool(const std::string& key) const {
 
 std::vector<std::string> gguf_loader::get_array_string(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
-  if (it == pimpl_->metadata.end() || it->second.type != gguf_type::ARRAY) {
+  if (it == pimpl_->metadata.end()) {
+    return {};
+  }
+  if (it->second.type != gguf_type::ARRAY) {
     return {};
   }
   return it->second.str_array;
@@ -474,7 +579,10 @@ std::vector<std::string> gguf_loader::get_array_string(const std::string& key) c
 
 std::vector<uint32_t> gguf_loader::get_array_uint32(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
-  if (it == pimpl_->metadata.end() || it->second.type != gguf_type::ARRAY) {
+  if (it == pimpl_->metadata.end()) {
+    return {};
+  }
+  if (it->second.type != gguf_type::ARRAY) {
     return {};
   }
   return it->second.uint32_array;
@@ -482,7 +590,10 @@ std::vector<uint32_t> gguf_loader::get_array_uint32(const std::string& key) cons
 
 std::vector<int32_t> gguf_loader::get_array_int32(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
-  if (it == pimpl_->metadata.end() || it->second.type != gguf_type::ARRAY) {
+  if (it == pimpl_->metadata.end()) {
+    return {};
+  }
+  if (it->second.type != gguf_type::ARRAY) {
     return {};
   }
   return it->second.int32_array;
@@ -490,7 +601,10 @@ std::vector<int32_t> gguf_loader::get_array_int32(const std::string& key) const 
 
 std::vector<float> gguf_loader::get_array_float32(const std::string& key) const {
   auto it = pimpl_->metadata.find(key);
-  if (it == pimpl_->metadata.end() || it->second.type != gguf_type::ARRAY) {
+  if (it == pimpl_->metadata.end()) {
+    return {};
+  }
+  if (it->second.type != gguf_type::ARRAY) {
     return {};
   }
   return it->second.float32_array;

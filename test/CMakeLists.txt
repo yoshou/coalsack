@@ -335,3 +335,28 @@ target_link_libraries(test_float16
 target_compile_definitions(test_float16 PUBLIC
     FMT_HEADER_ONLY
 )
+
+add_executable(test_gguf_dequant
+    ${CMAKE_CURRENT_LIST_DIR}/test_gguf_dequant.cpp
+)
+
+add_dependencies(test_gguf_dequant
+    googletest
+    spdlog
+)
+
+target_include_directories(test_gguf_dequant PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_gguf_dequant
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
+    pthread
+)
+
+target_compile_definitions(test_gguf_dequant PUBLIC
+    FMT_HEADER_ONLY
+)
+

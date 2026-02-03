@@ -27,6 +27,9 @@ struct gpt2_tokenizer::impl {
   uint32_t bos_id = 0;
   uint32_t eos_id = 0;
 
+  bool add_bos = false;
+  bool add_eos = false;
+
   bool loaded = false;
 
   std::string bytes_to_unicode_char(uint8_t byte) const {
@@ -193,6 +196,9 @@ bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
   pimpl_->bos_id = bos.value_or(0);
   pimpl_->eos_id = eos.value_or(0);
 
+  pimpl_->add_bos = loader.get_bool("tokenizer.ggml.add_bos_token").value_or(false);
+  pimpl_->add_eos = loader.get_bool("tokenizer.ggml.add_eos_token").value_or(false);
+
   // Load token types and register special/control tokens
   auto token_types = loader.get_array_int32("tokenizer.ggml.token_type");
   for (size_t i = 0; i < token_types.size() && i < pimpl_->vocab.size(); ++i) {
@@ -209,6 +215,13 @@ bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
   std::cout << "Tokenizer loaded: " << pimpl_->vocab.size() << " tokens, "
             << pimpl_->bpe_merges.size() << " merges, " << pimpl_->special_tokens.size()
             << " special tokens\n";
+
+  if (pimpl_->add_bos) {
+    std::cout << "  tokenizer.ggml.add_bos_token: true (bos_id=" << pimpl_->bos_id << ")\n";
+  }
+  if (pimpl_->add_eos) {
+    std::cout << "  tokenizer.ggml.add_eos_token: true (eos_id=" << pimpl_->eos_id << ")\n";
+  }
 
   return true;
 }
@@ -283,6 +296,10 @@ std::string gpt2_tokenizer::decode(const std::vector<uint32_t>& tokens) const {
 uint32_t gpt2_tokenizer::bos_token_id() const { return pimpl_->bos_id; }
 
 uint32_t gpt2_tokenizer::eos_token_id() const { return pimpl_->eos_id; }
+
+bool gpt2_tokenizer::add_bos_token() const { return pimpl_->add_bos; }
+
+bool gpt2_tokenizer::add_eos_token() const { return pimpl_->add_eos; }
 
 size_t gpt2_tokenizer::vocab_size() const { return pimpl_->vocab.size(); }
 

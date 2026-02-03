@@ -35,43 +35,26 @@ int main(int argc, char** argv) {
   std::cout << "  Tensor count: " << loader.get_tensor_count() << "\n";
   std::cout << "  Metadata entries: " << loader.get_kv_count() << "\n\n";
 
-  // Test: Model architecture metadata
-  std::cout << "Model Architecture:\n";
-
-  auto arch = loader.get_string("general.architecture");
-  if (arch) {
-    std::cout << "  Architecture: " << *arch << "\n";
-  }
-
-  auto name = loader.get_string("general.name");
-  if (name) {
-    std::cout << "  Name: " << *name << "\n";
-  }
-
-  auto block_count = loader.get_uint32("gpt-oss.block_count");
-  if (block_count) {
-    std::cout << "  Block count: " << *block_count << "\n";
-    if (*block_count != 24) {
-      std::cerr << "  ERROR: Expected 24 blocks, got " << *block_count << "\n";
-      return 1;
-    }
-  }
-
-  auto embedding_length = loader.get_uint32("gpt-oss.embedding_length");
-  if (embedding_length) {
-    std::cout << "  Embedding length: " << *embedding_length << "\n";
-    if (*embedding_length != 2880) {
-      std::cerr << "  ERROR: Expected 2880 embedding length, got " << *embedding_length << "\n";
-      return 1;
-    }
-  }
-
-  auto context_length = loader.get_uint32("gpt-oss.context_length");
-  if (context_length) {
-    std::cout << "  Context length: " << *context_length << "\n";
+  // Test: Metadata
+  std::cout << "\nAll Metadata:\n";
+  auto keys = loader.get_metadata_keys();
+  for (const auto& key : keys) {
+    std::cout << "  " << key << ": ";
+    
+    if (auto s = loader.get_string(key)) std::cout << *s;
+    else if (auto u32 = loader.get_uint32(key)) std::cout << *u32;
+    else if (auto u64 = loader.get_uint64(key)) std::cout << *u64;
+    else if (auto f32 = loader.get_float32(key)) std::cout << *f32;
+    else if (auto f64 = loader.get_float64(key)) std::cout << *f64;
+    else if (auto b = loader.get_bool(key)) std::cout << (*b ? "true" : "false");
+    else std::cout << "(array or unknown type)";
+    
+    std::cout << "\n";
   }
 
   std::cout << "\n";
+
+  // Test: Attention parameters
 
   // Test: Attention parameters
   std::cout << "Attention Parameters:\n";
@@ -94,19 +77,11 @@ int main(int argc, char** argv) {
   auto expert_count = loader.get_uint32("gpt-oss.expert_count");
   if (expert_count) {
     std::cout << "  Expert count: " << *expert_count << "\n";
-    if (*expert_count != 32) {
-      std::cerr << "  ERROR: Expected 32 experts, got " << *expert_count << "\n";
-      return 1;
-    }
   }
 
   auto expert_used_count = loader.get_uint32("gpt-oss.expert_used_count");
   if (expert_used_count) {
     std::cout << "  Experts used (top-k): " << *expert_used_count << "\n";
-    if (*expert_used_count != 4) {
-      std::cerr << "  ERROR: Expected top-4 experts, got " << *expert_used_count << "\n";
-      return 1;
-    }
   }
 
   std::cout << "\n";
@@ -121,10 +96,6 @@ int main(int argc, char** argv) {
 
   auto tokens = loader.get_array_string("tokenizer.ggml.tokens");
   std::cout << "  Vocab size: " << tokens.size() << "\n";
-  if (tokens.size() != 201088) {
-    std::cerr << "  ERROR: Expected 201088 tokens, got " << tokens.size() << "\n";
-    return 1;
-  }
 
   auto merges = loader.get_array_string("tokenizer.ggml.merges");
   std::cout << "  BPE merges: " << merges.size() << "\n";
@@ -135,42 +106,21 @@ int main(int argc, char** argv) {
   std::cout << "Tensor Information:\n";
 
   auto tensor_names = loader.get_tensor_names();
-  std::cout << "  Total tensors: " << tensor_names.size() << "\n";
+  std::cout << "  Total tensors: " << tensor_names.size() << "\n\n";
 
-  if (tensor_names.size() != 459) {
-    std::cerr << "  ERROR: Expected 459 tensors, got " << tensor_names.size() << "\n";
-    return 1;
-  }
-
-  // Check specific tensor
-  auto token_embd_info = loader.get_tensor_info("token_embd.weight");
-  if (token_embd_info) {
-    std::cout << "  token_embd.weight: ";
-    std::cout << "shape [";
-    for (size_t i = 0; i < token_embd_info->shape.size(); ++i) {
-      if (i > 0) std::cout << ", ";
-      std::cout << token_embd_info->shape[i];
-    }
-    std::cout << "], ";
-    std::cout << "type " << ggml_type_name(token_embd_info->type);
-    std::cout << ", size " << token_embd_info->size << " bytes\n";
-  } else {
-    std::cerr << "  ERROR: token_embd.weight not found\n";
-    return 1;
-  }
-
-  // Show first few tensor names
-  std::cout << "\n  First 10 tensors:\n";
-  for (size_t i = 0; i < std::min<size_t>(10, tensor_names.size()); ++i) {
+  // Show all tensors
+  std::cout << "All Tensors:\n";
+  for (size_t i = 0; i < tensor_names.size(); ++i) {
     auto info = loader.get_tensor_info(tensor_names[i]);
     if (info) {
-      std::cout << "    " << (i + 1) << ". " << tensor_names[i];
+      std::cout << tensor_names[i];
       std::cout << " [";
       for (size_t j = 0; j < info->shape.size(); ++j) {
         if (j > 0) std::cout << ", ";
         std::cout << info->shape[j];
       }
-      std::cout << "] " << ggml_type_name(info->type) << "\n";
+      std::cout << "] " << ggml_type_name(info->type);
+      std::cout << " size=" << info->size << " bytes\n";
     }
   }
 

@@ -3,12 +3,22 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include "../nn_op_node.h"
+#include "../gguf_dequant.h"
 
 namespace coalsack {
 
+// Grouped Query Attention (GQA) with optional sliding window and attention sinks.
+// Implements multi-head attention where multiple query heads share the same key/value heads.
+// Supports:
+//   - Grouped query attention (GQA): num_q_heads > num_kv_heads
+//   - Multi-query attention (MQA): num_kv_heads = 1
+//   - Standard multi-head attention: num_q_heads = num_kv_heads
+//   - Sliding window attention: restricts attention to recent tokens
+//   - Attention sinks: StreamingLLM technique for long-context stability
 class grouped_attention_node : public variadic_op_node {
  public:
   grouped_attention_node()
@@ -16,17 +26,43 @@ class grouped_attention_node : public variadic_op_node {
         num_q_heads_(0),
         num_kv_heads_(0),
         head_dim_(0),
-        scale_(1.0f) {}
+        scale_(1.0f),
+        sliding_window_(0) {}
 
-  void set_config(int64_t num_q_heads, int64_t num_kv_heads, int64_t head_dim) {
+  // Configure attention parameters.
+  // Args:
+  //   num_q_heads: number of query heads
+  //   num_kv_heads: number of key/value heads (must divide num_q_heads evenly)
+  //   head_dim: dimension of each attention head
+  //   sliding_window: if > 0, restrict attention to last N tokens (0 = full causal)
+  //   attn_sinks: optional per-head sink logits [num_q_heads] for StreamingLLM
+  void set_config(int64_t num_q_heads, int64_t num_kv_heads, int64_t head_dim,
+                  int64_t sliding_window = 0,
+                  std::optional<dynamic_tensor> attn_sinks = std::nullopt) {
     num_q_heads_ = num_q_heads;
     num_kv_heads_ = num_kv_heads;
     head_dim_ = head_dim;
+    sliding_window_ = sliding_window;
     scale_ = 1.0f / std::sqrt(static_cast<float>(head_dim));
 
     if (num_q_heads % num_kv_heads != 0) {
       throw std::runtime_error(
           "grouped_attention: num_q_heads must be divisible by num_kv_heads");
+    }
+
+    if (attn_sinks.has_value()) {
+      const auto& sinks = *attn_sinks;
+      if (sinks.ndim() != 1) {
+        throw std::runtime_error(
+            "grouped_attention: attn_sinks must be 1D tensor");
+      }
+      if (sinks.dim(0) != num_q_heads_) {
+        throw std::runtime_error(
+            "grouped_attention: attn_sinks size mismatch (expected " +
+            std::to_string(num_q_heads_) + ", got " + 
+            std::to_string(sinks.dim(0)) + ")");
+      }
+      attn_sinks_ = std::move(attn_sinks);
     }
   }
 
@@ -87,6 +123,8 @@ class grouped_attention_node : public variadic_op_node {
   int64_t num_kv_heads_;
   int64_t head_dim_;
   float scale_;
+  int64_t sliding_window_;
+  std::optional<dynamic_tensor> attn_sinks_;
 
   template <typename T>
   void compute_impl(const dynamic_tensor& query, const dynamic_tensor& key,
@@ -119,76 +157,80 @@ class grouped_attention_node : public variadic_op_node {
   void compute_single_head_attention(const T* q_data, const T* k_data, const T* v_data,
                                      T* out_data, int64_t batch_idx, int64_t q_head_idx,
                                      int64_t kv_head_idx, int64_t seq_len) {
-    // Compute scaled dot-product attention
-    // scores = (Q @ K^T) * scale
-    // attention = softmax(scores, causal_mask) @ V
+    const int64_t window = sliding_window_ > 0 ? sliding_window_ : seq_len;
+    const bool has_sinks = attn_sinks_.has_value();
+    
+    // Load sink logit once per head (dtype-aware conversion)
+    T sink_logit = -std::numeric_limits<T>::infinity();
+    if (has_sinks) {
+      const auto& sinks = *attn_sinks_;
+      if (sinks.get_dtype() == dtype::float32) {
+        sink_logit = static_cast<T>(sinks.data_ptr<float>()[q_head_idx]);
+      } else if (sinks.get_dtype() == dtype::float64) {
+        sink_logit = static_cast<T>(sinks.data_ptr<double>()[q_head_idx]);
+      } else if (sinks.get_dtype() == dtype::float16) {
+        sink_logit = static_cast<T>(fp16_to_fp32(sinks.data_ptr<uint16_t>()[q_head_idx]));
+      }
+    }
+    
+    std::vector<T> attn_weights;
 
-    std::vector<T> scores(seq_len * seq_len);
-
-    // Compute Q @ K^T
     for (int64_t i = 0; i < seq_len; ++i) {
-      for (int64_t j = 0; j < seq_len; ++j) {
+      const int64_t j1 = i;
+      const int64_t j0 = std::max<int64_t>(0, i - window + 1);
+      const int64_t span = j1 - j0 + 1;
+
+      attn_weights.resize(span);
+
+      // Compute attention scores: Q @ K^T / sqrt(head_dim)
+      T max_score = -std::numeric_limits<T>::infinity();
+      for (int64_t j = j0; j <= j1; ++j) {
         T sum = 0;
         for (int64_t d = 0; d < head_dim_; ++d) {
           sum += get_q(q_data, batch_idx, q_head_idx, i, d, seq_len) *
                  get_k(k_data, batch_idx, kv_head_idx, j, d, seq_len);
         }
-        scores[i * seq_len + j] = sum * static_cast<T>(scale_);
-      }
-    }
-
-    // Apply causal mask (set future positions to -inf)
-    for (int64_t i = 0; i < seq_len; ++i) {
-      for (int64_t j = i + 1; j < seq_len; ++j) {
-        scores[i * seq_len + j] = -std::numeric_limits<T>::infinity();
-      }
-    }
-
-    // Softmax per row
-    for (int64_t i = 0; i < seq_len; ++i) {
-      // Find max for numerical stability
-      T max_score = -std::numeric_limits<T>::infinity();
-      for (int64_t j = 0; j <= i; ++j) {  // Only up to i due to causal mask
-        max_score = std::max(max_score, scores[i * seq_len + j]);
+        const T score = sum * static_cast<T>(scale_);
+        attn_weights[j - j0] = score;
+        max_score = std::max(max_score, score);
       }
 
-      // Exp and sum
+      if (has_sinks) {
+        max_score = std::max(max_score, sink_logit);
+      }
+
+      // Softmax with optional sink (numerically stable)
       T sum_exp = 0;
-      for (int64_t j = 0; j <= i; ++j) {
-        scores[i * seq_len + j] = std::exp(scores[i * seq_len + j] - max_score);
-        sum_exp += scores[i * seq_len + j];
+      for (int64_t jj = 0; jj < span; ++jj) {
+        attn_weights[jj] = std::exp(attn_weights[jj] - max_score);
+        sum_exp += attn_weights[jj];
       }
 
-      // Normalize
-      if (sum_exp > 0) {
-        for (int64_t j = 0; j <= i; ++j) {
-          scores[i * seq_len + j] /= sum_exp;
-        }
+      if (has_sinks) {
+        sum_exp += std::exp(sink_logit - max_score);
       }
-      // Future positions remain -inf (or 0 after exp)
-      for (int64_t j = i + 1; j < seq_len; ++j) {
-        scores[i * seq_len + j] = 0;
+      
+      const T inv_sum = sum_exp > 0 ? T(1) / sum_exp : T(0);
+      for (int64_t jj = 0; jj < span; ++jj) {
+        attn_weights[jj] *= inv_sum;
       }
-    }
 
-    // Output = attention @ V
-    for (int64_t i = 0; i < seq_len; ++i) {
+      // Weighted sum: output = softmax(scores) @ V
       for (int64_t d = 0; d < head_dim_; ++d) {
-        T sum = 0;
-        for (int64_t j = 0; j < seq_len; ++j) {
-          sum += scores[i * seq_len + j] * get_v(v_data, batch_idx, kv_head_idx, j, d, seq_len);
+        T out = 0;
+        for (int64_t j = j0; j <= j1; ++j) {
+          out += attn_weights[j - j0] * get_v(v_data, batch_idx, kv_head_idx, j, d, seq_len);
         }
-        set_output(out_data, batch_idx, q_head_idx, i, d, sum, seq_len);
+        set_output(out_data, batch_idx, q_head_idx, i, d, out, seq_len);
       }
     }
   }
 
-  // Helper functions to access Q/K/V with proper indexing
+  // Indexing helpers for packed Q/K/V tensors
   template <typename T>
   T get_q(const T* q_data, int64_t batch, int64_t head, int64_t pos, int64_t dim,
           int64_t seq_len) const {
-    // Q shape: [batch, seq_len, num_q_heads * head_dim]
-    // Indexing: [batch][pos][head][dim]
+    // Shape: [batch, seq_len, num_q_heads * head_dim]
     int64_t idx = (batch * seq_len + pos) * num_q_heads_ * head_dim_ + head * head_dim_ + dim;
     return q_data[idx];
   }
@@ -196,7 +238,7 @@ class grouped_attention_node : public variadic_op_node {
   template <typename T>
   T get_k(const T* k_data, int64_t batch, int64_t head, int64_t pos, int64_t dim,
           int64_t seq_len) const {
-    // K shape: [batch, seq_len, num_kv_heads * head_dim]
+    // Shape: [batch, seq_len, num_kv_heads * head_dim]
     int64_t idx = (batch * seq_len + pos) * num_kv_heads_ * head_dim_ + head * head_dim_ + dim;
     return k_data[idx];
   }
@@ -204,7 +246,7 @@ class grouped_attention_node : public variadic_op_node {
   template <typename T>
   T get_v(const T* v_data, int64_t batch, int64_t head, int64_t pos, int64_t dim,
           int64_t seq_len) const {
-    // V shape: [batch, seq_len, num_kv_heads * head_dim]
+    // Shape: [batch, seq_len, num_kv_heads * head_dim]
     int64_t idx = (batch * seq_len + pos) * num_kv_heads_ * head_dim_ + head * head_dim_ + dim;
     return v_data[idx];
   }
@@ -212,7 +254,7 @@ class grouped_attention_node : public variadic_op_node {
   template <typename T>
   void set_output(T* out_data, int64_t batch, int64_t head, int64_t pos, int64_t dim, T value,
                   int64_t seq_len) const {
-    // Output shape: [batch, seq_len, num_q_heads * head_dim]
+    // Shape: [batch, seq_len, num_q_heads * head_dim]
     int64_t idx = (batch * seq_len + pos) * num_q_heads_ * head_dim_ + head * head_dim_ + dim;
     out_data[idx] = value;
   }
