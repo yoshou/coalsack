@@ -21,7 +21,7 @@ namespace coalsack {
 class expert_mlp_node : public variadic_op_node {
  public:
   explicit expert_mlp_node(int expert_id = 0)
-      : variadic_op_node("expert_mlp", 7), expert_id_(expert_id) {}
+      : variadic_op_node("expert_mlp", 8), expert_id_(expert_id) {}
 
   int get_expert_id() const { return expert_id_; }
 
@@ -31,8 +31,8 @@ class expert_mlp_node : public variadic_op_node {
  protected:
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
     // Validate input count
-    if (inputs.size() != 7) {
-      throw std::runtime_error("expert_mlp: expected 7 inputs (hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down), got " + 
+    if (inputs.size() != 8) {
+      throw std::runtime_error("expert_mlp: expected 8 inputs (hidden_states, weights, biases, selected_expert_ids), got " + 
                                std::to_string(inputs.size()));
     }
 
@@ -43,6 +43,13 @@ class expert_mlp_node : public variadic_op_node {
     const auto& b_up = inputs[4];
     const auto& b_gate = inputs[5];
     const auto& b_down = inputs[6];
+    const auto& selected_expert_ids = inputs[7];
+
+    // Check if this expert is selected (early return optimization)
+    if (!is_expert_selected(selected_expert_ids, expert_id_)) {
+      // Return empty tensor to signal non-selection
+      return dynamic_tensor(dtype::float32, {0});
+    }
 
     // Validate hidden_states shape: [batch, seq_len, hidden_dim]
     if (hidden_states.ndim() != 3) {
@@ -240,6 +247,29 @@ class expert_mlp_node : public variadic_op_node {
         }
       }
     }
+  }
+
+  // Check if expert_id is in selected_expert_ids (O(top_k) linear search, typically ~4 elements)
+  bool is_expert_selected(const dynamic_tensor& selected_ids, int expert_id) const {
+    if (selected_ids.ndim() != 1) {
+      throw std::runtime_error("expert_mlp: selected_expert_ids must be 1D, got " + 
+                               std::to_string(selected_ids.ndim()) + "D");
+    }
+
+    if (selected_ids.get_dtype() != dtype::int32) {
+      throw std::runtime_error("expert_mlp: selected_expert_ids must be int32");
+    }
+
+    const int32_t* ids = selected_ids.data_ptr<int32_t>();
+    int64_t num_selected = selected_ids.dim(0);
+
+    // O(top_k) linear search (top_k is typically 4, so this is very fast)
+    for (int64_t i = 0; i < num_selected; ++i) {
+      if (ids[i] == expert_id) {
+        return true;
+      }
+    }
+    return false;
   }
 };
 

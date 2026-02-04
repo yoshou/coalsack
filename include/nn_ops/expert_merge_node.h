@@ -41,18 +41,27 @@ class expert_merge_node : public variadic_op_node {
     int64_t batch = router_output.dim(0);
     int64_t seq_len = router_output.dim(1);
 
-    // Get hidden_dim from first expert output
-    const auto& first_expert = inputs[1];
-    if (first_expert.ndim() != 3 || first_expert.dim(0) != batch || first_expert.dim(1) != seq_len) {
-      throw std::runtime_error("expert_merge: expert output shape mismatch");
-    }
-    int64_t hidden_dim = first_expert.dim(2);
-
-    // Verify all expert outputs have same shape
+    // Get hidden_dim from first non-empty expert output
+    int64_t hidden_dim = 0;
     for (int i = 1; i <= num_experts_; ++i) {
       const auto& expert_out = inputs[i];
-      if (expert_out.shape() != first_expert.shape()) {
-        throw std::runtime_error("expert_merge: all expert outputs must have same shape");
+      if (expert_out.ndim() == 3 && expert_out.dim(0) > 0) {
+        hidden_dim = expert_out.dim(2);
+        break;
+      }
+    }
+
+    if (hidden_dim == 0) {
+      throw std::runtime_error("expert_merge: no non-empty expert outputs found");
+    }
+
+    // Verify all non-empty expert outputs have same shape
+    for (int i = 1; i <= num_experts_; ++i) {
+      const auto& expert_out = inputs[i];
+      if (expert_out.ndim() == 3 && expert_out.dim(0) > 0) {
+        if (expert_out.dim(0) != batch || expert_out.dim(1) != seq_len || expert_out.dim(2) != hidden_dim) {
+          throw std::runtime_error("expert_merge: all non-empty expert outputs must have same shape");
+        }
       }
     }
 
@@ -60,9 +69,12 @@ class expert_merge_node : public variadic_op_node {
     std::vector<int64_t> output_shape = {batch, seq_len, hidden_dim};
     dynamic_tensor output(dtype::float32, output_shape);
 
-    if (router_output.get_dtype() == dtype::float32 && first_expert.get_dtype() == dtype::float32) {
-      const float* router_data = router_output.data_ptr<float>();
-      float* out_data = output.data_ptr<float>();
+    if (router_output.get_dtype() != dtype::float32) {
+      throw std::runtime_error("expert_merge: only float32 supported");
+    }
+
+    const float* router_data = router_output.data_ptr<float>();
+    float* out_data = output.data_ptr<float>();
 
       // Initialize output to zero
       std::memset(out_data, 0, output.numel() * sizeof(float));
@@ -86,6 +98,12 @@ class expert_merge_node : public variadic_op_node {
 
             // Get expert output (inputs[1 + expert_idx])
             const auto& expert_output = inputs[1 + expert_idx];
+
+            // Skip empty tensors (non-selected experts return [0])
+            if (expert_output.ndim() == 0 || expert_output.dim(0) == 0) {
+              continue;
+            }
+
             const float* expert_data = expert_output.data_ptr<float>();
             int64_t expert_base = (b * seq_len + s) * hidden_dim;
 
@@ -96,9 +114,6 @@ class expert_merge_node : public variadic_op_node {
           }
         }
       }
-    } else {
-      throw std::runtime_error("expert_merge: only float32 supported");
-    }
 
     return output;
   }
