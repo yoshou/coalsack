@@ -55,6 +55,10 @@ class gpt_oss_engine {
 
   // Sample next token from logits
   uint32_t sample_token(const float* logits, int64_t vocab_size, float temperature);
+
+  // KV cache management
+  void initialize_kv_caches();
+  void reset_kv_caches();
 };
 
 }  // namespace coalsack

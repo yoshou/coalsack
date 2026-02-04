@@ -19,6 +19,7 @@
 #include "nn_ops/add_node.h"
 #include "nn_ops/constant_node.h"
 #include "nn_ops/expert_selector_node.h"
+#include "nn_ops/grouped_attention_node.h"
 #include "nn_ops/matmul_transpose_mixed_node.h"
 #include "nn_ops/reshape_node.h"
 #include "result_message_nodes.h"
@@ -38,6 +39,9 @@ struct gpt_oss_engine::impl {
 
   // Constant nodes (for weight tensors, need frame source connection)
   std::vector<std::shared_ptr<constant_node>> constant_nodes;
+  
+  // Attention nodes (for KV cache management)
+  std::vector<std::shared_ptr<grouped_attention_node>> attention_nodes;
 
   // Model config (from GGUF metadata)
   int64_t num_layers = 24;
@@ -692,6 +696,9 @@ void gpt_oss_engine::build_transformer_graph() {
     attn->set_config(pimpl_->num_q_heads, pimpl_->num_kv_heads, layer_head_dim,
                      pimpl_->attention_sliding_window, attn_sinks);
 
+    // Store attention node for KV cache management
+    pimpl_->attention_nodes.push_back(attn);
+
     auto attn_sync = std::make_shared<result_message_sync_node>();
     attn_sync->set_input(q_rope_out, layer_prefix + ".q_rope_out");
     attn_sync->set_input(k_rope_out, layer_prefix + ".k_rope_out");
@@ -916,6 +923,9 @@ void gpt_oss_engine::build_transformer_graph() {
   pimpl_->proc = std::make_unique<graph_proc>();
   pimpl_->proc->deploy(pimpl_->graph);
 
+  // Initialize KV caches after graph is built
+  initialize_kv_caches();
+
   std::cout << "✓ Transformer graph built\n";
 }
 
@@ -980,6 +990,9 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
     }
   }
 
+  // Reset KV caches at the start of generation
+  reset_kv_caches();
+
   std::string generated_text;
   std::unordered_map<std::string, dynamic_tensor> outputs;
   bool output_received = false;
@@ -993,11 +1006,24 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
   for (size_t step = 0; step < max_tokens; ++step) {
     output_received = false;
 
-    std::vector<int64_t> shape = {1, static_cast<int64_t>(tokens.size())};
-    dynamic_tensor input_tensor(dtype::int32, shape);
-    int32_t* data = input_tensor.data_ptr<int32_t>();
-    for (size_t j = 0; j < tokens.size(); ++j) {
-      data[j] = static_cast<int32_t>(tokens[j]);
+    std::vector<int64_t> shape;
+    dynamic_tensor input_tensor;
+
+    if (step == 0) {
+      // ===== Prefill phase: process all prompt tokens =====
+      shape = {1, static_cast<int64_t>(tokens.size())};
+      input_tensor = dynamic_tensor(dtype::int32, shape);
+      int32_t* data = input_tensor.data_ptr<int32_t>();
+      for (size_t j = 0; j < tokens.size(); ++j) {
+        data[j] = static_cast<int32_t>(tokens[j]);
+      }
+      std::cout << "Prefill: processing " << tokens.size() << " tokens\n";
+    } else {
+      // ===== Decode phase: process only the last token =====
+      shape = {1, 1};
+      input_tensor = dynamic_tensor(dtype::int32, shape);
+      int32_t* data = input_tensor.data_ptr<int32_t>();
+      data[0] = static_cast<int32_t>(tokens.back());
     }
 
     pimpl_->input_node->set_tensor("input_ids", input_tensor);
@@ -1077,5 +1103,43 @@ int64_t gpt_oss_engine::get_vocab_size() const { return pimpl_->vocab_size; }
 int64_t gpt_oss_engine::get_num_layers() const { return pimpl_->num_layers; }
 
 int64_t gpt_oss_engine::get_hidden_dim() const { return pimpl_->hidden_dim; }
+
+void gpt_oss_engine::initialize_kv_caches() {
+  if (pimpl_->attention_nodes.empty()) {
+    std::cout << "No attention nodes found, skipping KV cache initialization\n";
+    return;
+  }
+
+  std::cout << "Initializing KV caches for " << pimpl_->attention_nodes.size() << " layers...\n";
+  
+  // Cache shape: [batch=1, num_kv_heads, max_seq_len, head_dim]
+  int64_t batch = 1;
+  int64_t max_seq_len = pimpl_->max_seq_len;
+  
+  size_t cache_size_mb = 0;
+  
+  for (auto& attn_node : pimpl_->attention_nodes) {
+    // Allocate K and V caches
+    dynamic_tensor k_cache(dtype::float32, {batch, pimpl_->num_kv_heads, max_seq_len, pimpl_->head_dim});
+    dynamic_tensor v_cache(dtype::float32, {batch, pimpl_->num_kv_heads, max_seq_len, pimpl_->head_dim});
+    
+    // Initialize to zero
+    std::memset(k_cache.data_ptr<float>(), 0, k_cache.bytes());
+    std::memset(v_cache.data_ptr<float>(), 0, v_cache.bytes());
+    
+    cache_size_mb += k_cache.bytes() + v_cache.bytes();
+    
+    attn_node->set_k_cache(k_cache);
+    attn_node->set_v_cache(v_cache);
+  }
+  
+  std::cout << "✓ KV caches initialized: " << (cache_size_mb / (1024 * 1024)) << " MB\n";
+}
+
+void gpt_oss_engine::reset_kv_caches() {
+  for (auto& attn_node : pimpl_->attention_nodes) {
+    attn_node->reset_cache();
+  }
+}
 
 }  // namespace coalsack
