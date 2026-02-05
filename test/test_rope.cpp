@@ -86,11 +86,12 @@ bool test_rope_rotation() {
   dynamic_tensor input(dtype::float32, input_shape);
   float* input_data = input.data_ptr<float>();
 
-  // Position 0: [1, 0, 1, 0] (pairs: [1,0], [1,0])
-  input_data[0] = 1.0f;
-  input_data[1] = 0.0f;
-  input_data[2] = 1.0f;
-  input_data[3] = 0.0f;
+  // Position 0: [1, 0, 1, 0]
+  // NeoX-style Split: pairs are (x[0], x[2]) and (x[1], x[3])
+  input_data[0] = 1.0f;  // first half, dim 0
+  input_data[1] = 0.0f;  // first half, dim 1
+  input_data[2] = 1.0f;  // second half, dim 0
+  input_data[3] = 0.0f;  // second half, dim 1
 
   // Position 1: [1, 0, 1, 0]
   input_data[4] = 1.0f;
@@ -107,32 +108,34 @@ bool test_rope_rotation() {
 
   const float* output_data = output.data_ptr<float>();
 
-  // At position 0, angle for dimension 0 is 0, so rotation by 0 should keep [1,0]
+  // At position 0, angle for dimension 0 is 0, so rotation by 0 should keep [1,1]
   // freq_0 = 10000^(-2*0/4) = 10000^0 = 1
   // angle_0 = 0 * 1 = 0
   // cos(0) = 1, sin(0) = 0
-  // [1,0] rotated by angle 0 → [1*1 - 0*0, 1*0 + 0*1] = [1, 0]
+  // Pair (x[0]=1, x[2]=1) rotated by angle 0
+  // → out[0] = 1*1 - 1*0 = 1, out[2] = 1*0 + 1*1 = 1
 
-  // Check position 0, pair 0
-  float expected_00 = 1.0f;
-  float expected_01 = 0.0f;
+  // Check position 0, first half dim 0
+  float expected_00 = 1.0f;  // cos(0) * 1 - sin(0) * 1 = 1
+  float expected_02 = 1.0f;  // sin(0) * 1 + cos(0) * 1 = 1
   if (std::abs(output_data[0] - expected_00) > 1e-5f ||
-      std::abs(output_data[1] - expected_01) > 1e-5f) {
+      std::abs(output_data[2] - expected_02) > 1e-5f) {
     std::cerr << "  ERROR: Position 0, pair 0 mismatch: expected [" << expected_00 << ", "
-              << expected_01 << "], got [" << output_data[0] << ", " << output_data[1] << "]\n";
+              << expected_02 << "], got [" << output_data[0] << ", " << output_data[2] << "]\n";
     return false;
   }
 
   // At position 1, angle for dimension 0 is 1 * freq_0 = 1
-  // [1,0] rotated by angle 1 → [cos(1), sin(1)]
+  // Pair (x[4]=1, x[6]=1) rotated by angle 1
+  // → out[4] = cos(1)*1 - sin(1)*1, out[6] = sin(1)*1 + cos(1)*1
   float angle1 = 1.0f;
-  float expected_10 = std::cos(angle1);
-  float expected_11 = std::sin(angle1);
+  float expected_10 = std::cos(angle1) - std::sin(angle1);  // ~-0.301
+  float expected_12 = std::sin(angle1) + std::cos(angle1);  // ~1.382
 
   if (std::abs(output_data[4] - expected_10) > 1e-5f ||
-      std::abs(output_data[5] - expected_11) > 1e-5f) {
+      std::abs(output_data[6] - expected_12) > 1e-5f) {
     std::cerr << "  ERROR: Position 1, pair 0 mismatch: expected [" << expected_10 << ", "
-              << expected_11 << "], got [" << output_data[4] << ", " << output_data[5] << "]\n";
+              << expected_12 << "], got [" << output_data[4] << ", " << output_data[6] << "]\n";
     return false;
   }
 

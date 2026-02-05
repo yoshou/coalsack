@@ -43,6 +43,9 @@ struct gpt_oss_engine::impl {
   // Attention nodes (for KV cache management)
   std::vector<std::shared_ptr<grouped_attention_node>> attention_nodes;
 
+  // Position tracking for RoPE
+  int64_t cached_position_ = 0;
+
   // Model config (from GGUF metadata)
   int64_t num_layers = 24;
   int64_t hidden_dim = 2880;
@@ -350,6 +353,7 @@ void gpt_oss_engine::build_transformer_graph() {
   extractor->set_input(pimpl_->input_node->get_output(), "default");
 
   auto input_ids_edge = extractor->add_output("input_ids");
+  auto position_ids_edge = extractor->add_output("position_ids");  // Add position_ids
   auto token_embd_weight_edge_raw = extractor->add_output("token_embd.weight");
   auto output_norm_weight_edge = extractor->add_output("output_norm.weight");
   auto output_weight_edge = extractor->add_output("output.weight");
@@ -585,8 +589,15 @@ void gpt_oss_engine::build_transformer_graph() {
     rope_q->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
                pimpl_->rope_scaling_factor, pimpl_->rope_scaling_type,
                pimpl_->rope_scaling_orig_ctx);
-    rope_q->set_input(q_transposed, "default");
-    rope_q->set_input_name(layer_prefix + ".q_transposed");
+    
+    auto rope_q_sync = std::make_shared<result_message_sync_node>();
+    rope_q_sync->set_input(q_transposed, layer_prefix + ".q_transposed");
+    rope_q_sync->set_input(position_ids_edge, "position_ids");
+    rope_q_sync->set_initial_ids({layer_prefix + ".q_transposed", "position_ids"});
+    pimpl_->graph->add_node(rope_q_sync);
+    
+    rope_q->set_input(rope_q_sync->get_output(), "default");
+    rope_q->set_input_names({layer_prefix + ".q_transposed", "position_ids"});
     rope_q->set_output_name(layer_prefix + ".q_rope");
     rope_q->set_node_name(layer_prefix + ".rope_q");
     pimpl_->graph->add_node(rope_q);
@@ -643,8 +654,15 @@ void gpt_oss_engine::build_transformer_graph() {
     rope_k->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
                pimpl_->rope_scaling_factor, pimpl_->rope_scaling_type,
                pimpl_->rope_scaling_orig_ctx);
-    rope_k->set_input(k_transposed, "default");
-    rope_k->set_input_name(layer_prefix + ".k_transposed");
+    
+    auto rope_k_sync = std::make_shared<result_message_sync_node>();
+    rope_k_sync->set_input(k_transposed, layer_prefix + ".k_transposed");
+    rope_k_sync->set_input(position_ids_edge, "position_ids");
+    rope_k_sync->set_initial_ids({layer_prefix + ".k_transposed", "position_ids"});
+    pimpl_->graph->add_node(rope_k_sync);
+    
+    rope_k->set_input(rope_k_sync->get_output(), "default");
+    rope_k->set_input_names({layer_prefix + ".k_transposed", "position_ids"});
     rope_k->set_output_name(layer_prefix + ".k_rope");
     rope_k->set_node_name(layer_prefix + ".rope_k");
     pimpl_->graph->add_node(rope_k);
@@ -990,8 +1008,9 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
     }
   }
 
-  // Reset KV caches at the start of generation
+  // Reset KV caches and position counter at the start of generation
   reset_kv_caches();
+  pimpl_->cached_position_ = 0;
 
   std::string generated_text;
   std::unordered_map<std::string, dynamic_tensor> outputs;
@@ -1008,6 +1027,7 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
 
     std::vector<int64_t> shape;
     dynamic_tensor input_tensor;
+    dynamic_tensor position_ids_tensor;
 
     if (step == 0) {
       // ===== Prefill phase: process all prompt tokens =====
@@ -1017,6 +1037,15 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
       for (size_t j = 0; j < tokens.size(); ++j) {
         data[j] = static_cast<int32_t>(tokens[j]);
       }
+      
+      // Generate position_ids: [0, 1, 2, ..., seq_len-1]
+      position_ids_tensor = dynamic_tensor(dtype::int64, {static_cast<int64_t>(tokens.size())});
+      int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
+      for (size_t j = 0; j < tokens.size(); ++j) {
+        pos_data[j] = static_cast<int64_t>(j);
+      }
+      pimpl_->cached_position_ = tokens.size();
+      
       std::cout << "Prefill: processing " << tokens.size() << " tokens\n";
     } else {
       // ===== Decode phase: process only the last token =====
@@ -1024,9 +1053,16 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
       input_tensor = dynamic_tensor(dtype::int32, shape);
       int32_t* data = input_tensor.data_ptr<int32_t>();
       data[0] = static_cast<int32_t>(tokens.back());
+      
+      // Generate position_ids: [cached_position_] (current absolute position)
+      position_ids_tensor = dynamic_tensor(dtype::int64, {1});
+      int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
+      pos_data[0] = pimpl_->cached_position_;
+      pimpl_->cached_position_++;
     }
 
     pimpl_->input_node->set_tensor("input_ids", input_tensor);
+    pimpl_->input_node->set_tensor("position_ids", position_ids_tensor);
     pimpl_->input_node->set_frame_number(step + 1);
 
     pimpl_->proc->run();

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <iostream>
 #include <vector>
 
 #include "../nn_op_node.h"
@@ -15,6 +16,7 @@ namespace coalsack {
 // 
 // Architecture:
 // - Input format: [batch, num_heads, seq_len, head_dim] in FLOAT32/FLOAT64
+// - Optional position_ids: [batch, seq_len] or [seq_len] in INT32/INT64
 // - Output format: Same shape as input with RoPE applied
 // - Rotation method: NeoX-style (rotate first half with second half)
 // - Scaling support: None, Linear, YaRN (Yet another RoPE extensioN)
@@ -24,10 +26,10 @@ namespace coalsack {
 // - "linear": Simple frequency scaling by 1/scaling_factor
 // - "yarn": Advanced scaling with interpolation and extrapolation mixing
 //           Supports corr-dims for selective dimension scaling
-class rope_node : public unary_op_node {
+class rope_node : public variadic_op_node {
  public:
   rope_node()
-      : unary_op_node("rope"),
+      : variadic_op_node("rope", 1),  // Default: 1 required input (can accept 2)
         head_dim_(0),
         base_(10000.0f),
         scaling_factor_(1.0f),
@@ -39,10 +41,11 @@ class rope_node : public unary_op_node {
         yarn_beta_slow_(1.0f) {}
 
   // Simplified configuration (backward compatible)
-  // Treats scaling_factor as simple linear RoPE scaling
+  // If scaling_factor is 1.0, uses "none" (no scaling), otherwise "linear"
   void set_config(int64_t head_dim, int64_t max_seq_len, float base = 10000.0f,
                   float scaling_factor = 1.0f) {
-    set_config(head_dim, max_seq_len, base, scaling_factor, "linear", /*n_ctx_orig=*/0);
+    std::string scaling_type = (std::abs(scaling_factor - 1.0f) < 1e-6f) ? "none" : "linear";
+    set_config(head_dim, max_seq_len, base, scaling_factor, scaling_type, /*n_ctx_orig=*/0);
   }
 
   // Advanced configuration for RoPE with scaling support
@@ -74,10 +77,17 @@ class rope_node : public unary_op_node {
   }
 
   // Public wrapper for testing
-  dynamic_tensor compute_test(const dynamic_tensor& input) { return compute(input); }
+  dynamic_tensor compute_test(const dynamic_tensor& input) { 
+    return compute({input}); 
+  }
 
  protected:
-  dynamic_tensor compute(const dynamic_tensor& input) override {
+  dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
+    if (inputs.empty() || inputs.size() > 2) {
+      throw std::runtime_error("rope: expected 1 or 2 inputs (tensor, optional position_ids)");
+    }
+    
+    const auto& input = inputs[0];
     const auto& shape = input.shape();
     
     // Validate input shape: must be 4D [batch, num_heads, seq_len, head_dim]
@@ -91,6 +101,52 @@ class rope_node : public unary_op_node {
     int64_t seq_len = shape[2];
     int64_t head_dim = shape[3];
 
+
+    // Parse optional position_ids
+    std::vector<int64_t> position_ids;
+    if (inputs.size() == 2) {
+      const auto& pos_tensor = inputs[1];
+      // Debug prints
+      // std::cout << "RoPE[" << name() << "] Input2 Dims: " << pos_tensor.ndim() << "\n";
+      
+      if (pos_tensor.ndim() != 1 && pos_tensor.ndim() != 2) {
+        throw std::runtime_error("rope: position_ids must be 1D [seq_len] or 2D [batch, seq_len]");
+      }
+      
+      int64_t pos_len = pos_tensor.ndim() == 1 ? pos_tensor.dim(0) : pos_tensor.dim(1);
+      if (pos_len != seq_len) {
+         // Debug info before throwing
+         std::cout << "RoPE Error: pos_len=" << pos_len << ", seq_len=" << seq_len << "\n";
+        throw std::runtime_error("rope: position_ids length mismatch");
+      }
+      
+      position_ids.resize(seq_len);
+      if (pos_tensor.get_dtype() == dtype::int32) {
+        const int32_t* pos_data = pos_tensor.data_ptr<int32_t>();
+        for (int64_t i = 0; i < seq_len; ++i) {
+          position_ids[i] = static_cast<int64_t>(pos_data[i]);
+        }
+      } else if (pos_tensor.get_dtype() == dtype::int64) {
+        const int64_t* pos_data = pos_tensor.data_ptr<int64_t>();
+        for (int64_t i = 0; i < seq_len; ++i) {
+          position_ids[i] = pos_data[i];
+        }
+      } else {
+        throw std::runtime_error("rope: position_ids must be int32 or int64");
+      }
+      
+      // Debug print first few positions
+      if (seq_len > 0) {
+          // std::cout << "RoPE[" << name() << "] Positions: " << position_ids[0] << (seq_len > 1 ? ", " + std::to_string(position_ids[1]) : "") << "...\n";
+      }
+
+    } else {
+      // Default: sequential positions 0, 1, 2, ...
+      position_ids.resize(seq_len);
+      for (int64_t i = 0; i < seq_len; ++i) {
+        position_ids[i] = i;
+      }
+    }
     // Validate head_dim matches configuration
     if (head_dim != head_dim_) {
       throw std::runtime_error("rope: head_dim mismatch, expected " + std::to_string(head_dim_) +
@@ -110,9 +166,9 @@ class rope_node : public unary_op_node {
 
     // Dispatch to type-specific implementation
     if (input.get_dtype() == dtype::float32) {
-      compute_impl<float>(input, output, batch, num_heads, seq_len, head_dim);
+      compute_impl<float>(input, output, batch, num_heads, seq_len, head_dim, position_ids);
     } else if (input.get_dtype() == dtype::float64) {
-      compute_impl<double>(input, output, batch, num_heads, seq_len, head_dim);
+      compute_impl<double>(input, output, batch, num_heads, seq_len, head_dim, position_ids);
     } else {
       throw std::runtime_error("rope: only FLOAT32 and FLOAT64 supported");
     }
@@ -223,7 +279,8 @@ class rope_node : public unary_op_node {
   // Computes cos/sin on-the-fly for simplicity
   template <typename T>
   void compute_impl(const dynamic_tensor& input, dynamic_tensor& output, int64_t batch,
-                    int64_t num_heads, int64_t seq_len, int64_t head_dim) {
+                    int64_t num_heads, int64_t seq_len, int64_t head_dim,
+                    const std::vector<int64_t>& position_ids) {
     const T* x = input.data_ptr<T>();
     T* out = output.data_ptr<T>();
 
@@ -233,18 +290,22 @@ class rope_node : public unary_op_node {
     for (int64_t b = 0; b < batch; ++b) {
       for (int64_t h = 0; h < num_heads; ++h) {
         for (int64_t pos = 0; pos < seq_len; ++pos) {
+          // Get absolute position from position_ids
+          int64_t absolute_pos = position_ids[pos];
+          
           // Rotate each dimension pair with on-the-fly cos/sin computation
           for (int64_t d = 0; d < half_dim; ++d) {
             // Calculate index for input
             int64_t base_idx = ((b * num_heads + h) * seq_len + pos) * head_dim;
 
             // Get dimension pair to rotate: (x[d], x[d+half_dim])
+            // NeoX-style: split first half and second half
             T x0 = x[base_idx + d];
             T x1 = x[base_idx + d + half_dim];
 
             // Compute theta and magnitude scale for this position and dimension
             float theta, mscale;
-            compute_theta_mscale(pos, d, theta, mscale);
+            compute_theta_mscale(absolute_pos, d, theta, mscale);
 
             // Compute cos/sin values
             T cos_val = static_cast<T>(std::cos(theta) * mscale);
