@@ -127,8 +127,8 @@ class expert_mlp_node : public variadic_op_node {
  private:
   int expert_id_;
 
-  // Convert fp16 → fp32 using F16C intrinsics
-  __attribute__((target("f16c")))
+  // Convert fp16 → fp32 using F16C + AVX2 SIMD
+  __attribute__((target("f16c,avx2,fma")))
   void compute_token(const float* hidden_vec,
                      const uint16_t* w_up_data,
                      const uint16_t* w_gate_data,
@@ -151,10 +151,37 @@ class expert_mlp_node : public variadic_op_node {
     // Access w[expert_id][out_idx][in_idx] via: expert_id * (expert_ffn_dim * hidden_dim) + out_idx * hidden_dim + in_idx
     // Access b[expert_id][out_idx] via: expert_id * expert_ffn_dim + out_idx
     for (int64_t out_idx = 0; out_idx < expert_ffn_dim; ++out_idx) {
-      float up_sum = 0.0f;
-      float gate_sum = 0.0f;
+      __m256 up_vec = _mm256_setzero_ps();
+      __m256 gate_vec = _mm256_setzero_ps();
       
-      for (int64_t in_idx = 0; in_idx < hidden_dim; ++in_idx) {
+      int64_t in_idx = 0;
+      // Process 8 elements at a time with AVX2
+      for (; in_idx + 7 < hidden_dim; in_idx += 8) {
+        // Weight index: w[expert_id_][out_idx][in_idx]
+        int64_t weight_idx = expert_id_ * (expert_ffn_dim * hidden_dim) + out_idx * hidden_dim + in_idx;
+        
+        // Load 8 FP16 weights and convert to FP32
+        __m128i w_up_fp16 = _mm_loadu_si128((__m128i*)(w_up_data + weight_idx));
+        __m128i w_gate_fp16 = _mm_loadu_si128((__m128i*)(w_gate_data + weight_idx));
+        __m256 w_up_fp32 = _mm256_cvtph_ps(w_up_fp16);
+        __m256 w_gate_fp32 = _mm256_cvtph_ps(w_gate_fp16);
+        
+        // Load 8 hidden states
+        __m256 hidden = _mm256_loadu_ps(hidden_vec + in_idx);
+        
+        // FMA: up_vec += hidden * w_up, gate_vec += hidden * w_gate
+        up_vec = _mm256_fmadd_ps(hidden, w_up_fp32, up_vec);
+        gate_vec = _mm256_fmadd_ps(hidden, w_gate_fp32, gate_vec);
+      }
+      
+      // Horizontal sum of 8 elements
+      float up_sum = up_vec[0] + up_vec[1] + up_vec[2] + up_vec[3] + 
+                     up_vec[4] + up_vec[5] + up_vec[6] + up_vec[7];
+      float gate_sum = gate_vec[0] + gate_vec[1] + gate_vec[2] + gate_vec[3] + 
+                       gate_vec[4] + gate_vec[5] + gate_vec[6] + gate_vec[7];
+      
+      // Process remaining elements
+      for (; in_idx < hidden_dim; ++in_idx) {
         // Weight index: w[expert_id_][out_idx][in_idx]
         int64_t weight_idx = expert_id_ * (expert_ffn_dim * hidden_dim) + out_idx * hidden_dim + in_idx;
         float w_up_f32 = _cvtsh_ss(w_up_data[weight_idx]);
@@ -185,9 +212,31 @@ class expert_mlp_node : public variadic_op_node {
     // Access w[expert_id][out_idx][in_idx] via: expert_id * (hidden_dim * expert_ffn_dim) + out_idx * expert_ffn_dim + in_idx
     // Access b[expert_id][out_idx] via: expert_id * hidden_dim + out_idx
     for (int64_t out_idx = 0; out_idx < hidden_dim; ++out_idx) {
-      float sum = 0.0f;
+      __m256 sum_vec = _mm256_setzero_ps();
       
-      for (int64_t in_idx = 0; in_idx < expert_ffn_dim; ++in_idx) {
+      int64_t in_idx = 0;
+      // Process 8 elements at a time with AVX2
+      for (; in_idx + 7 < expert_ffn_dim; in_idx += 8) {
+        // Weight index: w_down[expert_id_][out_idx][in_idx]
+        int64_t weight_idx = expert_id_ * (hidden_dim * expert_ffn_dim) + out_idx * expert_ffn_dim + in_idx;
+        
+        // Load 8 FP16 weights and convert to FP32
+        __m128i w_down_fp16 = _mm_loadu_si128((__m128i*)(w_down_data + weight_idx));
+        __m256 w_down_fp32 = _mm256_cvtph_ps(w_down_fp16);
+        
+        // Load 8 activated values
+        __m256 act = _mm256_loadu_ps(activated.data() + in_idx);
+        
+        // FMA: sum_vec += act * w_down
+        sum_vec = _mm256_fmadd_ps(act, w_down_fp32, sum_vec);
+      }
+      
+      // Horizontal sum of 8 elements
+      float sum = sum_vec[0] + sum_vec[1] + sum_vec[2] + sum_vec[3] + 
+                  sum_vec[4] + sum_vec[5] + sum_vec[6] + sum_vec[7];
+      
+      // Process remaining elements
+      for (; in_idx < expert_ffn_dim; ++in_idx) {
         // Weight index: w_down[expert_id_][out_idx][in_idx]
         int64_t weight_idx = expert_id_ * (hidden_dim * expert_ffn_dim) + out_idx * expert_ffn_dim + in_idx;
         float w_down_f32 = _cvtsh_ss(w_down_data[weight_idx]);
