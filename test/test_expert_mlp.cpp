@@ -82,8 +82,12 @@ bool test_expert_mlp_basic() {
   // Create expert MLP node for expert 0
   expert_mlp_node node(0);
 
+  // Create selected_expert_ids (select expert 0)
+  dynamic_tensor selected_expert_ids(dtype::int32, {1});
+  selected_expert_ids.data_ptr<int32_t>()[0] = 0;
+
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape matches input shape
@@ -175,8 +179,12 @@ bool test_modified_swiglu_activation() {
   // Create expert MLP node
   expert_mlp_node node(0);
 
+  // Create selected_expert_ids (select expert 0)
+  dynamic_tensor selected_expert_ids(dtype::int32, {1});
+  selected_expert_ids.data_ptr<int32_t>()[0] = 0;
+
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
   dynamic_tensor output = node.compute_test(inputs);
 
   const float* output_data = output.data_ptr<float>();
@@ -243,7 +251,9 @@ bool test_multiple_experts() {
     }
 
     // Compute with 3D weights and biases
-    std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
+    dynamic_tensor selected_expert_ids(dtype::int32, {1});
+    selected_expert_ids.data_ptr<int32_t>()[0] = expert_id;
+    std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
     dynamic_tensor output = node.compute_test(inputs);
 
     // Verify output shape
@@ -310,8 +320,12 @@ bool test_gpt_oss_scale() {
   // Create expert MLP node
   expert_mlp_node node(0);
 
+  // Create selected_expert_ids (select expert 0)
+  dynamic_tensor selected_expert_ids(dtype::int32, {1});
+  selected_expert_ids.data_ptr<int32_t>()[0] = 0;
+
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape
