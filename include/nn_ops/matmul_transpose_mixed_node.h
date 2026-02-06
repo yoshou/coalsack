@@ -2,6 +2,7 @@
 
 #include "../gguf_dequant.h"
 #include "../nn_op_node.h"
+#include <immintrin.h>
 
 namespace coalsack {
 
@@ -24,7 +25,6 @@ class matmul_transpose_mixed_node : public binary_op_node {
     // Convert b to fp32 if needed
     dynamic_tensor b_fp32 = to_fp32(b);
 
-    // Now both inputs are fp32
     if (a.get_dtype() != dtype::float32 || b_fp32.get_dtype() != dtype::float32) {
       throw std::runtime_error("matmul_transpose_mixed: inputs must be fp32 or fp16");
     }
@@ -69,29 +69,17 @@ class matmul_transpose_mixed_node : public binary_op_node {
     float* output_data = output.data_ptr<float>();
 
     int64_t a_matrix_size = a_rows * a_cols;
-    int64_t b_matrix_size = b_cols * b_rows; // b_cols * b_rows = N * K
+    int64_t b_matrix_size = b_cols * b_rows;
     int64_t output_matrix_size = a_rows * b_cols;
 
     for (int64_t batch = 0; batch < batch_size; ++batch) {
-      int64_t a_batch_idx = batch;
-      int64_t b_batch_idx = batch;
-
-      const float* a_matrix = a_data + (a_batch_idx % (a.numel() / a_matrix_size)) * a_matrix_size;
+      const float* a_matrix =
+          a_data + (batch % (a.numel() / a_matrix_size)) * a_matrix_size;
       const float* b_matrix =
-          b_data + (b_batch_idx % (b_fp32.numel() / b_matrix_size)) * b_matrix_size;
+          b_data + (batch % (b_fp32.numel() / b_matrix_size)) * b_matrix_size;
       float* output_matrix = output_data + batch * output_matrix_size;
 
-      // Compute A @ B.T
-      for (int64_t i = 0; i < a_rows; ++i) {
-        for (int64_t j = 0; j < b_cols; ++j) {
-          float sum = 0.0f;
-          for (int64_t k = 0; k < a_cols; ++k) {
-            // A[i, k] * B.T[k, j] = A[i, k] * B[j, k]
-            sum += a_matrix[i * a_cols + k] * b_matrix[j * b_rows + k];
-          }
-          output_matrix[i * b_cols + j] = sum;
-        }
-      }
+      compute_matmul_avx2(a_matrix, b_matrix, output_matrix, a_rows, a_cols, b_cols, b_rows);
     }
 
     return output;
@@ -101,17 +89,14 @@ class matmul_transpose_mixed_node : public binary_op_node {
   // Convert fp16 → fp32 (or pass through fp32)
   static dynamic_tensor to_fp32(const dynamic_tensor& input) {
     if (input.get_dtype() == dtype::float32) {
-      return input;  // Already fp32
+      return input;
     }
 
     if (input.get_dtype() != dtype::float16) {
-      throw std::runtime_error("matmul_transpose_mixed: only fp32 and fp16 supported, got " +
-                               dtype_name(input.get_dtype()));
+      throw std::runtime_error("matmul_transpose_mixed: only fp32 and fp16 supported");
     }
 
-    // Convert fp16 → fp32
     dynamic_tensor output(dtype::float32, input.shape());
-
     const uint16_t* src = input.data_ptr<uint16_t>();
     float* dst = output.data_ptr<float>();
 
@@ -121,6 +106,41 @@ class matmul_transpose_mixed_node : public binary_op_node {
 
     return output;
   }
+
+  // Compute A @ B.T with AVX2 (vectorize along k dimension)
+  __attribute__((target("avx2,fma")))
+  static void compute_matmul_avx2(const float* a_matrix, const float* b_matrix,
+                                   float* output_matrix, int64_t a_rows, int64_t a_cols,
+                                   int64_t b_cols, int64_t b_rows) {
+    for (int64_t i = 0; i < a_rows; ++i) {
+      for (int64_t j = 0; j < b_cols; ++j) {
+        __m256 sum_vec = _mm256_setzero_ps();
+        
+        int64_t k = 0;
+        for (; k + 8 <= a_cols; k += 8) {
+          __m256 a_vec = _mm256_loadu_ps(&a_matrix[i * a_cols + k]);
+          __m256 b_vec = _mm256_loadu_ps(&b_matrix[j * b_rows + k]);
+          sum_vec = _mm256_fmadd_ps(a_vec, b_vec, sum_vec);
+        }
+        
+        // Horizontal sum
+        __m128 sum_high = _mm256_extractf128_ps(sum_vec, 1);
+        __m128 sum_low = _mm256_castps256_ps128(sum_vec);
+        sum_low = _mm_add_ps(sum_low, sum_high);
+        sum_low = _mm_hadd_ps(sum_low, sum_low);
+        sum_low = _mm_hadd_ps(sum_low, sum_low);
+        float sum = _mm_cvtss_f32(sum_low);
+        
+        // Scalar remainder
+        for (; k < a_cols; ++k) {
+          sum += a_matrix[i * a_cols + k] * b_matrix[j * b_rows + k];
+        }
+        
+        output_matrix[i * b_cols + j] = sum;
+      }
+    }
+  }
+
 };
 
 }  // namespace coalsack
