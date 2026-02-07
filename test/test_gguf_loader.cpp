@@ -1,7 +1,9 @@
 #include <chrono>
 #include <iostream>
+#include <vector>
 
 #include "gguf_loader.h"
+#include "gguf_multi_loader.h"
 
 using namespace coalsack;
 
@@ -9,18 +11,29 @@ int main(int argc, char** argv) {
   std::cout << "Testing GGUF Loader\n";
   std::cout << "===================\n\n";
 
-  std::string model_path = "/workspaces/stargazer/models/gpt-oss-20b-GGUF/gpt-oss-20b-Q4_K_M.gguf";
-  if (argc > 1) {
-    model_path = argv[1];
+  // Collect all file paths from command line
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <gguf_file1> [gguf_file2] ...\n";
+    return 1;
   }
 
-  std::cout << "Loading GGUF: " << model_path << "\n";
+  std::vector<std::string> file_paths;
+  for (int i = 1; i < argc; i++) {
+    file_paths.push_back(argv[i]);
+  }
+
+  std::cout << "GGUF file(s): " << file_paths.size() << "\n";
+  for (size_t i = 0; i < file_paths.size(); i++) {
+    std::cout << "  [" << (i+1) << "] " << file_paths[i] << "\n";
+  }
+  std::cout << "\n";
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  gguf_loader loader;
-  if (!loader.load(model_path)) {
-    std::cerr << "Failed to load GGUF file\n";
+  // Use multi_loader for unified interface
+  gguf_multi_loader loader;
+  if (!loader.load(file_paths)) {
+    std::cerr << "Failed to load GGUF file(s)\n";
     return 1;
   }
 
@@ -33,7 +46,9 @@ int main(int argc, char** argv) {
   std::cout << "Basic Information:\n";
   std::cout << "  Version: " << loader.get_version() << "\n";
   std::cout << "  Tensor count: " << loader.get_tensor_count() << "\n";
-  std::cout << "  Metadata entries: " << loader.get_kv_count() << "\n\n";
+  std::cout << "  Metadata entries: " << loader.get_kv_count() << "\n";
+  std::cout << "  Files: " << file_paths.size() << "\n";
+  std::cout << "\n";
 
   // Test: Metadata
   std::cout << "\nAll Metadata:\n";

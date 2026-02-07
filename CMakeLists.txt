@@ -31,6 +31,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_client.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/onnx_importer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gguf_loader.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/gguf_multi_loader.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt2_tokenizer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/chat_template.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt_oss_engine.cpp
@@ -57,6 +58,7 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/graph_proc_img.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gguf_types.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gguf_loader.h"
+    "${CMAKE_CURRENT_LIST_DIR}/include/gguf_multi_loader.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gpt2_tokenizer.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/chat_template.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gpt_oss_engine.h"

@@ -27,8 +27,9 @@ class gpt_oss_engine {
   explicit gpt_oss_engine(const config& cfg);
   ~gpt_oss_engine();
 
-  // Load model from GGUF file
+  // Load model from GGUF file(s)
   bool load(const std::string& gguf_path);
+  bool load(const std::vector<std::string>& gguf_paths);
 
   // Generate text from prompt
   // Returns generated text (without prompt)

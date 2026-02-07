@@ -11,7 +11,7 @@
 #include <random>
 
 #include "gguf_dequant.h"
-#include "gguf_loader.h"
+#include "gguf_multi_loader.h"
 #include "gpt2_tokenizer.h"
 #include "graph_proc.h"
 #include "model_io_nodes.h"
@@ -27,7 +27,7 @@ namespace coalsack {
 
 struct gpt_oss_engine::impl {
   // Components
-  std::unique_ptr<gguf_loader> loader;
+  std::unique_ptr<gguf_multi_loader> loader;
   std::unique_ptr<gpt2_tokenizer> tokenizer;
   std::shared_ptr<subgraph> graph;
   std::unique_ptr<graph_proc> proc;
@@ -71,17 +71,16 @@ struct gpt_oss_engine::impl {
   std::unordered_map<std::string, dynamic_tensor> weights;
 
   bool loaded = false;
-  std::string model_path;
 };
 
 gpt_oss_engine::gpt_oss_engine() : pimpl_(std::make_unique<impl>()) {
-  pimpl_->loader = std::make_unique<gguf_loader>();
+  pimpl_->loader = std::make_unique<gguf_multi_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = std::numeric_limits<int64_t>::max();
 }
 
 gpt_oss_engine::gpt_oss_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
-  pimpl_->loader = std::make_unique<gguf_loader>();
+  pimpl_->loader = std::make_unique<gguf_multi_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = cfg.kv_cache_size;
 }
@@ -89,14 +88,20 @@ gpt_oss_engine::gpt_oss_engine(const config& cfg) : pimpl_(std::make_unique<impl
 gpt_oss_engine::~gpt_oss_engine() = default;
 
 bool gpt_oss_engine::load(const std::string& gguf_path) {
+  return load(std::vector<std::string>{gguf_path});
+}
+
+bool gpt_oss_engine::load(const std::vector<std::string>& gguf_paths) {
   if (pimpl_->loaded) {
     throw std::runtime_error("Model already loaded");
   }
 
-  pimpl_->model_path = gguf_path;
+  if (gguf_paths.empty()) {
+    throw std::runtime_error("No GGUF files specified");
+  }
 
-  if (!pimpl_->loader->load(gguf_path)) {
-    throw std::runtime_error("Failed to load GGUF file");
+  if (!pimpl_->loader->load(gguf_paths)) {
+    throw std::runtime_error("Failed to load GGUF file(s)");
   }
 
   if (!pimpl_->tokenizer->load_from_gguf(*pimpl_->loader)) {
@@ -194,11 +199,15 @@ void gpt_oss_engine::load_config_from_gguf() {
 void gpt_oss_engine::load_weights_from_gguf() {
   auto& loader = *pimpl_->loader;
   const auto& tensor_names = loader.get_tensor_names();
-  const std::string& file_path = loader.get_file_path();
+  const auto& shard_paths = loader.get_shard_paths();
 
-  std::ifstream file(file_path, std::ios::binary);
-  if (!file) {
-    throw std::runtime_error("Failed to open file for tensor loading: " + file_path);
+  // Open all shard files
+  std::vector<std::ifstream> files;
+  for (const auto& path : shard_paths) {
+    files.emplace_back(path, std::ios::binary);
+    if (!files.back()) {
+      throw std::runtime_error("Failed to open file for tensor loading: " + path);
+    }
   }
 
   size_t loaded_count = 0;
@@ -210,6 +219,13 @@ void gpt_oss_engine::load_weights_from_gguf() {
       throw std::runtime_error("Failed to get tensor info for: " + name);
     }
     const auto& info = *info_opt;
+
+    // Check shard index validity
+    if (info.shard_idx >= files.size()) {
+      throw std::runtime_error("Invalid shard index for tensor: " + name);
+    }
+
+    auto& file = files[info.shard_idx];
 
     std::vector<int64_t> shape;
     for (int i = info.shape.size() - 1; i >= 0; --i) {
