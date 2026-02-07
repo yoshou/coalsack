@@ -46,7 +46,9 @@ int main(int argc, char** argv) {
 
   // Load gpt_oss_engine
   std::cout << "Loading gpt_oss_engine...\n";
-  gpt_oss_engine engine;
+  gpt_oss_engine::config engine_config;
+  engine_config.kv_cache_size = 4096;
+  gpt_oss_engine engine(engine_config);
   if (!engine.load(model_path)) {
     std::cerr << "Failed to load engine\n";
     return 1;

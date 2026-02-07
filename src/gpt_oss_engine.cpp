@@ -57,6 +57,7 @@ struct gpt_oss_engine::impl {
   int64_t expert_ffn_dim = 2880;
   int64_t vocab_size = 201088;
   int64_t max_seq_len = 8192;
+  int64_t kv_cache_size = std::numeric_limits<int64_t>::max();
 
   // Attention config
   int64_t attention_sliding_window = 0;
@@ -77,6 +78,13 @@ struct gpt_oss_engine::impl {
 gpt_oss_engine::gpt_oss_engine() : pimpl_(std::make_unique<impl>()) {
   pimpl_->loader = std::make_unique<gguf_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
+  pimpl_->kv_cache_size = std::numeric_limits<int64_t>::max();
+}
+
+gpt_oss_engine::gpt_oss_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
+  pimpl_->loader = std::make_unique<gguf_loader>();
+  pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
+  pimpl_->kv_cache_size = cfg.kv_cache_size;
 }
 
 gpt_oss_engine::~gpt_oss_engine() = default;
@@ -1150,7 +1158,7 @@ void gpt_oss_engine::initialize_kv_caches() {
   
   // Cache shape: [batch=1, num_kv_heads, max_seq_len, head_dim]
   int64_t batch = 1;
-  int64_t max_seq_len = pimpl_->max_seq_len;
+  int64_t max_seq_len = std::min(pimpl_->kv_cache_size, pimpl_->max_seq_len);
   
   size_t cache_size_mb = 0;
   
@@ -1169,7 +1177,8 @@ void gpt_oss_engine::initialize_kv_caches() {
     attn_node->set_v_cache(v_cache);
   }
   
-  std::cout << "✓ KV caches initialized: " << (cache_size_mb / (1024 * 1024)) << " MB\n";
+  std::cout << "✓ KV caches initialized: " << (cache_size_mb / (1024 * 1024)) << " MB"
+            << " (" << max_seq_len << " tokens)\n";
 }
 
 void gpt_oss_engine::reset_kv_caches() {
