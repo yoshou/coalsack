@@ -15,9 +15,10 @@ namespace coalsack {
 // Uses modified SwiGLU activation with value clipping
 // 
 // Architecture:
-// - 7 inputs: hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down
+// - 8 inputs: hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output
 // - Weight format: 3D tensors [num_experts, expert_ffn_dim, hidden_dim] in FLOAT16
 // - Bias format: 2D tensors [num_experts, expert_ffn_dim or hidden_dim] in FLOAT32
+// - Router output: 4D tensor [batch, seq_len, top_k, 2] where last dim is [expert_id, weight]
 class expert_mlp_node : public variadic_op_node {
  public:
   explicit expert_mlp_node(int expert_id = 0)
@@ -32,7 +33,7 @@ class expert_mlp_node : public variadic_op_node {
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
     // Validate input count
     if (inputs.size() != 8) {
-      throw std::runtime_error("expert_mlp: expected 8 inputs (hidden_states, weights, biases, selected_expert_ids), got " + 
+      throw std::runtime_error("expert_mlp: expected 8 inputs (hidden_states, weights, biases, router_output), got " + 
                                std::to_string(inputs.size()));
     }
 
@@ -43,10 +44,19 @@ class expert_mlp_node : public variadic_op_node {
     const auto& b_up = inputs[4];
     const auto& b_gate = inputs[5];
     const auto& b_down = inputs[6];
-    const auto& selected_expert_ids = inputs[7];
+    const auto& router_output = inputs[7];
 
-    // Check if this expert is selected (early return optimization)
-    if (!is_expert_selected(selected_expert_ids, expert_id_)) {
+    // Validate router_output shape: [batch, seq_len, top_k, 2]
+    if (router_output.ndim() != 4 || router_output.dim(3) != 2) {
+      throw std::runtime_error("expert_mlp: router_output must be 4D [batch, seq_len, top_k, 2], got " + 
+                               std::to_string(router_output.ndim()) + "D");
+    }
+    if (router_output.get_dtype() != dtype::float32) {
+      throw std::runtime_error("expert_mlp: router_output must be float32");
+    }
+
+    // Check if this expert is selected by any token (early return optimization)
+    if (!has_any_token_selecting_expert(router_output, expert_id_)) {
       // Return empty tensor to signal non-selection
       return dynamic_tensor(dtype::float32, {0});
     }
@@ -117,8 +127,8 @@ class expert_mlp_node : public variadic_op_node {
     // Allocate output: same shape as hidden_states
     dynamic_tensor output(dtype::float32, hidden_states.shape());
 
-    // Compute gated MLP with biases
-    compute_impl(hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, output, 
+    // Compute gated MLP with biases (with per-token conditional execution)
+    compute_impl(hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output, output, 
                  batch, seq_len, hidden_dim, expert_ffn_dim);
 
     return output;
@@ -254,6 +264,7 @@ class expert_mlp_node : public variadic_op_node {
   //   up_clipped = clamp(up, -limit, limit)
   //   activation = (gate_clipped / (1 + exp(alpha * (-gate_clipped)))) * (up_clipped + 1)
   // Followed by down projection: down(activation) + b_down
+  // Token-level conditional execution: only compute for tokens that selected this expert
   void compute_impl(const dynamic_tensor& hidden_states,
                    const dynamic_tensor& w_up,
                    const dynamic_tensor& w_gate,
@@ -261,6 +272,7 @@ class expert_mlp_node : public variadic_op_node {
                    const dynamic_tensor& b_up,
                    const dynamic_tensor& b_gate,
                    const dynamic_tensor& b_down,
+                   const dynamic_tensor& router_output,
                    dynamic_tensor& output,
                    int64_t batch, int64_t seq_len,
                    int64_t hidden_dim, int64_t expert_ffn_dim) {
@@ -272,6 +284,8 @@ class expert_mlp_node : public variadic_op_node {
     const float* b_gate_data = b_gate.data_ptr<float>();
     const float* b_down_data = b_down.data_ptr<float>();
     float* out_data = output.data_ptr<float>();
+    const float* router_data = router_output.data_ptr<float>();
+    int64_t top_k = router_output.dim(2);
 
     // For each token position
     for (int64_t b = 0; b < batch; ++b) {
@@ -279,33 +293,46 @@ class expert_mlp_node : public variadic_op_node {
         const float* hidden_vec = hidden_data + (b * seq_len + s) * hidden_dim;
         float* output_vec = out_data + (b * seq_len + s) * hidden_dim;
 
+        // Check if this token selected current expert_id_
+        if (!is_token_selecting_expert(router_data, b, s, seq_len, top_k, expert_id_)) {
+          // Zero out output for non-selected tokens
+          std::memset(output_vec, 0, hidden_dim * sizeof(float));
+          continue;
+        }
+
+        // Process selected token
         compute_token(hidden_vec, w_up_data, w_gate_data, w_down_data,
                      b_up_data, b_gate_data, b_down_data, output_vec,
                      hidden_dim, expert_ffn_dim);
-
-
       }
     }
   }
 
   // Check if expert_id is in selected_expert_ids (O(top_k) linear search, typically ~4 elements)
-  bool is_expert_selected(const dynamic_tensor& selected_ids, int expert_id) const {
-    if (selected_ids.ndim() != 1) {
-      throw std::runtime_error("expert_mlp: selected_expert_ids must be 1D, got " + 
-                               std::to_string(selected_ids.ndim()) + "D");
-    }
-
-    if (selected_ids.get_dtype() != dtype::int32) {
-      throw std::runtime_error("expert_mlp: selected_expert_ids must be int32");
-    }
-
-    const int32_t* ids = selected_ids.data_ptr<int32_t>();
-    int64_t num_selected = selected_ids.dim(0);
-
-    // O(top_k) linear search (top_k is typically 4, so this is very fast)
-    for (int64_t i = 0; i < num_selected; ++i) {
-      if (ids[i] == expert_id) {
+  // Check if a specific token selected this expert
+  bool is_token_selecting_expert(const float* router_data, int64_t b, int64_t s, 
+                                  int64_t seq_len, int64_t top_k, int expert_id) const {
+    int64_t base_idx = (b * seq_len + s) * top_k * 2;
+    for (int64_t k = 0; k < top_k; ++k) {
+      if (static_cast<int>(router_data[base_idx + k * 2]) == expert_id) {
         return true;
+      }
+    }
+    return false;
+  }
+
+  // Check if any token in the batch selected this expert (for early return)
+  bool has_any_token_selecting_expert(const dynamic_tensor& router_output, int expert_id) const {
+    const float* router_data = router_output.data_ptr<float>();
+    int64_t batch = router_output.dim(0);
+    int64_t seq_len = router_output.dim(1);
+    int64_t top_k = router_output.dim(2);
+
+    for (int64_t b = 0; b < batch; ++b) {
+      for (int64_t s = 0; s < seq_len; ++s) {
+        if (is_token_selecting_expert(router_data, b, s, seq_len, top_k, expert_id)) {
+          return true;
+        }
       }
     }
     return false;
