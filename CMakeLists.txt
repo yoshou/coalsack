@@ -28,21 +28,6 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
     endif()
 endif()
 
-FetchContent_Declare(
-    llama_cpp
-    GIT_REPOSITORY https://github.com/ggerganov/llama.cpp.git
-    GIT_TAG master
-    GIT_SHALLOW TRUE
-)
-
-set(GGML_CUDA OFF CACHE BOOL "" FORCE)
-set(GGML_METAL OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(llama_cpp)
-
 add_library(${PROJECT_NAME} STATIC
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_server.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_client.cpp
@@ -50,7 +35,6 @@ add_library(${PROJECT_NAME} STATIC
     ${CMAKE_CURRENT_LIST_DIR}/src/gguf_loader.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt2_tokenizer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/chat_template.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llama_backend.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt_oss_engine.cpp
 )
 
@@ -78,21 +62,17 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/gguf_loader.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gpt2_tokenizer.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/chat_template.h"
-    "${CMAKE_CURRENT_LIST_DIR}/include/llama_backend.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/gpt_oss_engine.h"
 )
 
 include_directories(
     ${CMAKE_CURRENT_LIST_DIR}/include
     ${Boost_INCLUDE_DIRS}
-    ${llama_cpp_SOURCE_DIR}/include
-    ${llama_cpp_SOURCE_DIR}/ggml/include
 )
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     protobuf::libprotobuf
-    llama
     ONNX::onnx
     ONNX::onnx_proto
 )
