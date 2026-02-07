@@ -21,6 +21,7 @@
 #include "nn_ops/expand_node.h"
 #include "nn_ops/expert_merge_node.h"
 #include "nn_ops/expert_mlp_node.h"
+#include "nn_ops/moe_expert_weight_slice_node.h"
 #include "nn_ops/flatten_node.h"
 #include "nn_ops/gather_elements_node.h"
 #include "nn_ops/gather_node.h"

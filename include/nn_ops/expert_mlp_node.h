@@ -71,47 +71,43 @@ class expert_mlp_node : public variadic_op_node {
     int64_t seq_len = hidden_states.dim(1);
     int64_t hidden_dim = hidden_states.dim(2);
 
-    // Validate weight shapes: all must be 3D
-    // Expected: w_up/w_gate [num_experts, expert_ffn_dim, hidden_dim], w_down [num_experts, hidden_dim, expert_ffn_dim]
-    if (w_up.ndim() != 3 || w_gate.ndim() != 3 || w_down.ndim() != 3) {
-      throw std::runtime_error("expert_mlp: all weights must be 3D");
+    // Validate weight shapes: all must be 2D (single expert slices)
+    // Expected: w_up/w_gate [expert_ffn_dim, hidden_dim], w_down [hidden_dim, expert_ffn_dim]
+    if (w_up.ndim() != 2 || w_gate.ndim() != 2 || w_down.ndim() != 2) {
+      throw std::runtime_error("expert_mlp: all weights must be 2D [expert_ffn_dim, hidden_dim] or [hidden_dim, expert_ffn_dim]");
     }
 
-    int64_t num_experts = w_up.dim(0);
-    int64_t expert_ffn_dim = w_up.dim(1);
+    int64_t expert_ffn_dim = w_up.dim(0);
 
     // Validate weight dimensions match
-    if (w_up.dim(0) != num_experts || w_up.dim(1) != expert_ffn_dim || w_up.dim(2) != hidden_dim) {
-      throw std::runtime_error("expert_mlp: w_up shape mismatch");
+    if (w_up.dim(0) != expert_ffn_dim || w_up.dim(1) != hidden_dim) {
+      throw std::runtime_error("expert_mlp: w_up must be [" + std::to_string(expert_ffn_dim) + 
+                              ", " + std::to_string(hidden_dim) + "], got [" + 
+                              std::to_string(w_up.dim(0)) + ", " + std::to_string(w_up.dim(1)) + "]");
     }
-    if (w_gate.dim(0) != num_experts || w_gate.dim(1) != expert_ffn_dim || w_gate.dim(2) != hidden_dim) {
-      throw std::runtime_error("expert_mlp: w_gate shape mismatch");
+    if (w_gate.dim(0) != expert_ffn_dim || w_gate.dim(1) != hidden_dim) {
+      throw std::runtime_error("expert_mlp: w_gate must be [" + std::to_string(expert_ffn_dim) + 
+                              ", " + std::to_string(hidden_dim) + "], got [" + 
+                              std::to_string(w_gate.dim(0)) + ", " + std::to_string(w_gate.dim(1)) + "]");
     }
-    if (w_down.dim(0) != num_experts || w_down.dim(1) != hidden_dim || w_down.dim(2) != expert_ffn_dim) {
-      throw std::runtime_error("expert_mlp: w_down shape mismatch");
-    }
-
-    // Validate bias shapes: [num_experts, expert_ffn_dim] or [num_experts, hidden_dim]
-    if (b_up.ndim() != 2 || b_up.dim(0) != num_experts || b_up.dim(1) != expert_ffn_dim) {
-      throw std::runtime_error("expert_mlp: b_up must be [num_experts=" + std::to_string(num_experts) + 
-                              ", expert_ffn_dim=" + std::to_string(expert_ffn_dim) + "], got [" + 
-                              std::to_string(b_up.dim(0)) + ", " + std::to_string(b_up.dim(1)) + "]");
-    }
-    if (b_gate.ndim() != 2 || b_gate.dim(0) != num_experts || b_gate.dim(1) != expert_ffn_dim) {
-      throw std::runtime_error("expert_mlp: b_gate must be [num_experts=" + std::to_string(num_experts) + 
-                              ", expert_ffn_dim=" + std::to_string(expert_ffn_dim) + "], got [" + 
-                              std::to_string(b_gate.dim(0)) + ", " + std::to_string(b_gate.dim(1)) + "]");
-    }
-    if (b_down.ndim() != 2 || b_down.dim(0) != num_experts || b_down.dim(1) != hidden_dim) {
-      throw std::runtime_error("expert_mlp: b_down must be [num_experts=" + std::to_string(num_experts) + 
-                              ", hidden_dim=" + std::to_string(hidden_dim) + "], got [" + 
-                              std::to_string(b_down.dim(0)) + ", " + std::to_string(b_down.dim(1)) + "]");
+    if (w_down.dim(0) != hidden_dim || w_down.dim(1) != expert_ffn_dim) {
+      throw std::runtime_error("expert_mlp: w_down must be [" + std::to_string(hidden_dim) + 
+                              ", " + std::to_string(expert_ffn_dim) + "], got [" + 
+                              std::to_string(w_down.dim(0)) + ", " + std::to_string(w_down.dim(1)) + "]");
     }
 
-    // Validate expert_id
-    if (expert_id_ < 0 || expert_id_ >= num_experts) {
-      throw std::runtime_error("expert_mlp: expert_id " + std::to_string(expert_id_) + 
-                               " out of range [0, " + std::to_string(num_experts) + ")");
+    // Validate bias shapes: [expert_ffn_dim] or [hidden_dim] (1D slices)
+    if (b_up.ndim() != 1 || b_up.dim(0) != expert_ffn_dim) {
+      throw std::runtime_error("expert_mlp: b_up must be [expert_ffn_dim=" + std::to_string(expert_ffn_dim) + 
+                              "], got [" + std::to_string(b_up.dim(0)) + "]");
+    }
+    if (b_gate.ndim() != 1 || b_gate.dim(0) != expert_ffn_dim) {
+      throw std::runtime_error("expert_mlp: b_gate must be [expert_ffn_dim=" + std::to_string(expert_ffn_dim) + 
+                              "], got [" + std::to_string(b_gate.dim(0)) + "]");
+    }
+    if (b_down.ndim() != 1 || b_down.dim(0) != hidden_dim) {
+      throw std::runtime_error("expert_mlp: b_down must be [hidden_dim=" + std::to_string(hidden_dim) + 
+                              "], got [" + std::to_string(b_down.dim(0)) + "]");
     }
 
     // Validate dtype: weights must be FLOAT16
@@ -156,10 +152,10 @@ class expert_mlp_node : public variadic_op_node {
     std::vector<float> activated(expert_ffn_dim);
 
     // Step 1: Up/gate projections with biases, then modified SwiGLU activation
-    // Weights: [num_experts, expert_ffn_dim, hidden_dim]
-    // Biases: [num_experts, expert_ffn_dim]
-    // Access w[expert_id][out_idx][in_idx] via: expert_id * (expert_ffn_dim * hidden_dim) + out_idx * hidden_dim + in_idx
-    // Access b[expert_id][out_idx] via: expert_id * expert_ffn_dim + out_idx
+    // Weights: [expert_ffn_dim, hidden_dim]
+    // Biases: [expert_ffn_dim]
+    // Access w[out_idx][in_idx] via: out_idx * hidden_dim + in_idx
+    // Access b[out_idx] via: out_idx
     for (int64_t out_idx = 0; out_idx < expert_ffn_dim; ++out_idx) {
       __m256 up_vec = _mm256_setzero_ps();
       __m256 gate_vec = _mm256_setzero_ps();
@@ -167,8 +163,8 @@ class expert_mlp_node : public variadic_op_node {
       int64_t in_idx = 0;
       // Process 8 elements at a time with AVX2
       for (; in_idx + 7 < hidden_dim; in_idx += 8) {
-        // Weight index: w[expert_id_][out_idx][in_idx]
-        int64_t weight_idx = expert_id_ * (expert_ffn_dim * hidden_dim) + out_idx * hidden_dim + in_idx;
+        // Weight index: w[out_idx][in_idx]
+        int64_t weight_idx = out_idx * hidden_dim + in_idx;
         
         // Load 8 FP16 weights and convert to FP32
         __m128i w_up_fp16 = _mm_loadu_si128((__m128i*)(w_up_data + weight_idx));
@@ -192,18 +188,17 @@ class expert_mlp_node : public variadic_op_node {
       
       // Process remaining elements
       for (; in_idx < hidden_dim; ++in_idx) {
-        // Weight index: w[expert_id_][out_idx][in_idx]
-        int64_t weight_idx = expert_id_ * (expert_ffn_dim * hidden_dim) + out_idx * hidden_dim + in_idx;
+        // Weight index: w[out_idx][in_idx]
+        int64_t weight_idx = out_idx * hidden_dim + in_idx;
         float w_up_f32 = _cvtsh_ss(w_up_data[weight_idx]);
         float w_gate_f32 = _cvtsh_ss(w_gate_data[weight_idx]);
         up_sum += hidden_vec[in_idx] * w_up_f32;
         gate_sum += hidden_vec[in_idx] * w_gate_f32;
       }
       
-      // Add biases: b[expert_id_][out_idx]
-      int64_t bias_idx = expert_id_ * expert_ffn_dim + out_idx;
-      const float up_v = up_sum + b_up_data[bias_idx];
-      const float gate_v = gate_sum + b_gate_data[bias_idx];
+      // Add biases: b[out_idx]
+      const float up_v = up_sum + b_up_data[out_idx];
+      const float gate_v = gate_sum + b_gate_data[out_idx];
 
       // Modified SwiGLU activation with clipping:
       //   gate_clipped = min(gate_v, limit)
@@ -217,18 +212,18 @@ class expert_mlp_node : public variadic_op_node {
     }
 
     // Step 2: Down projection with bias
-    // Weights: [num_experts, hidden_dim, expert_ffn_dim]
-    // Biases: [num_experts, hidden_dim]
-    // Access w[expert_id][out_idx][in_idx] via: expert_id * (hidden_dim * expert_ffn_dim) + out_idx * expert_ffn_dim + in_idx
-    // Access b[expert_id][out_idx] via: expert_id * hidden_dim + out_idx
+    // Weights: [hidden_dim, expert_ffn_dim]
+    // Biases: [hidden_dim]
+    // Access w[out_idx][in_idx] via: out_idx * expert_ffn_dim + in_idx
+    // Access b[out_idx] via: out_idx
     for (int64_t out_idx = 0; out_idx < hidden_dim; ++out_idx) {
       __m256 sum_vec = _mm256_setzero_ps();
       
       int64_t in_idx = 0;
       // Process 8 elements at a time with AVX2
       for (; in_idx + 7 < expert_ffn_dim; in_idx += 8) {
-        // Weight index: w_down[expert_id_][out_idx][in_idx]
-        int64_t weight_idx = expert_id_ * (hidden_dim * expert_ffn_dim) + out_idx * expert_ffn_dim + in_idx;
+        // Weight index: w_down[out_idx][in_idx]
+        int64_t weight_idx = out_idx * expert_ffn_dim + in_idx;
         
         // Load 8 FP16 weights and convert to FP32
         __m128i w_down_fp16 = _mm_loadu_si128((__m128i*)(w_down_data + weight_idx));
@@ -247,15 +242,14 @@ class expert_mlp_node : public variadic_op_node {
       
       // Process remaining elements
       for (; in_idx < expert_ffn_dim; ++in_idx) {
-        // Weight index: w_down[expert_id_][out_idx][in_idx]
-        int64_t weight_idx = expert_id_ * (hidden_dim * expert_ffn_dim) + out_idx * expert_ffn_dim + in_idx;
+        // Weight index: w_down[out_idx][in_idx]
+        int64_t weight_idx = out_idx * expert_ffn_dim + in_idx;
         float w_down_f32 = _cvtsh_ss(w_down_data[weight_idx]);
         sum += activated[in_idx] * w_down_f32;
       }
       
-      // Add down projection bias: b[expert_id_][out_idx]
-      int64_t bias_idx = expert_id_ * hidden_dim + out_idx;
-      output_vec[out_idx] = sum + b_down_data[bias_idx];
+      // Add down projection bias: b[out_idx]
+      output_vec[out_idx] = sum + b_down_data[out_idx];
     }
   }
 

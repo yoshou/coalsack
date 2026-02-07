@@ -810,22 +810,57 @@ void gpt_oss_engine::build_transformer_graph() {
     // Expert MLPs (receive router_output directly for token-level conditional execution)
     std::vector<graph_edge_ptr> expert_outputs;
     for (int expert_id = 0; expert_id < pimpl_->num_experts; ++expert_id) {
-      auto expert = std::make_shared<expert_mlp_node>(expert_id);
+      // Sync for 3D weights/2D biases + router_out
+      auto weight_sync = std::make_shared<result_message_sync_node>();
+      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.weight"], layer_prefix + ".ffn_up_exps.weight");
+      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.weight"], layer_prefix + ".ffn_gate_exps.weight");
+      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.weight"], layer_prefix + ".ffn_down_exps.weight");
+      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.bias"], layer_prefix + ".ffn_up_exps.bias");
+      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.bias"], layer_prefix + ".ffn_gate_exps.bias");
+      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.bias"], layer_prefix + ".ffn_down_exps.bias");
+      weight_sync->set_input(router_out, layer_prefix + ".router_out");
+      weight_sync->set_initial_ids({layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
+      pimpl_->graph->add_node(weight_sync);
 
+      // Slice 3D weights -> 2D/1D views for this expert
+      auto slice = std::make_shared<moe_expert_weight_slice_node>(expert_id);
+      slice->set_input(weight_sync->get_output(), "default");
+      slice->set_input_names({layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
+      slice->set_output_names({layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up",
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate",
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down",
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up",
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate",
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down",
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
+      slice->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id) + ".slice");
+      pimpl_->graph->add_node(slice);
+      graph_edge_ptr sliced_weights = slice->get_output("default");
+
+      // Sync for expert MLP: ffn_norm_out + 2D/1D sliced weights
       auto expert_sync = std::make_shared<result_message_sync_node>();
       expert_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
-      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.weight"], layer_prefix + ".ffn_up_exps.weight");
-      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.weight"], layer_prefix + ".ffn_gate_exps.weight");
-      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.weight"], layer_prefix + ".ffn_down_exps.weight");
-      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.bias"], layer_prefix + ".ffn_up_exps.bias");
-      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.bias"], layer_prefix + ".ffn_gate_exps.bias");
-      expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.bias"], layer_prefix + ".ffn_down_exps.bias");
-      expert_sync->set_input(router_out, layer_prefix + ".router_out");
-      expert_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up");
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate");
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down");
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up");
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate");
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down");
+      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out");
+      expert_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", 
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up",
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate",
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down",
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up",
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate",
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down",
+                                     layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
       pimpl_->graph->add_node(expert_sync);
 
+      // Expert MLP node (now receives 2D/1D weights)
+      auto expert = std::make_shared<expert_mlp_node>(expert_id);
       expert->set_input(expert_sync->get_output(), "default");
-      expert->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
+      expert->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up", layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate", layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down", layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up", layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate", layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down", layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
       expert->set_output_name(layer_prefix + ".expert_" + std::to_string(expert_id) + "_out");
       expert->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id));
       pimpl_->graph->add_node(expert);

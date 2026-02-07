@@ -101,15 +101,16 @@ class dynamic_tensor {
   dtype dtype_;
   std::vector<int64_t> shape_;
   dynamic_tensor_storage storage_;
+  size_t byte_offset_;
 
  public:
   dynamic_tensor() : dynamic_tensor(dtype::float32, {}) {}
 
   dynamic_tensor(dtype dt, const std::vector<int64_t>& shape)
-      : dtype_(dt), shape_(shape), storage_(numel(shape) * dtype_size(dt)) {}
+      : dtype_(dt), shape_(shape), storage_(numel(shape) * dtype_size(dt)), byte_offset_(0) {}
 
   dynamic_tensor(dtype dt, const std::vector<int64_t>& shape, const void* data)
-      : dtype_(dt), shape_(shape), storage_(data, numel(shape) * dtype_size(dt)) {}
+      : dtype_(dt), shape_(shape), storage_(data, numel(shape) * dtype_size(dt)), byte_offset_(0) {}
 
   dtype get_dtype() const { return dtype_; }
   const std::vector<int64_t>& shape() const { return shape_; }
@@ -131,18 +132,20 @@ class dynamic_tensor {
 
   size_t bytes() const { return numel() * dtype_size(dtype_); }
 
-  uint8_t* data() { return storage_.data(); }
-  const uint8_t* data() const { return storage_.data(); }
+  uint8_t* data() { return storage_.data() + byte_offset_; }
+  const uint8_t* data() const { return storage_.data() + byte_offset_; }
 
   template <typename T>
   T* data_ptr() {
-    return reinterpret_cast<T*>(storage_.data());
+    return reinterpret_cast<T*>(storage_.data() + byte_offset_);
   }
 
   template <typename T>
   const T* data_ptr() const {
-    return reinterpret_cast<const T*>(storage_.data());
+    return reinterpret_cast<const T*>(storage_.data() + byte_offset_);
   }
+
+  size_t byte_offset() const { return byte_offset_; }
 
   dynamic_tensor reshape(const std::vector<int64_t>& new_shape) const {
     int64_t new_numel = numel(new_shape);
@@ -155,14 +158,31 @@ class dynamic_tensor {
     result.dtype_ = dtype_;
     result.shape_ = new_shape;
     result.storage_ = storage_;
+    result.byte_offset_ = byte_offset_;
     return result;
   }
 
   dynamic_tensor clone() const {
+    dynamic_tensor result(dtype_, shape_);
+    std::memcpy(result.data(), this->data(), bytes());
+    return result;
+  }
+
+  dynamic_tensor make_view(const std::vector<int64_t>& view_shape, size_t offset_bytes) const {
+    size_t view_bytes = numel(view_shape) * dtype_size(dtype_);
+    size_t total_offset = byte_offset_ + offset_bytes;
+    if (total_offset + view_bytes > storage_.size()) {
+      throw std::out_of_range("View exceeds storage bounds: offset=" + 
+                              std::to_string(total_offset) + " + size=" + 
+                              std::to_string(view_bytes) + " > storage=" + 
+                              std::to_string(storage_.size()));
+    }
+    
     dynamic_tensor result;
     result.dtype_ = dtype_;
-    result.shape_ = shape_;
-    result.storage_ = storage_.clone();
+    result.shape_ = view_shape;
+    result.storage_ = storage_;
+    result.byte_offset_ = total_offset;
     return result;
   }
 
