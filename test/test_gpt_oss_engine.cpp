@@ -22,7 +22,8 @@ int main(int argc, char* argv[]) {
   engine_config.kv_cache_size = 4096;
   coalsack::gpt_oss_engine engine(engine_config);
 
-  std::cout << "Loading model from: " << gguf_path << "\n\n";
+  std::cout << "Loading model from: " << gguf_path << "\n";
+  std::cout << "  KV cache size: " << engine_config.kv_cache_size << " tokens\n\n";
 
   if (!engine.load(gguf_path)) {
     std::cerr << "ERROR: Failed to load model\n";
