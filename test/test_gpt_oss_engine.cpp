@@ -18,7 +18,9 @@ int main(int argc, char* argv[]) {
 
   std::cout << "=== GPT-OSS Engine Test ===\n\n";
 
-  coalsack::gpt_oss_engine engine;
+  coalsack::gpt_oss_engine::config engine_config;
+  engine_config.kv_cache_size = 4096;
+  coalsack::gpt_oss_engine engine(engine_config);
 
   std::cout << "Loading model from: " << gguf_path << "\n\n";
 
