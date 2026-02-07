@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.8)
 
 project(coalsack)
 
-include(FetchContent)
-
 find_package(Iconv REQUIRED)
 find_package(OpenCV 4.0 REQUIRED)
 find_package(Boost REQUIRED)
@@ -28,7 +26,7 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
     endif()
 endif()
 
-add_library(${PROJECT_NAME} STATIC
+add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_server.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_client.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/onnx_importer.cpp
@@ -45,7 +43,6 @@ add_dependencies(${PROJECT_NAME}
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     ENABLE_ONNX_IMPORT
-    FMT_HEADER_ONLY
 )
 
 target_sources(${PROJECT_NAME}
