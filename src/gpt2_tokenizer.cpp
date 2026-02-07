@@ -212,16 +212,6 @@ bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
             [](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });
 
   pimpl_->loaded = true;
-  std::cout << "Tokenizer loaded: " << pimpl_->vocab.size() << " tokens, "
-            << pimpl_->bpe_merges.size() << " merges, " << pimpl_->special_tokens.size()
-            << " special tokens\n";
-
-  if (pimpl_->add_bos) {
-    std::cout << "  tokenizer.ggml.add_bos_token: true (bos_id=" << pimpl_->bos_id << ")\n";
-  }
-  if (pimpl_->add_eos) {
-    std::cout << "  tokenizer.ggml.add_eos_token: true (eos_id=" << pimpl_->eos_id << ")\n";
-  }
 
   return true;
 }

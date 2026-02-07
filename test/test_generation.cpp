@@ -46,15 +46,19 @@ int main(int argc, char** argv) {
 
   // Load gpt_oss_engine
   std::cout << "Loading gpt_oss_engine...\n";
+  std::cout << "  Model: " << model_path << "\n";
   gpt_oss_engine::config engine_config;
   engine_config.kv_cache_size = 4096;
+  std::cout << "  KV cache size: " << engine_config.kv_cache_size << " tokens\n";
   gpt_oss_engine engine(engine_config);
   if (!engine.load(model_path)) {
     std::cerr << "Failed to load engine\n";
     return 1;
   }
-  std::cout << "  Engine loaded (vocab: " << engine.get_vocab_size()
-            << ", layers: " << engine.get_num_layers() << ")\n\n";
+  std::cout << "  Vocab size: " << engine.get_vocab_size() << "\n";
+  std::cout << "  Layers: " << engine.get_num_layers() << "\n";
+  std::cout << "  Hidden dim: " << engine.get_hidden_dim() << "\n";
+  std::cout << "  Engine loaded successfully\n\n";
 
   std::cout << "Generating (max " << max_tokens << " tokens, temp=" << temperature << ")...\n";
   std::cout << "Response: " << std::flush;

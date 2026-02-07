@@ -375,9 +375,6 @@ bool gguf_loader::load(const std::string& path) {
     return false;
   }
 
-  std::cout << "GGUF v" << pimpl_->version << ": " << pimpl_->tensor_count << " tensors, "
-            << pimpl_->kv_count << " metadata entries\n";
-
   // Read metadata
   for (uint64_t i = 0; i < pimpl_->kv_count; ++i) {
     std::string key;
@@ -458,8 +455,6 @@ bool gguf_loader::load(const std::string& path) {
   size_t alignment = 32;  // GGUF uses 32-byte alignment
   size_t current_pos = pimpl_->file.tellg();
   size_t aligned_pos = (current_pos + alignment - 1) & ~(alignment - 1);
-
-  std::cout << "Tensor data starts at offset: " << aligned_pos << "\n";
 
   // Convert relative offsets to absolute offsets
   for (auto& [name, info] : pimpl_->tensors) {

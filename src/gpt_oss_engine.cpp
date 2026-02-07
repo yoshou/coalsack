@@ -96,32 +96,21 @@ bool gpt_oss_engine::load(const std::string& gguf_path) {
 
   pimpl_->model_path = gguf_path;
 
-  std::cout << "Loading GGUF file: " << gguf_path << "\n";
   if (!pimpl_->loader->load(gguf_path)) {
     throw std::runtime_error("Failed to load GGUF file");
   }
 
-  std::cout << "Loading tokenizer...\n";
   if (!pimpl_->tokenizer->load_from_gguf(*pimpl_->loader)) {
     throw std::runtime_error("Failed to load tokenizer");
   }
 
   load_config_from_gguf();
 
-  std::cout << "Loading weights...\n";
   load_weights_from_gguf();
 
-  std::cout << "Building transformer graph...\n";
   build_transformer_graph();
 
   pimpl_->loaded = true;
-  std::cout << "Model loaded successfully\n";
-  std::cout << "  Vocab size: " << pimpl_->vocab_size << "\n";
-  std::cout << "  Layers: " << pimpl_->num_layers << "\n";
-  std::cout << "  Hidden dim: " << pimpl_->hidden_dim << "\n";
-  std::cout << "  Q heads: " << pimpl_->num_q_heads << "\n";
-  std::cout << "  KV heads: " << pimpl_->num_kv_heads << "\n";
-  std::cout << "  Experts: " << pimpl_->num_experts << " (top-" << pimpl_->expert_top_k << ")\n";
 
   return true;
 }
@@ -188,10 +177,8 @@ void gpt_oss_engine::load_config_from_gguf() {
   
   if (head_dim_opt) {
     pimpl_->head_dim = static_cast<int64_t>(*head_dim_opt);
-    std::cout << "  head_dim (from GGUF) = " << pimpl_->head_dim << "\n";
   } else {
     pimpl_->head_dim = pimpl_->hidden_dim / pimpl_->num_q_heads;
-    std::cout << "  head_dim (calculated) = " << pimpl_->head_dim << "\n";
   }
 
   // RoPE config
@@ -203,22 +190,12 @@ void gpt_oss_engine::load_config_from_gguf() {
   if (auto v = get_optional_uint32("rope.scaling.original_context_length")) {
     pimpl_->rope_scaling_orig_ctx = static_cast<int64_t>(*v);
   }
-
-  std::cout << "  Config loaded from GGUF metadata:\n";
-  std::cout << "    head_dim: " << pimpl_->head_dim << "\n";
-  std::cout << "    rope_freq_base: " << pimpl_->rope_freq_base << "\n";
-  std::cout << "    rope_scaling_factor: " << pimpl_->rope_scaling_factor << "\n";
-  std::cout << "    rope_scaling_type: " << pimpl_->rope_scaling_type << "\n";
-  std::cout << "    rope_scaling_orig_ctx: " << pimpl_->rope_scaling_orig_ctx << "\n";
-  std::cout << "    attention_sliding_window: " << pimpl_->attention_sliding_window << "\n";
 }
 
 void gpt_oss_engine::load_weights_from_gguf() {
   auto& loader = *pimpl_->loader;
   const auto& tensor_names = loader.get_tensor_names();
   const std::string& file_path = loader.get_file_path();
-
-  std::cout << "  Total tensors in GGUF: " << tensor_names.size() << "\n";
 
   std::ifstream file(file_path, std::ios::binary);
   if (!file) {
@@ -282,9 +259,6 @@ void gpt_oss_engine::load_weights_from_gguf() {
 
     pimpl_->weights[name] = std::move(tensor);
   }
-
-  std::cout << "  Loaded " << loaded_count << " tensors directly\n";
-  std::cout << "  Dequantized " << dequantized_count << " quantized tensors\n";
 
   std::vector<std::string> required_weights = {"token_embd.weight", "output.weight"};
   for (const auto& req : required_weights) {
@@ -951,8 +925,6 @@ void gpt_oss_engine::build_transformer_graph() {
 
   // Initialize KV caches after graph is built
   initialize_kv_caches();
-
-  std::cout << "✓ Transformer graph built\n";
 }
 
 void gpt_oss_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr logits_output) {
@@ -1053,8 +1025,6 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
         pos_data[j] = static_cast<int64_t>(j);
       }
       pimpl_->cached_position_ = tokens.size();
-      
-      std::cout << "Prefill: processing " << tokens.size() << " tokens\n";
     } else {
       // ===== Decode phase: process only the last token =====
       shape = {1, 1};
@@ -1107,7 +1077,6 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
     tokens.push_back(next_token);
 
     std::string piece = pimpl_->tokenizer->decode({next_token});
-    std::cout << "Generated: " << piece << std::endl;
     generated_text += piece;
   }
 
@@ -1150,11 +1119,8 @@ int64_t gpt_oss_engine::get_hidden_dim() const { return pimpl_->hidden_dim; }
 
 void gpt_oss_engine::initialize_kv_caches() {
   if (pimpl_->attention_nodes.empty()) {
-    std::cout << "No attention nodes found, skipping KV cache initialization\n";
     return;
   }
-
-  std::cout << "Initializing KV caches for " << pimpl_->attention_nodes.size() << " layers...\n";
   
   // Cache shape: [batch=1, num_kv_heads, max_seq_len, head_dim]
   int64_t batch = 1;
@@ -1176,9 +1142,6 @@ void gpt_oss_engine::initialize_kv_caches() {
     attn_node->set_k_cache(k_cache);
     attn_node->set_v_cache(v_cache);
   }
-  
-  std::cout << "✓ KV caches initialized: " << (cache_size_mb / (1024 * 1024)) << " MB"
-            << " (" << max_seq_len << " tokens)\n";
 }
 
 void gpt_oss_engine::reset_kv_caches() {
