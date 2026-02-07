@@ -44,24 +44,24 @@ float modified_swiglu_ref(float gate_v, float up_v) {
   return out_glu * (y + 1.0f);
 }
 
-// Test basic expert MLP operation with 3D weights and biases
+// Test basic expert MLP operation with 2D/1D weights and biases
 bool test_expert_mlp_basic() {
-  std::cout << "Test 1: Basic expert MLP with 3D weights and biases\n";
+  std::cout << "Test 1: Basic expert MLP with 2D/1D weights and biases\n";
 
-  // Simple setup: batch=1, seq_len=2, hidden_dim=8, expert_ffn_dim=16, num_experts=4
+  // Simple setup: batch=1, seq_len=2, hidden_dim=8, expert_ffn_dim=16
   int64_t batch = 1;
   int64_t seq_len = 2;
   int64_t hidden_dim = 8;
   int64_t expert_ffn_dim = 16;
-  int64_t num_experts = 4;
+  int64_t top_k = 4;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> w_up_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor w_up(dtype::float16, w_up_shape);
@@ -82,12 +82,21 @@ bool test_expert_mlp_basic() {
   // Create expert MLP node for expert 0
   expert_mlp_node node(0);
 
-  // Create selected_expert_ids (select expert 0)
-  dynamic_tensor selected_expert_ids(dtype::int32, {1});
-  selected_expert_ids.data_ptr<int32_t>()[0] = 0;
+  // Create router_output: [batch, seq_len, top_k, 2]
+  dynamic_tensor router_output(dtype::float32, {batch, seq_len, top_k, 2});
+  float* router_data = router_output.data_ptr<float>();
+  for (int64_t b = 0; b < batch; ++b) {
+    for (int64_t s = 0; s < seq_len; ++s) {
+      for (int64_t k = 0; k < top_k; ++k) {
+        int64_t idx = (b * seq_len + s) * top_k * 2 + k * 2;
+        router_data[idx] = (k == 0) ? 0.0f : static_cast<float>(k); // expert_id
+        router_data[idx + 1] = 1.0f / top_k; // weight
+      }
+    }
+  }
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape matches input shape
@@ -124,15 +133,15 @@ bool test_modified_swiglu_activation() {
   int64_t seq_len = 1;
   int64_t hidden_dim = 2;
   int64_t expert_ffn_dim = 2;
-  int64_t num_experts = 1;
+  int64_t top_k = 4;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> w_up_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor w_up(dtype::float16, w_up_shape);
@@ -163,28 +172,34 @@ bool test_modified_swiglu_activation() {
   for (int64_t i = 0; i < b_gate.numel(); ++i) b_gate_data[i] = 0.0f;
   for (int64_t i = 0; i < b_down.numel(); ++i) b_down_data[i] = 0.0f;
 
-  // Set up projection: w_up[0][0][0] = 1.0, b_up[0][0] = 0.5
+  // Set up projection: w_up[0][0] = 1.0, b_up[0] = 0.5
   // This gives up_0 = 1.0 * 1.0 + 0.5 * 0.0 + 0.5 = 1.5
   w_up_data[0] = fp32_to_fp16(1.0f);
   b_up_data[0] = 0.5f;
 
-  // Set gate projection: w_gate[0][0][0] = 1.0, b_gate[0][0] = 0.0
+  // Set gate projection: w_gate[0][0] = 1.0, b_gate[0] = 0.0
   // This gives gate_0 = 1.0 * 1.0 + 0.5 * 0.0 + 0.0 = 1.0
   w_gate_data[0] = fp32_to_fp16(1.0f);
 
   // Set down projection to identity
-  w_down_data[0] = fp32_to_fp16(1.0f);  // w_down[0][0][0]
-  w_down_data[2] = fp32_to_fp16(1.0f);  // w_down[0][1][1]
+  w_down_data[0] = fp32_to_fp16(1.0f);  // w_down[0][0]
+  w_down_data[2] = fp32_to_fp16(1.0f);  // w_down[1][1]
 
   // Create expert MLP node
   expert_mlp_node node(0);
 
-  // Create selected_expert_ids (select expert 0)
-  dynamic_tensor selected_expert_ids(dtype::int32, {1});
-  selected_expert_ids.data_ptr<int32_t>()[0] = 0;
+  // Create router_output: [batch, seq_len, top_k, 2]
+  dynamic_tensor router_output(dtype::float32, {batch, seq_len, top_k, 2});
+  float* router_data = router_output.data_ptr<float>();
+  router_data[0] = 0.0f; // expert_id 0
+  router_data[1] = 1.0f; // weight
+  for (int64_t k = 1; k < top_k; ++k) {
+    router_data[k * 2] = static_cast<float>(k);
+    router_data[k * 2 + 1] = 0.0f;
+  }
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
   dynamic_tensor output = node.compute_test(inputs);
 
   const float* output_data = output.data_ptr<float>();
@@ -204,23 +219,23 @@ bool test_modified_swiglu_activation() {
   return true;
 }
 
-// Test multiple experts with 3D weights and biases
+// Test multiple experts with 2D/1D weights and biases
 bool test_multiple_experts() {
-  std::cout << "\nTest 3: Multiple expert IDs with 3D weights and biases\n";
+  std::cout << "\nTest 3: Multiple expert IDs with 2D/1D weights and biases\n";
 
   int64_t batch = 1;
   int64_t seq_len = 2;
   int64_t hidden_dim = 8;
   int64_t expert_ffn_dim = 16;
-  int64_t num_experts = 32;
+  int64_t top_k = 4;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> w_up_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor w_up(dtype::float16, w_up_shape);
@@ -250,10 +265,21 @@ bool test_multiple_experts() {
       return false;
     }
 
-    // Compute with 3D weights and biases
-    dynamic_tensor selected_expert_ids(dtype::int32, {1});
-    selected_expert_ids.data_ptr<int32_t>()[0] = expert_id;
-    std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
+    // Compute with 2D/1D weights and biases
+    dynamic_tensor router_output(dtype::float32, {batch, seq_len, top_k, 2});
+    float* router_data = router_output.data_ptr<float>();
+    for (int64_t b = 0; b < batch; ++b) {
+      for (int64_t s = 0; s < seq_len; ++s) {
+        router_data[(b * seq_len + s) * top_k * 2] = static_cast<float>(expert_id);
+        router_data[(b * seq_len + s) * top_k * 2 + 1] = 1.0f;
+        for (int64_t k = 1; k < top_k; ++k) {
+          int64_t idx = (b * seq_len + s) * top_k * 2 + k * 2;
+          router_data[idx] = static_cast<float>((expert_id + k) % 32);
+          router_data[idx + 1] = 0.0f;
+        }
+      }
+    }
+    std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
     dynamic_tensor output = node.compute_test(inputs);
 
     // Verify output shape
@@ -278,7 +304,7 @@ bool test_multiple_experts() {
     }
   }
 
-  std::cout << "  ✓ Multiple experts with 3D weights and biases work correctly\n";
+  std::cout << "  ✓ Multiple experts with 2D/1D weights and biases work correctly\n";
   return true;
 }
 
@@ -286,20 +312,20 @@ bool test_multiple_experts() {
 bool test_gpt_oss_scale() {
   std::cout << "\nTest 4: GPT-OSS scale dimensions\n";
 
-  // GPT-OSS: hidden_dim=2880, expert_ffn_dim=2880, num_experts=32
+  // GPT-OSS: hidden_dim=2880, expert_ffn_dim=2880
   int64_t batch = 2;
   int64_t seq_len = 4;
-  int64_t hidden_dim = 128;     // Using smaller for testing
+  int64_t hidden_dim = 128;
   int64_t expert_ffn_dim = 128;
-  int64_t num_experts = 32;
+  int64_t top_k = 4;
 
   std::vector<int64_t> hidden_shape = {batch, seq_len, hidden_dim};
-  std::vector<int64_t> w_up_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_gate_shape = {num_experts, expert_ffn_dim, hidden_dim};
-  std::vector<int64_t> w_down_shape = {num_experts, hidden_dim, expert_ffn_dim};
-  std::vector<int64_t> b_up_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_gate_shape = {num_experts, expert_ffn_dim};
-  std::vector<int64_t> b_down_shape = {num_experts, hidden_dim};
+  std::vector<int64_t> w_up_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_gate_shape = {expert_ffn_dim, hidden_dim};
+  std::vector<int64_t> w_down_shape = {hidden_dim, expert_ffn_dim};
+  std::vector<int64_t> b_up_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_gate_shape = {expert_ffn_dim};
+  std::vector<int64_t> b_down_shape = {hidden_dim};
 
   dynamic_tensor hidden_states(dtype::float32, hidden_shape);
   dynamic_tensor w_up(dtype::float16, w_up_shape);
@@ -320,12 +346,23 @@ bool test_gpt_oss_scale() {
   // Create expert MLP node
   expert_mlp_node node(0);
 
-  // Create selected_expert_ids (select expert 0)
-  dynamic_tensor selected_expert_ids(dtype::int32, {1});
-  selected_expert_ids.data_ptr<int32_t>()[0] = 0;
+  // Create router_output: all tokens select expert 0
+  dynamic_tensor router_output(dtype::float32, {batch, seq_len, top_k, 2});
+  float* router_data = router_output.data_ptr<float>();
+  for (int64_t b = 0; b < batch; ++b) {
+    for (int64_t s = 0; s < seq_len; ++s) {
+      router_data[(b * seq_len + s) * top_k * 2] = 0.0f;
+      router_data[(b * seq_len + s) * top_k * 2 + 1] = 1.0f;
+      for (int64_t k = 1; k < top_k; ++k) {
+        int64_t idx = (b * seq_len + s) * top_k * 2 + k * 2;
+        router_data[idx] = static_cast<float>(k);
+        router_data[idx + 1] = 0.0f;
+      }
+    }
+  }
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, selected_expert_ids};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape
@@ -364,8 +401,8 @@ bool test_gpt_oss_scale() {
 }
 
 int main() {
-  std::cout << "Testing Expert MLP Node (3D Weights, Biases, Modified SwiGLU)\n";
-  std::cout << "=============================================================\n\n";
+  std::cout << "Testing Expert MLP Node (2D/1D Weights, Biases, Modified SwiGLU)\n";
+  std::cout << "===============================================================\n\n";
 
   bool test1 = test_expert_mlp_basic();
   bool test2 = test_modified_swiglu_activation();
