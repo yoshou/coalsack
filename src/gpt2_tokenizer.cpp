@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "gguf_multi_loader.h"
+
 namespace coalsack {
 
 struct pair_hash {
@@ -161,7 +163,9 @@ gpt2_tokenizer::gpt2_tokenizer() : pimpl_(std::make_unique<impl>()) {}
 
 gpt2_tokenizer::~gpt2_tokenizer() = default;
 
-bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
+// Template implementation for loading from any loader type
+template <typename LoaderType>
+bool gpt2_tokenizer::load_from_gguf_impl(const LoaderType& loader) {
   if (!loader.is_loaded()) {
     std::cerr << "Error: GGUF loader not loaded\n";
     return false;
@@ -214,6 +218,14 @@ bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
   pimpl_->loaded = true;
 
   return true;
+}
+
+bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
+  return load_from_gguf_impl(loader);
+}
+
+bool gpt2_tokenizer::load_from_gguf(const gguf_multi_loader& loader) {
+  return load_from_gguf_impl(loader);
 }
 
 std::vector<uint32_t> gpt2_tokenizer::encode(const std::string& text) const {

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "gguf_loader.h"
+#include "gguf_multi_loader.h"
 
 namespace coalsack {
 
@@ -18,6 +19,7 @@ class gpt2_tokenizer {
   gpt2_tokenizer& operator=(const gpt2_tokenizer&) = delete;
 
   bool load_from_gguf(const gguf_loader& loader);
+  bool load_from_gguf(const gguf_multi_loader& loader);
 
   std::vector<uint32_t> encode(const std::string& text) const;
   std::string decode(const std::vector<uint32_t>& tokens) const;
@@ -31,6 +33,9 @@ class gpt2_tokenizer {
   size_t vocab_size() const;
 
  private:
+  template <typename LoaderType>
+  bool load_from_gguf_impl(const LoaderType& loader);
+
   struct impl;
   std::unique_ptr<impl> pimpl_;
 };
