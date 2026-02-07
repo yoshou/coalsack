@@ -7,6 +7,10 @@
 
 #include "gguf_types.h"
 
+#ifdef __F16C__
+#include <immintrin.h>
+#endif
+
 namespace coalsack {
 
 // Block sizes for various quantization formats
@@ -21,6 +25,11 @@ constexpr int QK_MXFP4 = 32;
 
 // Convert fp16 (stored as uint16_t) to float32
 inline float fp16_to_fp32(uint16_t h) {
+#ifdef __F16C__
+  __m128i vec = _mm_cvtsi32_si128(h);
+  __m128 result = _mm_cvtph_ps(vec);
+  return _mm_cvtss_f32(result);
+#else
   uint32_t sign = (h & 0x8000) << 16;
   uint32_t exponent = (h >> 10) & 0x1F;
   uint32_t mantissa = h & 0x3FF;
@@ -60,6 +69,7 @@ inline float fp16_to_fp32(uint16_t h) {
     std::memcpy(&f, &result, sizeof(f));
     return f;
   }
+#endif
 }
 
 // Dequantize Q4_0 block
@@ -432,6 +442,11 @@ inline void dequantize_block_mxfp4(const uint8_t* src, float* dst, int64_t k) {
 
 // Convert fp32 to fp16 (uint16_t)
 inline uint16_t fp32_to_fp16(float f) {
+#ifdef __F16C__
+  __m128 vec = _mm_set_ss(f);
+  __m128i result = _mm_cvtps_ph(vec, _MM_FROUND_TO_NEAREST_INT);
+  return static_cast<uint16_t>(_mm_cvtsi128_si32(result));
+#else
   uint32_t bits;
   std::memcpy(&bits, &f, sizeof(f));
 
@@ -455,6 +470,7 @@ inline uint16_t fp32_to_fp16(float f) {
     // Normal number
     return static_cast<uint16_t>(sign | (exponent << 10) | mantissa);
   }
+#endif
 }
 
 // Dequantize MXFP4 to float16 (instead of float32)
