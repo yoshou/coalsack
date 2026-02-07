@@ -5,3 +5,4 @@ sample/voxelpose/data/*.onnx
 sample/faster-voxelpose/data/*.onnx
 sample/superpoint-lightglue/data/*.onnx
 
+data/171204_pose1
