@@ -18,7 +18,6 @@
 #include "nn_nodes.h"
 #include "nn_ops/add_node.h"
 #include "nn_ops/constant_node.h"
-#include "nn_ops/expert_selector_node.h"
 #include "nn_ops/grouped_attention_node.h"
 #include "nn_ops/matmul_transpose_mixed_node.h"
 #include "nn_ops/reshape_node.h"
@@ -792,22 +791,7 @@ void gpt_oss_engine::build_transformer_graph() {
     pimpl_->graph->add_node(router);
     graph_edge_ptr router_out = router->get_output("default");
 
-    // Expert Selector (new optimization node)
-    auto expert_selector = std::make_shared<expert_selector_node>();
-
-    auto selector_sync = std::make_shared<result_message_sync_node>();
-    selector_sync->set_input(router_out, layer_prefix + ".router_out");
-    selector_sync->set_initial_ids({layer_prefix + ".router_out"});
-    pimpl_->graph->add_node(selector_sync);
-
-    expert_selector->set_input(selector_sync->get_output(), "default");
-    expert_selector->set_input_name(layer_prefix + ".router_out");
-    expert_selector->set_output_name(layer_prefix + ".selected_expert_ids");
-    expert_selector->set_node_name(layer_prefix + ".expert_selector");
-    pimpl_->graph->add_node(expert_selector);
-    graph_edge_ptr selected_ids = expert_selector->get_output("default");
-
-    // Expert MLPs
+    // Expert MLPs (receive router_output directly for token-level conditional execution)
     std::vector<graph_edge_ptr> expert_outputs;
     for (int expert_id = 0; expert_id < pimpl_->num_experts; ++expert_id) {
       auto expert = std::make_shared<expert_mlp_node>(expert_id);
@@ -820,12 +804,12 @@ void gpt_oss_engine::build_transformer_graph() {
       expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.bias"], layer_prefix + ".ffn_up_exps.bias");
       expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.bias"], layer_prefix + ".ffn_gate_exps.bias");
       expert_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.bias"], layer_prefix + ".ffn_down_exps.bias");
-      expert_sync->set_input(selected_ids, layer_prefix + ".selected_expert_ids");
-      expert_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".selected_expert_ids"});
+      expert_sync->set_input(router_out, layer_prefix + ".router_out");
+      expert_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
       pimpl_->graph->add_node(expert_sync);
 
       expert->set_input(expert_sync->get_output(), "default");
-      expert->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".selected_expert_ids"});
+      expert->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
       expert->set_output_name(layer_prefix + ".expert_" + std::to_string(expert_id) + "_out");
       expert->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id));
       pimpl_->graph->add_node(expert);
