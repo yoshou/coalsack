@@ -21,6 +21,7 @@ class gpt_oss_engine {
  public:
   struct config {
     int64_t kv_cache_size = std::numeric_limits<int64_t>::max();  // default: unlimited (use model's max_seq_len)
+    size_t moe_cache_size_bytes = 2147483648;  // 2 GiB default
   };
 
   gpt_oss_engine();

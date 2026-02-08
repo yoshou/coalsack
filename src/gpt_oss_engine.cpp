@@ -14,6 +14,7 @@
 #include "gguf_multi_loader.h"
 #include "gpt2_tokenizer.h"
 #include "graph_proc.h"
+#include "moe_weight_provider.h"
 #include "model_io_nodes.h"
 #include "nn_nodes.h"
 #include "nn_ops/add_node.h"
@@ -26,8 +27,11 @@
 namespace coalsack {
 
 struct gpt_oss_engine::impl {
+  // Config
+  config cfg;
+  
   // Components
-  std::unique_ptr<gguf_multi_loader> loader;
+  std::shared_ptr<gguf_multi_loader> loader;
   std::unique_ptr<gpt2_tokenizer> tokenizer;
   std::shared_ptr<subgraph> graph;
   std::unique_ptr<graph_proc> proc;
@@ -41,6 +45,9 @@ struct gpt_oss_engine::impl {
   
   // Attention nodes (for KV cache management)
   std::vector<std::shared_ptr<grouped_attention_node>> attention_nodes;
+  
+  // MoE weight providers (one per layer, for on-demand expert weight loading)
+  std::vector<std::shared_ptr<moe_weight_provider>> moe_providers;
 
   // Position tracking for RoPE
   int64_t cached_position_ = 0;
@@ -74,13 +81,14 @@ struct gpt_oss_engine::impl {
 };
 
 gpt_oss_engine::gpt_oss_engine() : pimpl_(std::make_unique<impl>()) {
-  pimpl_->loader = std::make_unique<gguf_multi_loader>();
+  pimpl_->loader = std::make_shared<gguf_multi_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = std::numeric_limits<int64_t>::max();
 }
 
 gpt_oss_engine::gpt_oss_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
-  pimpl_->loader = std::make_unique<gguf_multi_loader>();
+  pimpl_->cfg = cfg;
+  pimpl_->loader = std::make_shared<gguf_multi_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = cfg.kv_cache_size;
 }
@@ -200,6 +208,15 @@ void gpt_oss_engine::load_weights_from_gguf() {
   auto& loader = *pimpl_->loader;
   const auto& tensor_names = loader.get_tensor_names();
   const auto& shard_paths = loader.get_shard_paths();
+  
+  // Initialize MoE weight providers (one per layer) for on-demand loading
+  pimpl_->moe_providers.clear();
+  for (int64_t layer = 0; layer < pimpl_->num_layers; ++layer) {
+    pimpl_->moe_providers.push_back(std::make_shared<moe_weight_provider>(
+        pimpl_->loader,
+        shard_paths,
+        pimpl_->cfg.moe_cache_size_bytes));
+  }
 
   // Open all shard files
   std::vector<std::ifstream> files;
@@ -212,8 +229,15 @@ void gpt_oss_engine::load_weights_from_gguf() {
 
   size_t loaded_count = 0;
   size_t dequantized_count = 0;
+  size_t skipped_moe_count = 0;
 
   for (const auto& name : tensor_names) {
+    // Skip MoE expert weights (loaded on-demand via moe_weight_provider)
+    if (name.find("_exps.weight") != std::string::npos ||
+        name.find("_exps.bias") != std::string::npos) {
+      ++skipped_moe_count;
+      continue;
+    }
     auto info_opt = loader.get_tensor_info(name);
     if (!info_opt) {
       throw std::runtime_error("Failed to get tensor info for: " + name);
@@ -329,12 +353,6 @@ void gpt_oss_engine::build_transformer_graph() {
     required_weights.push_back(layer_prefix + ".post_attention_norm.weight");
     required_weights.push_back(layer_prefix + ".ffn_gate_inp.weight");
     required_weights.push_back(layer_prefix + ".ffn_gate_inp.bias");
-    required_weights.push_back(layer_prefix + ".ffn_up_exps.weight");
-    required_weights.push_back(layer_prefix + ".ffn_up_exps.bias");
-    required_weights.push_back(layer_prefix + ".ffn_gate_exps.weight");
-    required_weights.push_back(layer_prefix + ".ffn_gate_exps.bias");
-    required_weights.push_back(layer_prefix + ".ffn_down_exps.weight");
-    required_weights.push_back(layer_prefix + ".ffn_down_exps.bias");
   }
 
   for (const auto& name : required_weights) {
@@ -374,12 +392,6 @@ void gpt_oss_engine::build_transformer_graph() {
         layer_prefix + ".post_attention_norm.weight",
         layer_prefix + ".ffn_gate_inp.weight",
         layer_prefix + ".ffn_gate_inp.bias",
-        layer_prefix + ".ffn_up_exps.weight",
-        layer_prefix + ".ffn_up_exps.bias",
-        layer_prefix + ".ffn_gate_exps.weight",
-        layer_prefix + ".ffn_gate_exps.bias",
-        layer_prefix + ".ffn_down_exps.weight",
-        layer_prefix + ".ffn_down_exps.bias",
     };
 
     for (const auto& name : layer_weight_names) {
@@ -807,46 +819,30 @@ void gpt_oss_engine::build_transformer_graph() {
     pimpl_->graph->add_node(router);
     graph_edge_ptr router_out = router->get_output("default");
 
-    // Expert MLPs (receive router_output directly for token-level conditional execution)
+    // On-demand MoE weight fetch node (layer-level, loads expert weights from disk)
+    auto fetch_node = std::make_shared<moe_weight_fetch_node>(pimpl_->moe_providers[layer], layer_prefix);
+    fetch_node->set_input(router_out, layer_prefix + ".router_out");
+    pimpl_->graph->add_node(fetch_node);
+
+    // Expert-specific edges (one per expert)
+    std::vector<graph_edge_ptr> fetch_outputs;
+    for (int expert_id = 0; expert_id < pimpl_->num_experts; ++expert_id) {
+      fetch_outputs.push_back(fetch_node->add_expert_output(expert_id));
+    }
+
+    // Expert MLPs (receive dynamically loaded weights from fetch node)
     std::vector<graph_edge_ptr> expert_outputs;
     for (int expert_id = 0; expert_id < pimpl_->num_experts; ++expert_id) {
-      // Sync for 3D weights/2D biases + router_out
-      auto weight_sync = std::make_shared<result_message_sync_node>();
-      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.weight"], layer_prefix + ".ffn_up_exps.weight");
-      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.weight"], layer_prefix + ".ffn_gate_exps.weight");
-      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.weight"], layer_prefix + ".ffn_down_exps.weight");
-      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_up_exps.bias"], layer_prefix + ".ffn_up_exps.bias");
-      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_exps.bias"], layer_prefix + ".ffn_gate_exps.bias");
-      weight_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_down_exps.bias"], layer_prefix + ".ffn_down_exps.bias");
-      weight_sync->set_input(router_out, layer_prefix + ".router_out");
-      weight_sync->set_initial_ids({layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
-      pimpl_->graph->add_node(weight_sync);
-
-      // Slice 3D weights -> 2D/1D views for this expert
-      auto slice = std::make_shared<moe_expert_weight_slice_node>(expert_id);
-      slice->set_input(weight_sync->get_output(), "default");
-      slice->set_input_names({layer_prefix + ".ffn_up_exps.weight", layer_prefix + ".ffn_gate_exps.weight", layer_prefix + ".ffn_down_exps.weight", layer_prefix + ".ffn_up_exps.bias", layer_prefix + ".ffn_gate_exps.bias", layer_prefix + ".ffn_down_exps.bias", layer_prefix + ".router_out"});
-      slice->set_output_names({layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up",
-                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate",
-                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down",
-                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up",
-                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate",
-                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down",
-                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
-      slice->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id) + ".slice");
-      pimpl_->graph->add_node(slice);
-      graph_edge_ptr sliced_weights = slice->get_output("default");
-
-      // Sync for expert MLP: ffn_norm_out + 2D/1D sliced weights
+      // Sync for expert MLP: ffn_norm_out + fetched expert weights (7 fields)
       auto expert_sync = std::make_shared<result_message_sync_node>();
       expert_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down");
-      expert_sync->set_input(sliced_weights, layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down");
+      expert_sync->set_input(fetch_outputs[expert_id], layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out");
       expert_sync->set_initial_ids({layer_prefix + ".ffn_norm_out", 
                                      layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up",
                                      layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate",
@@ -857,10 +853,17 @@ void gpt_oss_engine::build_transformer_graph() {
                                      layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
       pimpl_->graph->add_node(expert_sync);
 
-      // Expert MLP node (now receives 2D/1D weights)
+      // Expert MLP node (receives 2D/1D weights from fetch node)
       auto expert = std::make_shared<expert_mlp_node>(expert_id);
       expert->set_input(expert_sync->get_output(), "default");
-      expert->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up", layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate", layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down", layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up", layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate", layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down", layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
+      expert->set_input_names({layer_prefix + ".ffn_norm_out", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down", 
+                               layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
       expert->set_output_name(layer_prefix + ".expert_" + std::to_string(expert_id) + "_out");
       expert->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id));
       pimpl_->graph->add_node(expert);
