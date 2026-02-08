@@ -35,6 +35,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt2_tokenizer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/chat_template.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gpt_oss_engine.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/moe_weight_provider.cpp
 )
 
 add_dependencies(${PROJECT_NAME}
