@@ -175,7 +175,6 @@ class stream_syncer {
   std::shared_ptr<callback_type> _callback;
   std::map<stream_id_type, time_type> _times;
   std::mutex mtx;
-  std::map<stream_id_type, data_type> frames;
 
   bool skip_missing_stream(time_type base_time, stream_id_type stream_id) {
     auto expect_time = _times[stream_id].get_next_time();
@@ -246,7 +245,7 @@ class stream_syncer {
       }
 
       if (synced_frames.size() > 0) {
-        frames.clear();
+        std::map<stream_id_type, data_type> frames;
         for (auto &synced_frame : synced_frames) {
           frames[synced_frame.stream_id] = synced_frame.data;
         }
