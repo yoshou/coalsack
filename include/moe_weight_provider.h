@@ -57,7 +57,7 @@ class moe_weight_provider {
  private:
   void evict_lru_until_space(size_t required_bytes);
   void update_lru(const std::string& key);
-  std::vector<uint8_t> load_expert_slice_from_file(uint64_t offset, size_t num_bytes);
+  std::vector<uint8_t> load_expert_slice_from_file(uint32_t shard_idx, uint64_t offset, size_t num_bytes);
 };
 
 }  // namespace coalsack

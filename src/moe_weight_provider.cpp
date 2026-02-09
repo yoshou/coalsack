@@ -74,7 +74,6 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
   if (it != cache_.end()) {
     ++cache_hits_;
     update_lru(cache_key);
-    spdlog::info("cache hit: {}", cache_key);
     return it->second.tensor;
   }
   
@@ -131,7 +130,7 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
     
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_quantized;
     
-    auto tensor_data = load_expert_slice_from_file(expert_offset, slice_bytes_quantized);
+    auto tensor_data = load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_quantized);
     
     std::vector<uint16_t> fp16_data(slice_elements);
     dequantize_q4k_to_fp16(tensor_data.data(), fp16_data.data(), slice_elements);
@@ -150,7 +149,7 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
     
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_quantized;
     
-    auto tensor_data = load_expert_slice_from_file(expert_offset, slice_bytes_quantized);
+    auto tensor_data = load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_quantized);
     
     std::vector<uint16_t> fp16_data(slice_elements);
     if (!dequantize_mxfp4_to_fp16(tensor_data.data(), fp16_data.data(), slice_elements)) {
@@ -165,7 +164,7 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
     std::memcpy(result.data_ptr<uint16_t>(), fp16_data.data(), slice_bytes_result);
   } else if (tensor_info.type == ggml_type::F32) {
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_result;
-    auto tensor_data = load_expert_slice_from_file(expert_offset, slice_bytes_result);
+    auto tensor_data = load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_result);
     
     if (is_1d_output) {
       result = dynamic_tensor(dtype::float32, {static_cast<int64_t>(dim0)});
@@ -175,7 +174,7 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
     std::memcpy(result.data_ptr<float>(), tensor_data.data(), slice_bytes_result);
   } else if (tensor_info.type == ggml_type::F16) {
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_result;
-    auto tensor_data = load_expert_slice_from_file(expert_offset, slice_bytes_result);
+    auto tensor_data = load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_result);
     
     if (is_1d_output) {
       result = dynamic_tensor(dtype::float16, {static_cast<int64_t>(dim0)});
@@ -184,8 +183,6 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
     }
     std::memcpy(result.data_ptr<uint16_t>(), tensor_data.data(), slice_bytes_result);
   }
-  
-  spdlog::info("load: {} ({:.2f} MiB)", cache_key, slice_bytes_result / (1024.0 * 1024.0));
   
   cache_entry entry;
   entry.tensor = result;
@@ -232,7 +229,6 @@ void moe_weight_provider::evict_lru_until_space(size_t required_bytes) {
     
     auto it = cache_.find(lru_key);
     if (it != cache_.end()) {
-      spdlog::info("evict: {} ({:.2f} MiB)", lru_key, it->second.size_bytes / (1024.0 * 1024.0));
       current_cache_size_bytes_ -= it->second.size_bytes;
       cache_.erase(it);
     }
@@ -247,11 +243,17 @@ void moe_weight_provider::update_lru(const std::string& key) {
   }
 }
 
-std::vector<uint8_t> moe_weight_provider::load_expert_slice_from_file(uint64_t offset, size_t num_bytes) {
-  FILE* fp = shard_files_[0];
+std::vector<uint8_t> moe_weight_provider::load_expert_slice_from_file(uint32_t shard_idx, uint64_t offset, size_t num_bytes) {
+  if (shard_idx >= shard_files_.size()) {
+    throw std::runtime_error("Shard index " + std::to_string(shard_idx) + 
+                             " out of range [0, " + std::to_string(shard_files_.size()) + ")");
+  }
+  
+  FILE* fp = shard_files_[shard_idx];
   
   if (std::fseek(fp, offset, SEEK_SET) != 0) {
-    throw std::runtime_error("Failed to seek to offset " + std::to_string(offset));
+    throw std::runtime_error("Failed to seek to offset " + std::to_string(offset) + 
+                             " in shard " + std::to_string(shard_idx));
   }
   
   std::vector<uint8_t> buffer(num_bytes);

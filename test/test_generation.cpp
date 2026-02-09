@@ -31,7 +31,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const std::string model_path = config["model_path"];
   const int max_tokens = config["max_tokens"];
   const float temperature = config["temperature"];
 
@@ -46,12 +45,22 @@ int main(int argc, char** argv) {
 
   // Load gpt_oss_engine
   std::cout << "Loading gpt_oss_engine...\n";
-  std::cout << "  Model: " << model_path << "\n";
+  
+  // model_path is always an array (for both single and multi-file models)
+  std::vector<std::string> model_paths = config["model_path"].get<std::vector<std::string>>();
+  
+  std::cout << "  Model files (" << model_paths.size() << "):\n";
+  for (const auto& path : model_paths) {
+    std::cout << "    - " << path << "\n";
+  }
+  
   gpt_oss_engine::config engine_config;
   engine_config.kv_cache_size = 4096;
+  engine_config.moe_cache_size_bytes = 1073741824;  // 1 GiB per layer
   std::cout << "  KV cache size: " << engine_config.kv_cache_size << " tokens\n";
   gpt_oss_engine engine(engine_config);
-  if (!engine.load(model_path)) {
+  
+  if (!engine.load(model_paths)) {
     std::cerr << "Failed to load engine\n";
     return 1;
   }

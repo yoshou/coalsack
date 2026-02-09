@@ -37,7 +37,7 @@ struct gpt_oss_engine::impl {
   std::unique_ptr<graph_proc> proc;
 
   // I/O nodes
-  std::shared_ptr<model_input_node> input_node;
+  std::shared_ptr<model_source_node> input_node;
   std::shared_ptr<model_output_node> output_node;
 
   // Constant nodes (for weight tensors, need frame source connection)
@@ -330,7 +330,7 @@ void gpt_oss_engine::build_transformer_graph() {
   pimpl_->graph = std::make_shared<subgraph>();
 
   // Create I/O nodes
-  pimpl_->input_node = std::make_shared<model_input_node>();
+  pimpl_->input_node = std::make_shared<model_source_node>();
   pimpl_->output_node = std::make_shared<model_output_node>();
 
   std::vector<std::string> required_weights = {
@@ -420,6 +420,12 @@ void gpt_oss_engine::build_transformer_graph() {
 
   // Transformer layers
   for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
+    // Insert layer_scheduler_node at layer entrance to break call stack and trim memory
+    auto scheduler = std::make_shared<layer_scheduler_node>();
+    scheduler->set_input(current, "default");
+    pimpl_->graph->add_node(scheduler);
+    current = scheduler->get_output("default");
+
     std::string layer_str = std::to_string(layer);
     std::string layer_prefix = "blk." + layer_str;
     int64_t layer_head_dim = pimpl_->head_dim;
@@ -966,7 +972,7 @@ void gpt_oss_engine::build_transformer_graph() {
 }
 
 void gpt_oss_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr logits_output) {
-  pimpl_->input_node = std::make_shared<model_input_node>();
+  pimpl_->input_node = std::make_shared<model_source_node>();
   pimpl_->output_node = std::make_shared<model_output_node>();
 
   auto extractor = std::make_shared<result_field_extractor_node>();
@@ -1031,17 +1037,19 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
   pimpl_->cached_position_ = 0;
 
   std::string generated_text;
-  std::unordered_map<std::string, dynamic_tensor> outputs;
-  bool output_received = false;
-
-  pimpl_->output_node->set_callback(
-      [&outputs, &output_received](const std::unordered_map<std::string, dynamic_tensor>& result) {
-        outputs = result;
-        output_received = true;
-      });
+  
+  pimpl_->proc->run();
 
   for (size_t step = 0; step < max_tokens; ++step) {
-    output_received = false;
+    // Create promise/future for this step
+    std::promise<std::unordered_map<std::string, dynamic_tensor>> output_promise;
+    auto output_future = output_promise.get_future();
+    
+    pimpl_->output_node->set_callback(
+        [&output_promise](const std::unordered_map<std::string, dynamic_tensor>& result) {
+          spdlog::debug("Output callback invoked");
+          output_promise.set_value(result);
+        });
 
     std::vector<int64_t> shape;
     dynamic_tensor input_tensor;
@@ -1080,12 +1088,10 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
     pimpl_->input_node->set_tensor("input_ids", input_tensor);
     pimpl_->input_node->set_tensor("position_ids", position_ids_tensor);
     pimpl_->input_node->set_frame_number(step + 1);
+    pimpl_->input_node->push();
 
-    pimpl_->proc->run();
-
-    if (!output_received) {
-      throw std::runtime_error("No output received for step " + std::to_string(step));
-    }
+    // Wait for output synchronously
+    auto outputs = output_future.get();
 
     auto it = outputs.find("logits");
     if (it == outputs.end()) {
@@ -1117,6 +1123,8 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
     std::string piece = pimpl_->tokenizer->decode({next_token});
     generated_text += piece;
   }
+
+  pimpl_->proc->stop();
 
   return generated_text;
 }
