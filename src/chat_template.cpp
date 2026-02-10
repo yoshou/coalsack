@@ -34,10 +34,9 @@ struct chat_template::impl {
 
   std::string format_message(const message& msg) const {
     std::ostringstream oss;
-    // Format: <|start|>{role}\n{content}<|end|>\n
-    // Note: No <|message|> marker, to match Python version
-    oss << MARKER_START << role_to_string(msg.role_type) << "\n";
-    oss << msg.content << MARKER_END << "\n";
+    // Format: <|start|>{role}<|message|>{content}<|end|>
+    oss << MARKER_START << role_to_string(msg.role_type) << MARKER_MESSAGE;
+    oss << msg.content << MARKER_END;
     return oss.str();
   }
 };
