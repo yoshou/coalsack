@@ -6,8 +6,10 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
+#include "dynamic_mx_tensor.h"
 #include "dynamic_tensor.h"
 #include "gguf_multi_loader.h"
 
@@ -16,7 +18,7 @@ namespace coalsack {
 class moe_weight_provider {
  private:
   struct cache_entry {
-    dynamic_tensor tensor;
+    std::variant<dynamic_tensor, dynamic_mx_tensor> tensor;
     size_t size_bytes;
   };
 
@@ -47,7 +49,7 @@ class moe_weight_provider {
   moe_weight_provider(const moe_weight_provider&) = delete;
   moe_weight_provider& operator=(const moe_weight_provider&) = delete;
   
-  dynamic_tensor get(const std::string& tensor_name, int expert_id);
+  std::variant<dynamic_tensor, dynamic_mx_tensor> get(const std::string& tensor_name, int expert_id);
   
   void set_max_cache_size(size_t max_bytes);
   size_t get_max_cache_size() const;
@@ -58,6 +60,7 @@ class moe_weight_provider {
   void evict_lru_until_space(size_t required_bytes);
   void update_lru(const std::string& key);
   std::vector<uint8_t> load_expert_slice_from_file(uint32_t shard_idx, uint64_t offset, size_t num_bytes);
+  void load_expert_slice_from_file(uint32_t shard_idx, uint64_t offset, uint8_t* buffer, size_t num_bytes);
 };
 
 }  // namespace coalsack

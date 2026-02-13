@@ -4,6 +4,9 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include <cstdlib>
+
+#include <spdlog/spdlog.h>
 
 #include "chat_template.h"
 #include "gpt_oss_engine.h"
@@ -12,6 +15,23 @@ using namespace coalsack;
 using json = nlohmann::json;
 
 int main(int argc, char** argv) {
+  // Set log level from environment variable
+  const char* log_level_env = std::getenv("LOG_LEVEL");
+  if (log_level_env) {
+    std::string level_str(log_level_env);
+    if (level_str == "trace") {
+      spdlog::set_level(spdlog::level::trace);
+    } else if (level_str == "debug") {
+      spdlog::set_level(spdlog::level::debug);
+    } else if (level_str == "info") {
+      spdlog::set_level(spdlog::level::info);
+    } else if (level_str == "warn") {
+      spdlog::set_level(spdlog::level::warn);
+    } else if (level_str == "error") {
+      spdlog::set_level(spdlog::level::err);
+    }
+  }
+  
   std::cout << "=================================\n";
   std::cout << "GPT-OSS Generation Test\n";
   std::cout << "=================================\n\n";
