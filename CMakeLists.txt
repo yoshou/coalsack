@@ -43,6 +43,8 @@ add_dependencies(${PROJECT_NAME}
     spdlog
 )
 
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
+
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     ENABLE_ONNX_IMPORT
 )
