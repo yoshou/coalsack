@@ -65,7 +65,7 @@ moe_weight_provider::~moe_weight_provider() {
   }
 }
 
-dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expert_id) {
+std::variant<dynamic_tensor, dynamic_mx_tensor> moe_weight_provider::get(const std::string& tensor_name, int expert_id) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
   
   std::string cache_key = tensor_name + ":" + std::to_string(expert_id);
@@ -149,19 +149,26 @@ dynamic_tensor moe_weight_provider::get(const std::string& tensor_name, int expe
     
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_quantized;
     
-    auto tensor_data = load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_quantized);
-    
-    std::vector<uint16_t> fp16_data(slice_elements);
-    if (!dequantize_mxfp4_to_fp16(tensor_data.data(), fp16_data.data(), slice_elements)) {
-      throw std::runtime_error("Failed to dequantize MXFP4 tensor: " + tensor_name);
-    }
-    
+    dynamic_mx_tensor mx_result;
     if (is_1d_output) {
-      result = dynamic_tensor(dtype::float16, {static_cast<int64_t>(dim0)});
+      mx_result = dynamic_mx_tensor({static_cast<int64_t>(dim0)});
     } else {
-      result = dynamic_tensor(dtype::float16, {static_cast<int64_t>(dim0), static_cast<int64_t>(dim1)});
+      mx_result = dynamic_mx_tensor({static_cast<int64_t>(dim0), static_cast<int64_t>(dim1)});
     }
-    std::memcpy(result.data_ptr<uint16_t>(), fp16_data.data(), slice_bytes_result);
+    
+    // Load directly into tensor storage
+    load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, mx_result.data_ptr(), slice_bytes_quantized);
+    
+    cache_entry entry;
+    entry.tensor = mx_result;
+    entry.size_bytes = slice_bytes_quantized;
+    
+    cache_[cache_key] = entry;
+    cache_lru_list_.push_back(cache_key);
+    cache_lru_map_[cache_key] = std::prev(cache_lru_list_.end());
+    current_cache_size_bytes_ += slice_bytes_quantized;
+    
+    return mx_result;
   } else if (tensor_info.type == ggml_type::F32) {
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_result;
     auto tensor_data = load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_result);
@@ -265,6 +272,27 @@ std::vector<uint8_t> moe_weight_provider::load_expert_slice_from_file(uint32_t s
   }
   
   return buffer;
+}
+
+void moe_weight_provider::load_expert_slice_from_file(uint32_t shard_idx, uint64_t offset, uint8_t* buffer, size_t num_bytes) {
+  if (shard_idx >= shard_files_.size()) {
+    throw std::runtime_error("Shard index " + std::to_string(shard_idx) + 
+                             " out of range [0, " + std::to_string(shard_files_.size()) + ")");
+  }
+  
+  FILE* fp = shard_files_[shard_idx];
+  
+  if (std::fseek(fp, offset, SEEK_SET) != 0) {
+    throw std::runtime_error("Failed to seek to offset " + std::to_string(offset) + 
+                             " in shard " + std::to_string(shard_idx));
+  }
+  
+  size_t bytes_read = std::fread(buffer, 1, num_bytes, fp);
+  
+  if (bytes_read != num_bytes) {
+    throw std::runtime_error("Failed to read " + std::to_string(num_bytes) + 
+                             " bytes, got " + std::to_string(bytes_read));
+  }
 }
 
 }  // namespace coalsack

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <bit>
 #include <immintrin.h>
 #include <cmath>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "../dynamic_mx_tensor_message.h"
 #include "../nn_op_node.h"
 
 namespace coalsack {
@@ -16,21 +18,236 @@ namespace coalsack {
 // 
 // Architecture:
 // - 8 inputs: hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output
-// - Weight format: 3D tensors [num_experts, expert_ffn_dim, hidden_dim] in FLOAT16
+// - Weight format: 3D tensors [num_experts, expert_ffn_dim, hidden_dim] in FLOAT16 or MXFP4
 // - Bias format: 2D tensors [num_experts, expert_ffn_dim or hidden_dim] in FLOAT32
 // - Router output: 4D tensor [batch, seq_len, top_k, 2] where last dim is [expert_id, weight]
-class expert_mlp_node : public variadic_op_node {
+class expert_mlp_node : public graph_node {
  public:
   explicit expert_mlp_node(int expert_id = 0)
-      : variadic_op_node("expert_mlp", 8), expert_id_(expert_id) {}
+      : graph_node(), expert_id_(expert_id), output_(std::make_shared<graph_edge>(this)) {
+    set_output(output_);
+  }
 
   int get_expert_id() const { return expert_id_; }
 
-  // Public wrapper for testing
-  dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) { return compute(inputs); }
+  std::string get_proc_name() const override { return "expert_mlp"; }
 
- protected:
-  dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
+  void set_input_names(const std::vector<std::string>& names) { input_names_ = names; }
+  void set_output_name(const std::string& name) { output_name_ = name; }
+  void set_node_name(const std::string& name) { node_name_ = name; }
+
+  std::vector<std::string> get_input_names() const { return input_names_; }
+  std::string get_output_name() const { return output_name_; }
+
+  // Public wrapper for testing
+  dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) { return compute_fp16(inputs); }
+
+  // Override process() to handle both FP16 and MXFP4 weights
+  void process(std::string input_name, graph_message_ptr message) override {
+    uint64_t frame_number = 0;
+    double timestamp = 0.0;
+    auto result_msg = std::dynamic_pointer_cast<result_message>(message);
+    if (result_msg) {
+      frame_number = result_msg->get_frame_number();
+      timestamp = result_msg->get_timestamp();
+    }
+
+    if (result_msg && !result_msg->is_ok()) {
+      spdlog::trace("Skipping {} [{}] (Frame: {})", "expert_mlp", node_name_, frame_number);
+      std::unordered_map<std::string, graph_message_ptr> fields;
+      fields[output_name_] = nullptr;
+      auto output_msg = result_message::error(fields, "Input error");
+      output_msg->set_frame_number(frame_number);
+      output_msg->set_timestamp(timestamp);
+      output_->send(output_msg);
+      return;
+    }
+    spdlog::trace("Executing {} [{}] (Frame: {})", "expert_mlp", node_name_, frame_number);
+
+    std::shared_ptr<result_message> output_msg;
+    try {
+      if (!result_msg || input_names_.empty()) {
+        throw std::runtime_error("expert_mlp: invalid input");
+      }
+
+      // Get all inputs as graph messages
+      std::vector<graph_message_ptr> input_msgs;
+      for (const auto& name : input_names_) {
+        auto field = result_msg->get_field(name);
+        if (!field) {
+          throw std::runtime_error("expert_mlp: missing field " + name);
+        }
+        input_msgs.push_back(field);
+      }
+
+      // Check weight message types (indices 1-3: w_up, w_gate, w_down)
+      bool is_mxfp4 = false;
+      if (auto mx_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[1])) {
+        is_mxfp4 = true;
+      }
+
+      dynamic_tensor output;
+      if (is_mxfp4) {
+        // MXFP4 path
+        output = compute_with_mxfp4(input_msgs);
+      } else {
+        // Standard FP16 path
+        std::vector<dynamic_tensor> inputs;
+        for (const auto& msg : input_msgs) {
+          auto tensor_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(msg);
+          if (!tensor_msg) {
+            throw std::runtime_error("expert_mlp: expected dynamic_tensor_message");
+          }
+          inputs.push_back(tensor_msg->get_tensor());
+        }
+        output = compute_fp16(inputs);
+      }
+
+      auto output_tensor_msg = std::make_shared<dynamic_tensor_message>(output);
+      std::unordered_map<std::string, graph_message_ptr> output_fields;
+      output_fields[output_name_] = output_tensor_msg;
+      output_msg = result_message::ok(output_fields);
+      output_msg->set_frame_number(frame_number);
+      output_msg->set_timestamp(timestamp);
+    } catch (const std::exception& e) {
+      spdlog::error("{} [{}]: {}", "expert_mlp", node_name_, e.what());
+      std::unordered_map<std::string, graph_message_ptr> output_fields;
+      output_fields[output_name_] = nullptr;
+      output_msg = result_message::error(output_fields, e.what());
+      output_msg->set_frame_number(frame_number);
+      output_msg->set_timestamp(timestamp);
+    }
+    output_->send(output_msg);
+  }
+
+ private:
+  int expert_id_;
+  graph_edge_ptr output_;
+  std::vector<std::string> input_names_;
+  std::string output_name_;
+  std::string node_name_;
+
+  // SIMD register structure for 32 FP32 elements (4 x __m256)
+  struct simd_block_32 {
+    __m256 v0, v1, v2, v3;
+  };
+
+  // Compile-time E8M0 to FP32 conversion helper
+  static constexpr float compute_e8m0_entry(uint8_t e) {
+    if (e < 2) {
+      // Denormalized: 2^(-128), 2^(-127)
+      uint32_t bits = 0x00200000U << e;
+      return std::bit_cast<float>(bits);
+    } else {
+      // Normalized: 2^(e-128)
+      uint32_t bits = static_cast<uint32_t>(e - 1) << 23;
+      return std::bit_cast<float>(bits);
+    }
+  }
+
+  // Generate E8M0 LUT at compile time using index sequence
+  template<size_t... Is>
+  static constexpr std::array<float, 256> make_e8m0_lut_impl(std::index_sequence<Is...>) {
+    return {{compute_e8m0_entry(Is)...}};
+  }
+
+  static constexpr std::array<float, 256> make_e8m0_lut() {
+    return make_e8m0_lut_impl(std::make_index_sequence<256>{});
+  }
+
+  // E8M0 to FP32 lookup (divided by 2, matching e8m0_to_fp32_half)
+  static inline float e8m0_to_fp32_half_lut(uint8_t e) {
+    static constexpr auto lut = make_e8m0_lut();
+    return lut[e];
+  }
+
+  // Efficient horizontal sum using AVX2 intrinsics
+  __attribute__((target("avx2")))
+  static inline float horizontal_sum_avx2(__m256 v) {
+    // Split 256-bit into two 128-bit
+    __m128 low = _mm256_castps256_ps128(v);
+    __m128 high = _mm256_extractf128_ps(v, 1);
+    // Add low and high
+    __m128 sum128 = _mm_add_ps(low, high);
+    // Horizontal add within 128-bit
+    __m128 shuf = _mm_movehdup_ps(sum128);        // [1,1,3,3]
+    __m128 sums = _mm_add_ps(sum128, shuf);       // [0+1, 1+1, 2+3, 3+3]
+    shuf = _mm_movehl_ps(shuf, sums);             // [2+3, 3+3, ?, ?]
+    sums = _mm_add_ss(sums, shuf);                // [0+1+2+3, ...]
+    return _mm_cvtss_f32(sums);
+  }
+
+  // SIMD MXFP4 block dequantization (32 elements, fully unrolled)
+  // Uses pshufb for 4-bit → int8 table lookup, then converts to float32
+  // Returns SIMD registers directly without memory store
+  __attribute__((target("avx2")))
+  static inline simd_block_32 dequantize_mxfp4_block_32(const uint8_t* block_data) {
+    uint8_t e = block_data[0];
+    const uint8_t* qs = block_data + 1;
+
+    // E8M0 to float32 using lookup table
+    float scale = e8m0_to_fp32_half_lut(e);
+    __m256 scale_vec = _mm256_set1_ps(scale);
+
+    // Load kvalues_mxfp4 lookup table into SSE register
+    const __m128i kvalues_vec = _mm_setr_epi8(
+        0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12);
+
+    // Load 16 packed bytes
+    __m128i packed = _mm_loadu_si128(reinterpret_cast<const __m128i*>(qs));
+
+    // Extract lower and upper nibbles
+    __m128i lo_mask = _mm_set1_epi8(0x0F);
+    __m128i qs_lo = _mm_and_si128(packed, lo_mask);
+    __m128i qs_hi = _mm_and_si128(_mm_srli_epi16(packed, 4), lo_mask);
+
+    // Table lookup using pshufb
+    __m128i vals_lo = _mm_shuffle_epi8(kvalues_vec, qs_lo);  // 16 x int8
+    __m128i vals_hi = _mm_shuffle_epi8(kvalues_vec, qs_hi);  // 16 x int8
+
+    // Convert and scale, returning SIMD registers directly
+    simd_block_32 result;
+    result.v0 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(vals_lo)), scale_vec);
+    result.v1 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(vals_lo, 8))), scale_vec);
+    result.v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(vals_hi)), scale_vec);
+    result.v3 = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(vals_hi, 8))), scale_vec);
+    return result;
+  }
+
+  // Load 32 FP32 elements into SIMD registers
+  __attribute__((target("avx2")))
+  static inline simd_block_32 load_fp32_block_32(const float* data) {
+    simd_block_32 result;
+    result.v0 = _mm256_loadu_ps(data + 0);
+    result.v1 = _mm256_loadu_ps(data + 8);
+    result.v2 = _mm256_loadu_ps(data + 16);
+    result.v3 = _mm256_loadu_ps(data + 24);
+    return result;
+  }
+
+  // SIMD dot product for 32 elements with fully unrolled loop
+  // Accepts pre-loaded data in SIMD registers
+  __attribute__((target("avx2,fma")))
+  static inline float simd_dot_product_32(
+    const simd_block_32& w, const simd_block_32& x
+  ) {
+    // Compute products (already in registers)
+    __m256 prod0 = _mm256_mul_ps(x.v0, w.v0);
+    __m256 prod1 = _mm256_mul_ps(x.v1, w.v1);
+    __m256 prod2 = _mm256_mul_ps(x.v2, w.v2);
+    __m256 prod3 = _mm256_mul_ps(x.v3, w.v3);
+
+    // Accumulate in SIMD registers
+    __m256 acc = _mm256_add_ps(prod0, prod1);
+    acc = _mm256_add_ps(acc, prod2);
+    acc = _mm256_add_ps(acc, prod3);
+
+    // Horizontal sum and return
+    return horizontal_sum_avx2(acc);
+  }
+
+  // Compute with FP16 weights
+  dynamic_tensor compute_fp16(const std::vector<dynamic_tensor>& inputs) {
     // Validate input count
     if (inputs.size() != 8) {
       throw std::runtime_error("expert_mlp: expected 8 inputs (hidden_states, weights, biases, router_output), got " + 
@@ -130,8 +347,126 @@ class expert_mlp_node : public variadic_op_node {
     return output;
   }
 
- private:
-  int expert_id_;
+  // Compute with MXFP4 weights
+  dynamic_tensor compute_with_mxfp4(const std::vector<graph_message_ptr>& input_msgs) {
+    // Extract inputs
+    auto hidden_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[0]);
+    auto w_up_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[1]);
+    auto w_gate_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[2]);
+    auto w_down_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[3]);
+    auto b_up_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[4]);
+    auto b_gate_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[5]);
+    auto b_down_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[6]);
+    auto router_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[7]);
+
+    if (!hidden_msg || !w_up_msg || !w_gate_msg || !w_down_msg ||
+        !b_up_msg || !b_gate_msg || !b_down_msg || !router_msg) {
+      throw std::runtime_error("expert_mlp: invalid input message types for MXFP4");
+    }
+
+    const auto& hidden_states = hidden_msg->get_tensor();
+    const auto& w_up_mx = w_up_msg->get_mx_tensor();
+    const auto& w_gate_mx = w_gate_msg->get_mx_tensor();
+    const auto& w_down_mx = w_down_msg->get_mx_tensor();
+    const auto& b_up = b_up_msg->get_tensor();
+    const auto& b_gate = b_gate_msg->get_tensor();
+    const auto& b_down = b_down_msg->get_tensor();
+    const auto& router_output = router_msg->get_tensor();
+
+    // Validate shapes
+    if (hidden_states.ndim() != 3) {
+      throw std::runtime_error("expert_mlp: hidden_states must be 3D");
+    }
+    if (router_output.ndim() != 4 || router_output.dim(3) != 2) {
+      throw std::runtime_error("expert_mlp: router_output must be 4D [batch, seq_len, top_k, 2]");
+    }
+
+    // Check if this expert is selected
+    if (!has_any_token_selecting_expert(router_output, expert_id_)) {
+      return dynamic_tensor(dtype::float32, {0});
+    }
+
+    int64_t batch = hidden_states.dim(0);
+    int64_t seq_len = hidden_states.dim(1);
+    int64_t hidden_dim = hidden_states.dim(2);
+
+    // Get expert_ffn_dim from weight shapes
+    if (w_up_mx.ndim() != 2 || w_gate_mx.ndim() != 2 || w_down_mx.ndim() != 2) {
+      throw std::runtime_error("expert_mlp: all weights must be 2D");
+    }
+    int64_t expert_ffn_dim = w_up_mx.dim(0);
+
+    // Validate dimensions
+    if (w_up_mx.dim(1) != hidden_dim || w_gate_mx.dim(0) != expert_ffn_dim ||
+        w_gate_mx.dim(1) != hidden_dim || w_down_mx.dim(0) != hidden_dim ||
+        w_down_mx.dim(1) != expert_ffn_dim) {
+      throw std::runtime_error("expert_mlp: weight dimension mismatch");
+    }
+
+    // MXFP4 requires dimensions to be multiples of 32
+    constexpr int64_t QK_MXFP4 = 32;
+    if (hidden_dim % QK_MXFP4 != 0) {
+      throw std::runtime_error("expert_mlp: hidden_dim must be a multiple of 32 for MXFP4, got " + 
+                               std::to_string(hidden_dim));
+    }
+    if (expert_ffn_dim % QK_MXFP4 != 0) {
+      throw std::runtime_error("expert_mlp: expert_ffn_dim must be a multiple of 32 for MXFP4, got " + 
+                               std::to_string(expert_ffn_dim));
+    }
+
+    // Allocate output
+    dynamic_tensor output(dtype::float32, hidden_states.shape());
+
+    // Compute
+    compute_impl_mxfp4(hidden_states, w_up_mx, w_gate_mx, w_down_mx,
+                       b_up, b_gate, b_down, router_output, output,
+                       batch, seq_len, hidden_dim, expert_ffn_dim);
+
+    return output;
+  }
+
+  // Compute implementation for MXFP4 weights
+  void compute_impl_mxfp4(const dynamic_tensor& hidden_states,
+                          const dynamic_mx_tensor& w_up_mx,
+                          const dynamic_mx_tensor& w_gate_mx,
+                          const dynamic_mx_tensor& w_down_mx,
+                          const dynamic_tensor& b_up,
+                          const dynamic_tensor& b_gate,
+                          const dynamic_tensor& b_down,
+                          const dynamic_tensor& router_output,
+                          dynamic_tensor& output,
+                          int64_t batch, int64_t seq_len,
+                          int64_t hidden_dim, int64_t expert_ffn_dim) {
+    const float* hidden_data = hidden_states.data_ptr<float>();
+    const uint8_t* w_up_data = w_up_mx.data_ptr();
+    const uint8_t* w_gate_data = w_gate_mx.data_ptr();
+    const uint8_t* w_down_data = w_down_mx.data_ptr();
+    const float* b_up_data = b_up.data_ptr<float>();
+    const float* b_gate_data = b_gate.data_ptr<float>();
+    const float* b_down_data = b_down.data_ptr<float>();
+    float* out_data = output.data_ptr<float>();
+    const float* router_data = router_output.data_ptr<float>();
+    int64_t top_k = router_output.dim(2);
+
+    // For each token position
+    for (int64_t b = 0; b < batch; ++b) {
+      for (int64_t s = 0; s < seq_len; ++s) {
+        const float* hidden_vec = hidden_data + (b * seq_len + s) * hidden_dim;
+        float* output_vec = out_data + (b * seq_len + s) * hidden_dim;
+
+        // Check if this token selected current expert_id_
+        if (!is_token_selecting_expert(router_data, b, s, seq_len, top_k, expert_id_)) {
+          std::memset(output_vec, 0, hidden_dim * sizeof(float));
+          continue;
+        }
+
+        // Process selected token with MXFP4
+        compute_token_mxfp4(hidden_vec, w_up_data, w_gate_data, w_down_data,
+                            b_up_data, b_gate_data, b_down_data, output_vec,
+                            hidden_dim, expert_ffn_dim);
+      }
+    }
+  }
 
   // Convert fp16 → fp32 using F16C + AVX2 SIMD
   __attribute__((target("f16c,avx2,fma")))
@@ -180,11 +515,9 @@ class expert_mlp_node : public variadic_op_node {
         gate_vec = _mm256_fmadd_ps(hidden, w_gate_fp32, gate_vec);
       }
       
-      // Horizontal sum of 8 elements
-      float up_sum = up_vec[0] + up_vec[1] + up_vec[2] + up_vec[3] + 
-                     up_vec[4] + up_vec[5] + up_vec[6] + up_vec[7];
-      float gate_sum = gate_vec[0] + gate_vec[1] + gate_vec[2] + gate_vec[3] + 
-                       gate_vec[4] + gate_vec[5] + gate_vec[6] + gate_vec[7];
+      // Horizontal sum using SIMD intrinsics
+      float up_sum = horizontal_sum_avx2(up_vec);
+      float gate_sum = horizontal_sum_avx2(gate_vec);
       
       // Process remaining elements
       for (; in_idx < hidden_dim; ++in_idx) {
@@ -236,9 +569,8 @@ class expert_mlp_node : public variadic_op_node {
         sum_vec = _mm256_fmadd_ps(act, w_down_fp32, sum_vec);
       }
       
-      // Horizontal sum of 8 elements
-      float sum = sum_vec[0] + sum_vec[1] + sum_vec[2] + sum_vec[3] + 
-                  sum_vec[4] + sum_vec[5] + sum_vec[6] + sum_vec[7];
+      // Horizontal sum using SIMD intrinsics
+      float sum = horizontal_sum_avx2(sum_vec);
       
       // Process remaining elements
       for (; in_idx < expert_ffn_dim; ++in_idx) {
@@ -249,6 +581,81 @@ class expert_mlp_node : public variadic_op_node {
       }
       
       // Add down projection bias: b[out_idx]
+      output_vec[out_idx] = sum + b_down_data[out_idx];
+    }
+  }
+
+  // MXFP4 on-the-fly dequantization and computation with SIMD
+  __attribute__((target("f16c,avx2,fma")))
+  void compute_token_mxfp4(const float* hidden_vec,
+                           const uint8_t* w_up_data,
+                           const uint8_t* w_gate_data,
+                           const uint8_t* w_down_data,
+                           const float* b_up_data,
+                           const float* b_gate_data,
+                           const float* b_down_data,
+                           float* output_vec,
+                           int64_t hidden_dim,
+                           int64_t expert_ffn_dim) const {
+    constexpr float alpha = 1.702f;
+    constexpr float limit = 7.0f;
+    constexpr size_t QK_MXFP4 = 32;
+    constexpr size_t MXFP4_BLOCK_BYTES = 17;
+
+    std::vector<float> activated(expert_ffn_dim);
+
+    // Dequantize MXFP4 block using SIMD (pshufb lookup + AVX2 convert)
+
+    // Step 1: Up/gate projections with MXFP4 weights
+    for (int64_t out_idx = 0; out_idx < expert_ffn_dim; ++out_idx) {
+      float up_sum = 0.0f;
+      float gate_sum = 0.0f;
+
+      int64_t in_idx = 0;
+      // Process blocks
+      for (; in_idx + QK_MXFP4 - 1 < hidden_dim; in_idx += QK_MXFP4) {
+        int64_t block_idx = in_idx / QK_MXFP4;
+        int64_t weight_block_offset = (out_idx * ((hidden_dim + QK_MXFP4 - 1) / QK_MXFP4) + block_idx) * MXFP4_BLOCK_BYTES;
+
+        // Dequantize weights and load hidden states to SIMD registers
+        auto w_up_simd = dequantize_mxfp4_block_32(w_up_data + weight_block_offset);
+        auto w_gate_simd = dequantize_mxfp4_block_32(w_gate_data + weight_block_offset);
+        auto hidden_simd = load_fp32_block_32(hidden_vec + in_idx);
+
+        // SIMD dot products (hidden loaded once, used twice)
+        up_sum += simd_dot_product_32(w_up_simd, hidden_simd);
+        gate_sum += simd_dot_product_32(w_gate_simd, hidden_simd);
+      }
+
+      // Add biases and apply activation
+      const float up_v = up_sum + b_up_data[out_idx];
+      const float gate_v = gate_sum + b_gate_data[out_idx];
+
+      const float x = std::min(gate_v, limit);
+      const float y = std::clamp(up_v, -limit, limit);
+      const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
+
+      activated[out_idx] = out_glu * (y + 1.0f);
+    }
+
+    // Step 2: Down projection with MXFP4 weights
+    for (int64_t out_idx = 0; out_idx < hidden_dim; ++out_idx) {
+      float sum = 0.0f;
+
+      int64_t in_idx = 0;
+      // Process blocks
+      for (; in_idx + QK_MXFP4 - 1 < expert_ffn_dim; in_idx += QK_MXFP4) {
+        int64_t block_idx = in_idx / QK_MXFP4;
+        int64_t weight_block_offset = (out_idx * ((expert_ffn_dim + QK_MXFP4 - 1) / QK_MXFP4) + block_idx) * MXFP4_BLOCK_BYTES;
+
+        // Dequantize weight and load activation to SIMD registers
+        auto w_down_simd = dequantize_mxfp4_block_32(w_down_data + weight_block_offset);
+        auto act_simd = load_fp32_block_32(activated.data() + in_idx);
+
+        // SIMD dot product
+        sum += simd_dot_product_32(w_down_simd, act_simd);
+      }
+
       output_vec[out_idx] = sum + b_down_data[out_idx];
     }
   }

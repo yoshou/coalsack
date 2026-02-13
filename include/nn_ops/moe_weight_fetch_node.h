@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "dynamic_mx_tensor_message.h"
 #include "dynamic_tensor.h"
 #include "dynamic_tensor_message.h"
 #include "graph_proc.h"
@@ -169,33 +170,41 @@ class moe_weight_fetch_node : public graph_node {
       std::shared_ptr<result_message> output_msg;
       
       try {
-        dynamic_tensor w_up = weight_provider_->get(
+        auto w_up = weight_provider_->get(
             layer_prefix_ + ".ffn_up_exps.weight", expert_id);
-        dynamic_tensor w_gate = weight_provider_->get(
+        auto w_gate = weight_provider_->get(
             layer_prefix_ + ".ffn_gate_exps.weight", expert_id);
-        dynamic_tensor w_down = weight_provider_->get(
+        auto w_down = weight_provider_->get(
             layer_prefix_ + ".ffn_down_exps.weight", expert_id);
         
-        dynamic_tensor b_up = weight_provider_->get(
+        auto b_up = weight_provider_->get(
             layer_prefix_ + ".ffn_up_exps.bias", expert_id);
-        dynamic_tensor b_gate = weight_provider_->get(
+        auto b_gate = weight_provider_->get(
             layer_prefix_ + ".ffn_gate_exps.bias", expert_id);
-        dynamic_tensor b_down = weight_provider_->get(
+        auto b_down = weight_provider_->get(
             layer_prefix_ + ".ffn_down_exps.bias", expert_id);
 
         std::unordered_map<std::string, graph_message_ptr> fields;
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] = 
-            std::make_shared<dynamic_tensor_message>(w_up);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] = 
-            std::make_shared<dynamic_tensor_message>(w_gate);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_down"] = 
-            std::make_shared<dynamic_tensor_message>(w_down);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_up"] = 
-            std::make_shared<dynamic_tensor_message>(b_up);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = 
-            std::make_shared<dynamic_tensor_message>(b_gate);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = 
-            std::make_shared<dynamic_tensor_message>(b_down);
+        
+        // Convert variant to message
+        auto make_message = [](const auto& variant) -> graph_message_ptr {
+          if (std::holds_alternative<dynamic_tensor>(variant)) {
+            auto msg = std::make_shared<dynamic_tensor_message>();
+            msg->set_tensor(std::get<dynamic_tensor>(variant));
+            return msg;
+          } else {
+            auto msg = std::make_shared<dynamic_mx_tensor_message>();
+            msg->set_mx_tensor(std::get<dynamic_mx_tensor>(variant));
+            return msg;
+          }
+        };
+        
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] = make_message(w_up);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] = make_message(w_gate);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_down"] = make_message(w_down);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_up"] = make_message(b_up);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = make_message(b_gate);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = make_message(b_down);
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] = 
             router_tensor_msg;
 
