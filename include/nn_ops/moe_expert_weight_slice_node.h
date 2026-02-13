@@ -39,15 +39,11 @@ class moe_expert_weight_slice_node : public graph_node {
 
  public:
   explicit moe_expert_weight_slice_node(int expert_id)
-      : graph_node(),
-        output_(std::make_shared<graph_edge>(this)),
-        expert_id_(expert_id) {
+      : graph_node(), output_(std::make_shared<graph_edge>(this)), expert_id_(expert_id) {
     set_output(output_);
   }
 
-  virtual std::string get_proc_name() const override { 
-    return "moe_expert_weight_slice"; 
-  }
+  virtual std::string get_proc_name() const override { return "moe_expert_weight_slice"; }
 
   void set_input_names(const std::vector<std::string>& names) { input_names_ = names; }
   void set_output_names(const std::vector<std::string>& names) { output_names_ = names; }
@@ -63,23 +59,23 @@ class moe_expert_weight_slice_node : public graph_node {
     }
 
     if (result_msg && !result_msg->is_ok()) {
-      spdlog::trace("Skipping moe_expert_weight_slice [expert_{}] (Frame: {})", 
-                    expert_id_, frame_number);
-      
+      spdlog::trace("Skipping moe_expert_weight_slice [expert_{}] (Frame: {})", expert_id_,
+                    frame_number);
+
       // Create error output with all 7 fields
       std::unordered_map<std::string, graph_message_ptr> fields;
       for (const auto& name : output_names_) {
         fields[name] = nullptr;
       }
-      
+
       auto output_msg = result_message::error(fields, "Input error");
       output_msg->set_frame_number(frame_number);
       output_->send(output_msg);
       return;
     }
 
-    spdlog::trace("Executing moe_expert_weight_slice [expert_{}] (Frame: {})", 
-                  expert_id_, frame_number);
+    spdlog::trace("Executing moe_expert_weight_slice [expert_{}] (Frame: {})", expert_id_,
+                  frame_number);
 
     std::shared_ptr<result_message> output_msg;
     try {
@@ -102,7 +98,8 @@ class moe_expert_weight_slice_node : public graph_node {
 
       int64_t num_experts = w_up_3d.dim(0);
       if (expert_id_ < 0 || expert_id_ >= num_experts) {
-        throw std::runtime_error("expert_id " + std::to_string(expert_id_) + " out of range [0, " + std::to_string(num_experts) + ")");
+        throw std::runtime_error("expert_id " + std::to_string(expert_id_) + " out of range [0, " +
+                                 std::to_string(num_experts) + ")");
       }
 
       // Extract dimensions
@@ -148,18 +145,17 @@ class moe_expert_weight_slice_node : public graph_node {
       output_msg->set_frame_number(frame_number);
 
     } catch (const std::exception& e) {
-      spdlog::error("Error in moe_expert_weight_slice [expert_{}]: {}", 
-                    expert_id_, e.what());
-      
+      spdlog::error("Error in moe_expert_weight_slice [expert_{}]: {}", expert_id_, e.what());
+
       std::unordered_map<std::string, graph_message_ptr> fields;
       for (const auto& name : output_names_) {
         fields[name] = nullptr;
       }
-      
+
       output_msg = result_message::error(fields, std::string(e.what()));
       output_msg->set_frame_number(frame_number);
     }
-    
+
     output_->send(output_msg);
   }
 };

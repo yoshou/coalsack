@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <string>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "../nn_op_node.h"
@@ -13,14 +13,14 @@ namespace coalsack {
 
 // Rotary Position Embedding (RoPE) node for transformer models
 // Applies rotary positional embeddings to query/key tensors in attention layers
-// 
+//
 // Architecture:
 // - Input format: [batch, num_heads, seq_len, head_dim] in FLOAT32/FLOAT64
 // - Optional position_ids: [batch, seq_len] or [seq_len] in INT32/INT64
 // - Output format: Same shape as input with RoPE applied
 // - Rotation method: NeoX-style (rotate first half with second half)
 // - Scaling support: None, Linear, YaRN (Yet another RoPE extensioN)
-// 
+//
 // RoPE Scaling Strategies:
 // - "none": Standard RoPE without scaling
 // - "linear": Simple frequency scaling by 1/scaling_factor
@@ -49,7 +49,7 @@ class rope_node : public variadic_op_node {
   }
 
   // Advanced configuration for RoPE with scaling support
-  // 
+  //
   // Parameters:
   // - head_dim: Dimension per attention head
   // - max_seq_len: Maximum sequence length limit
@@ -77,23 +77,22 @@ class rope_node : public variadic_op_node {
   }
 
   // Public wrapper for testing
-  dynamic_tensor compute_test(const dynamic_tensor& input) { 
-    return compute({input}); 
-  }
+  dynamic_tensor compute_test(const dynamic_tensor& input) { return compute({input}); }
 
  protected:
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
     if (inputs.empty() || inputs.size() > 2) {
       throw std::runtime_error("rope: expected 1 or 2 inputs (tensor, optional position_ids)");
     }
-    
+
     const auto& input = inputs[0];
     const auto& shape = input.shape();
-    
+
     // Validate input shape: must be 4D [batch, num_heads, seq_len, head_dim]
     if (shape.size() != 4) {
-      throw std::runtime_error("rope: input must be 4D [batch, num_heads, seq_len, head_dim], got " + 
-                               std::to_string(shape.size()) + "D");
+      throw std::runtime_error(
+          "rope: input must be 4D [batch, num_heads, seq_len, head_dim], got " +
+          std::to_string(shape.size()) + "D");
     }
 
     int64_t batch = shape[0];
@@ -101,25 +100,24 @@ class rope_node : public variadic_op_node {
     int64_t seq_len = shape[2];
     int64_t head_dim = shape[3];
 
-
     // Parse optional position_ids
     std::vector<int64_t> position_ids;
     if (inputs.size() == 2) {
       const auto& pos_tensor = inputs[1];
       // Debug prints
       // std::cout << "RoPE[" << name() << "] Input2 Dims: " << pos_tensor.ndim() << "\n";
-      
+
       if (pos_tensor.ndim() != 1 && pos_tensor.ndim() != 2) {
         throw std::runtime_error("rope: position_ids must be 1D [seq_len] or 2D [batch, seq_len]");
       }
-      
+
       int64_t pos_len = pos_tensor.ndim() == 1 ? pos_tensor.dim(0) : pos_tensor.dim(1);
       if (pos_len != seq_len) {
-         // Debug info before throwing
-         std::cout << "RoPE Error: pos_len=" << pos_len << ", seq_len=" << seq_len << "\n";
+        // Debug info before throwing
+        std::cout << "RoPE Error: pos_len=" << pos_len << ", seq_len=" << seq_len << "\n";
         throw std::runtime_error("rope: position_ids length mismatch");
       }
-      
+
       position_ids.resize(seq_len);
       if (pos_tensor.get_dtype() == dtype::int32) {
         const int32_t* pos_data = pos_tensor.data_ptr<int32_t>();
@@ -134,10 +132,11 @@ class rope_node : public variadic_op_node {
       } else {
         throw std::runtime_error("rope: position_ids must be int32 or int64");
       }
-      
+
       // Debug print first few positions
       if (seq_len > 0) {
-          // std::cout << "RoPE[" << name() << "] Positions: " << position_ids[0] << (seq_len > 1 ? ", " + std::to_string(position_ids[1]) : "") << "...\n";
+        // std::cout << "RoPE[" << name() << "] Positions: " << position_ids[0] << (seq_len > 1 ? ",
+        // " + std::to_string(position_ids[1]) : "") << "...\n";
       }
 
     } else {
@@ -150,14 +149,14 @@ class rope_node : public variadic_op_node {
     // Validate head_dim matches configuration
     if (head_dim != head_dim_) {
       throw std::runtime_error("rope: head_dim mismatch, expected " + std::to_string(head_dim_) +
-                               ", got " + std::to_string(head_dim) +
-                               " (input shape: [" + std::to_string(batch) + ", " + std::to_string(num_heads) +
-                               ", " + std::to_string(seq_len) + ", " + std::to_string(head_dim) + "])");
+                               ", got " + std::to_string(head_dim) + " (input shape: [" +
+                               std::to_string(batch) + ", " + std::to_string(num_heads) + ", " +
+                               std::to_string(seq_len) + ", " + std::to_string(head_dim) + "])");
     }
 
     // Validate sequence length does not exceed limit
     if (max_seq_len_limit_ > 0 && seq_len > max_seq_len_limit_) {
-      throw std::runtime_error("rope: seq_len " + std::to_string(seq_len) + 
+      throw std::runtime_error("rope: seq_len " + std::to_string(seq_len) +
                                " exceeds max_seq_len_limit " + std::to_string(max_seq_len_limit_));
     }
 
@@ -184,7 +183,7 @@ class rope_node : public variadic_op_node {
   std::string scaling_type_;
   int64_t max_seq_len_limit_ = 0;
   int64_t n_ctx_orig_;
-  
+
   // YaRN-specific parameters
   float yarn_ext_factor_;
   float yarn_attn_factor_;
@@ -207,8 +206,8 @@ class rope_node : public variadic_op_node {
 
   // YaRN helper: Compute dimension range [low, high] for corr-dims scaling
   // Based on beta_fast (high freq) and beta_slow (low freq) boundaries
-  static void yarn_corr_dims(int n_dims, int n_ctx_orig, float freq_base, float beta_fast, float beta_slow,
-                             float dims_out[2]) {
+  static void yarn_corr_dims(int n_dims, int n_ctx_orig, float freq_base, float beta_fast,
+                             float beta_slow, float dims_out[2]) {
     const float start = std::floor(yarn_corr_dim(n_dims, n_ctx_orig, beta_fast, freq_base));
     const float end = std::ceil(yarn_corr_dim(n_dims, n_ctx_orig, beta_slow, freq_base));
     dims_out[0] = std::max(0.0f, start);
@@ -217,11 +216,13 @@ class rope_node : public variadic_op_node {
 
   // Compute theta and magnitude scale for given position and dimension
   // Supports multiple scaling strategies: none, linear, YaRN
-  void compute_theta_mscale(int64_t pos, int64_t dim_idx, float& theta_out, float& mscale_out) const {
+  void compute_theta_mscale(int64_t pos, int64_t dim_idx, float& theta_out,
+                            float& mscale_out) const {
     // Determine scaling strategy and frequency scale factor
     const bool use_yarn = (scaling_type_ == "yarn");
     const bool use_linear = (scaling_type_ == "linear");
-    const float freq_scale = (scaling_type_ == "none" || scaling_factor_ == 0.0f) ? 1.0f : (1.0f / scaling_factor_);
+    const float freq_scale =
+        (scaling_type_ == "none" || scaling_factor_ == 0.0f) ? 1.0f : (1.0f / scaling_factor_);
 
     // Configure YaRN extrapolation factor (auto if negative)
     float ext_factor = yarn_ext_factor_;
@@ -243,11 +244,13 @@ class rope_node : public variadic_op_node {
     float corr_dims[2] = {0.0f, 0.0f};
     const bool has_corr_dims = use_yarn && n_ctx_orig_ > 0;
     if (has_corr_dims) {
-      yarn_corr_dims(int(head_dim_), int(n_ctx_orig_), base_, yarn_beta_fast_, yarn_beta_slow_, corr_dims);
+      yarn_corr_dims(int(head_dim_), int(n_ctx_orig_), base_, yarn_beta_fast_, yarn_beta_slow_,
+                     corr_dims);
     }
 
     // Base theta for extrapolation: pos / (base^(2*dim_idx/head_dim))
-    const float theta_extrap = float(pos) * std::pow(base_, -2.0f * float(dim_idx) / float(head_dim_));
+    const float theta_extrap =
+        float(pos) * std::pow(base_, -2.0f * float(dim_idx) / float(head_dim_));
 
     float theta = theta_extrap;
     float mscale = 1.0f;
@@ -292,7 +295,7 @@ class rope_node : public variadic_op_node {
         for (int64_t pos = 0; pos < seq_len; ++pos) {
           // Get absolute position from position_ids
           int64_t absolute_pos = position_ids[pos];
-          
+
           // Rotate each dimension pair with on-the-fly cos/sin computation
           for (int64_t d = 0; d < half_dim; ++d) {
             // Calculate index for input

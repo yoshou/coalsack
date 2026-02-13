@@ -52,13 +52,13 @@ class gguf_multi_loader {
     std::string name;
     std::vector<uint64_t> shape;
     ggml_type type;
-    uint64_t offset;      // Byte offset in shard file
-    size_t size;          // Size in bytes
-    uint32_t shard_idx;   // Which shard file (0-indexed)
+    uint64_t offset;     // Byte offset in shard file
+    size_t size;         // Size in bytes
+    uint32_t shard_idx;  // Which shard file (0-indexed)
   };
 
   std::optional<tensor_info> get_tensor_info(const std::string& name) const;
-  
+
   // Get list of shard file paths
   const std::vector<std::string>& get_shard_paths() const;
 

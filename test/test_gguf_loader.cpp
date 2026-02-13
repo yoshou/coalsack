@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
 
   std::cout << "GGUF file(s): " << file_paths.size() << "\n";
   for (size_t i = 0; i < file_paths.size(); i++) {
-    std::cout << "  [" << (i+1) << "] " << file_paths[i] << "\n";
+    std::cout << "  [" << (i + 1) << "] " << file_paths[i] << "\n";
   }
   std::cout << "\n";
 
@@ -55,15 +55,22 @@ int main(int argc, char** argv) {
   auto keys = loader.get_metadata_keys();
   for (const auto& key : keys) {
     std::cout << "  " << key << ": ";
-    
-    if (auto s = loader.get_string(key)) std::cout << *s;
-    else if (auto u32 = loader.get_uint32(key)) std::cout << *u32;
-    else if (auto u64 = loader.get_uint64(key)) std::cout << *u64;
-    else if (auto f32 = loader.get_float32(key)) std::cout << *f32;
-    else if (auto f64 = loader.get_float64(key)) std::cout << *f64;
-    else if (auto b = loader.get_bool(key)) std::cout << (*b ? "true" : "false");
-    else std::cout << "(array or unknown type)";
-    
+
+    if (auto s = loader.get_string(key))
+      std::cout << *s;
+    else if (auto u32 = loader.get_uint32(key))
+      std::cout << *u32;
+    else if (auto u64 = loader.get_uint64(key))
+      std::cout << *u64;
+    else if (auto f32 = loader.get_float32(key))
+      std::cout << *f32;
+    else if (auto f64 = loader.get_float64(key))
+      std::cout << *f64;
+    else if (auto b = loader.get_bool(key))
+      std::cout << (*b ? "true" : "false");
+    else
+      std::cout << "(array or unknown type)";
+
     std::cout << "\n";
   }
 

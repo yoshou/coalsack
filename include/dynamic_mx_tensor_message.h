@@ -11,13 +11,13 @@ class dynamic_mx_tensor_message : public graph_message {
 
  public:
   dynamic_mx_tensor_message() : graph_message(), tensor_() {}
-  
+
   explicit dynamic_mx_tensor_message(const dynamic_mx_tensor& tensor)
       : graph_message(), tensor_(tensor) {}
 
   const dynamic_mx_tensor& get_mx_tensor() const { return tensor_; }
   dynamic_mx_tensor& get_mx_tensor() { return tensor_; }
-  
+
   void set_mx_tensor(const dynamic_mx_tensor& tensor) { tensor_ = tensor; }
 
   template <typename Archive>

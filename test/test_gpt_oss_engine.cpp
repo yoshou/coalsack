@@ -1,6 +1,6 @@
-#include <iostream>
-
 #include <spdlog/spdlog.h>
+
+#include <iostream>
 
 #include "gpt_oss_engine.h"
 

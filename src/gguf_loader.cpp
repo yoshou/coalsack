@@ -200,9 +200,8 @@ struct gguf_loader::impl {
   }
 
   static bool is_integer_type(gguf_type type) {
-    return type == gguf_type::UINT8 || type == gguf_type::INT8 ||
-           type == gguf_type::UINT16 || type == gguf_type::INT16 ||
-           type == gguf_type::UINT32 || type == gguf_type::INT32 ||
+    return type == gguf_type::UINT8 || type == gguf_type::INT8 || type == gguf_type::UINT16 ||
+           type == gguf_type::INT16 || type == gguf_type::UINT32 || type == gguf_type::INT32 ||
            type == gguf_type::UINT64 || type == gguf_type::INT64;
   }
 
