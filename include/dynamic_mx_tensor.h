@@ -1,13 +1,12 @@
 #pragma once
 
+#include <cereal/types/vector.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <vector>
-
-#include <cereal/types/vector.hpp>
 
 namespace coalsack {
 
@@ -54,7 +53,7 @@ class dynamic_mx_tensor {
       total_elements *= dim;
     }
     num_elements_ = total_elements;
-    
+
     size_t num_blocks = calc_num_blocks(total_elements);
     storage_ = std::make_shared<dynamic_mx_tensor_storage>(num_blocks);
   }
@@ -65,7 +64,7 @@ class dynamic_mx_tensor {
   }
 
   size_t ndim() const { return shape_.size(); }
-  
+
   int64_t dim(size_t idx) const {
     if (idx >= shape_.size()) {
       throw std::out_of_range("dynamic_mx_tensor: dimension index out of range");
@@ -74,12 +73,10 @@ class dynamic_mx_tensor {
   }
 
   const std::vector<int64_t>& shape() const { return shape_; }
-  
+
   size_t num_elements() const { return num_elements_; }
-  
-  size_t size_bytes() const {
-    return storage_ ? storage_->size_bytes() : 0;
-  }
+
+  size_t size_bytes() const { return storage_ ? storage_->size_bytes() : 0; }
 
   uint8_t* data_ptr() {
     if (!storage_) {
@@ -95,9 +92,7 @@ class dynamic_mx_tensor {
     return storage_->data();
   }
 
-  size_t num_blocks() const {
-    return storage_ ? storage_->num_blocks() : 0;
-  }
+  size_t num_blocks() const { return storage_ ? storage_->num_blocks() : 0; }
 
   template <class Archive>
   void serialize(Archive& ar) {

@@ -38,7 +38,7 @@ bool gguf_multi_loader::load(const std::vector<std::string>& paths) {
   // Load each shard file
   for (size_t i = 0; i < paths.size(); ++i) {
     auto loader = std::make_unique<gguf_loader>();
-    
+
     if (!loader->load(paths[i])) {
       std::cerr << "Error: Failed to load shard " << i << ": " << paths[i] << "\n";
       return false;
@@ -50,8 +50,8 @@ bool gguf_multi_loader::load(const std::vector<std::string>& paths) {
     } else {
       // Verify version matches
       if (loader->get_version() != pimpl_->version) {
-        std::cerr << "Warning: Version mismatch in shard " << i << ": " 
-                  << loader->get_version() << " (expected " << pimpl_->version << ")\n";
+        std::cerr << "Warning: Version mismatch in shard " << i << ": " << loader->get_version()
+                  << " (expected " << pimpl_->version << ")\n";
       }
     }
 
@@ -76,21 +76,13 @@ bool gguf_multi_loader::load(const std::vector<std::string>& paths) {
   return true;
 }
 
-bool gguf_multi_loader::is_loaded() const {
-  return pimpl_->loaded;
-}
+bool gguf_multi_loader::is_loaded() const { return pimpl_->loaded; }
 
-uint32_t gguf_multi_loader::get_version() const {
-  return pimpl_->version;
-}
+uint32_t gguf_multi_loader::get_version() const { return pimpl_->version; }
 
-uint64_t gguf_multi_loader::get_tensor_count() const {
-  return pimpl_->total_tensor_count;
-}
+uint64_t gguf_multi_loader::get_tensor_count() const { return pimpl_->total_tensor_count; }
 
-uint64_t gguf_multi_loader::get_kv_count() const {
-  return pimpl_->total_kv_count;
-}
+uint64_t gguf_multi_loader::get_kv_count() const { return pimpl_->total_kv_count; }
 
 std::optional<std::string> gguf_multi_loader::get_string(const std::string& key) const {
   for (const auto& loader : pimpl_->loaders) {
@@ -192,7 +184,7 @@ std::vector<std::string> gguf_multi_loader::get_metadata_keys() const {
   // Merge keys from all shards (order undefined, but that's OK)
   std::unordered_map<std::string, bool> seen;
   std::vector<std::string> all_keys;
-  
+
   for (const auto& loader : pimpl_->loaders) {
     auto keys = loader->get_metadata_keys();
     for (const auto& key : keys) {
@@ -202,7 +194,7 @@ std::vector<std::string> gguf_multi_loader::get_metadata_keys() const {
       }
     }
   }
-  
+
   return all_keys;
 }
 
@@ -210,12 +202,12 @@ std::vector<std::string> gguf_multi_loader::get_tensor_names() const {
   // Collect all tensor names from all shards (order undefined, but that's OK)
   std::vector<std::string> all_names;
   all_names.reserve(pimpl_->total_tensor_count);
-  
+
   for (const auto& loader : pimpl_->loaders) {
     auto names = loader->get_tensor_names();
     all_names.insert(all_names.end(), names.begin(), names.end());
   }
-  
+
   return all_names;
 }
 

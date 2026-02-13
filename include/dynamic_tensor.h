@@ -172,12 +172,11 @@ class dynamic_tensor {
     size_t view_bytes = numel(view_shape) * dtype_size(dtype_);
     size_t total_offset = byte_offset_ + offset_bytes;
     if (total_offset + view_bytes > storage_.size()) {
-      throw std::out_of_range("View exceeds storage bounds: offset=" + 
-                              std::to_string(total_offset) + " + size=" + 
-                              std::to_string(view_bytes) + " > storage=" + 
-                              std::to_string(storage_.size()));
+      throw std::out_of_range(
+          "View exceeds storage bounds: offset=" + std::to_string(total_offset) + " + size=" +
+          std::to_string(view_bytes) + " > storage=" + std::to_string(storage_.size()));
     }
-    
+
     dynamic_tensor result;
     result.dtype_ = dtype_;
     result.shape_ = view_shape;

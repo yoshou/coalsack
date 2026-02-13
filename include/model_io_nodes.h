@@ -1,13 +1,13 @@
 #pragma once
 
+#include <malloc.h>
+#include <spdlog/spdlog.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <deque>
-#include <malloc.h>
 #include <mutex>
 #include <thread>
-
-#include <spdlog/spdlog.h>
 
 #include "dynamic_tensor.h"
 #include "dynamic_tensor_message.h"
@@ -106,7 +106,7 @@ class model_source_node : public graph_node {
 
   void push() {
     std::lock_guard<std::mutex> lock(mtx_);
-    
+
     if (!running_) {
       return;
     }
@@ -281,7 +281,7 @@ class layer_scheduler_node : public graph_node {
 
         if (message) {
           output->send(message);
-          
+
           // Trim fragmented memory after layer processing
           malloc_trim(0);
         }

@@ -3,8 +3,8 @@
 #include <random>
 #include <vector>
 
-#include "nn_nodes.h"
 #include "gguf_dequant.h"
+#include "nn_nodes.h"
 
 using namespace coalsack;
 
@@ -36,11 +36,11 @@ void fill_random_fp16(dynamic_tensor& tensor, float min_val = -1.0f, float max_v
 float modified_swiglu_ref(float gate_v, float up_v) {
   constexpr float alpha = 1.702f;
   constexpr float limit = 7.0f;
-  
+
   float x = std::min(gate_v, limit);
   float y = std::clamp(up_v, -limit, limit);
   float out_glu = x / (1.0f + std::exp(alpha * (-x)));
-  
+
   return out_glu * (y + 1.0f);
 }
 
@@ -89,14 +89,15 @@ bool test_expert_mlp_basic() {
     for (int64_t s = 0; s < seq_len; ++s) {
       for (int64_t k = 0; k < top_k; ++k) {
         int64_t idx = (b * seq_len + s) * top_k * 2 + k * 2;
-        router_data[idx] = (k == 0) ? 0.0f : static_cast<float>(k); // expert_id
-        router_data[idx + 1] = 1.0f / top_k; // weight
+        router_data[idx] = (k == 0) ? 0.0f : static_cast<float>(k);  // expert_id
+        router_data[idx + 1] = 1.0f / top_k;                         // weight
       }
     }
   }
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up,   w_gate, w_down,
+                                        b_up,          b_gate, b_down, router_output};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape matches input shape
@@ -191,15 +192,16 @@ bool test_modified_swiglu_activation() {
   // Create router_output: [batch, seq_len, top_k, 2]
   dynamic_tensor router_output(dtype::float32, {batch, seq_len, top_k, 2});
   float* router_data = router_output.data_ptr<float>();
-  router_data[0] = 0.0f; // expert_id 0
-  router_data[1] = 1.0f; // weight
+  router_data[0] = 0.0f;  // expert_id 0
+  router_data[1] = 1.0f;  // weight
   for (int64_t k = 1; k < top_k; ++k) {
     router_data[k * 2] = static_cast<float>(k);
     router_data[k * 2 + 1] = 0.0f;
   }
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up,   w_gate, w_down,
+                                        b_up,          b_gate, b_down, router_output};
   dynamic_tensor output = node.compute_test(inputs);
 
   const float* output_data = output.data_ptr<float>();
@@ -210,8 +212,8 @@ bool test_modified_swiglu_activation() {
   float diff_0 = std::abs(output_data[0] - expected_0);
 
   if (diff_0 > 1e-3f) {  // Relaxed tolerance due to fp16 conversion
-    std::cerr << "  ERROR: Modified SwiGLU not applied correctly at position 0: expected=" << expected_0
-              << ", got=" << output_data[0] << ", diff=" << diff_0 << "\n";
+    std::cerr << "  ERROR: Modified SwiGLU not applied correctly at position 0: expected="
+              << expected_0 << ", got=" << output_data[0] << ", diff=" << diff_0 << "\n";
     return false;
   }
 
@@ -279,7 +281,8 @@ bool test_multiple_experts() {
         }
       }
     }
-    std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
+    std::vector<dynamic_tensor> inputs = {hidden_states, w_up,   w_gate, w_down,
+                                          b_up,          b_gate, b_down, router_output};
     dynamic_tensor output = node.compute_test(inputs);
 
     // Verify output shape
@@ -362,7 +365,8 @@ bool test_gpt_oss_scale() {
   }
 
   // Compute
-  std::vector<dynamic_tensor> inputs = {hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output};
+  std::vector<dynamic_tensor> inputs = {hidden_states, w_up,   w_gate, w_down,
+                                        b_up,          b_gate, b_down, router_output};
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape

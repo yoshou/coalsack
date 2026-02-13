@@ -16,9 +16,7 @@ class expert_merge_node : public variadic_op_node {
   }
 
   // Public wrapper for testing
-  dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) {
-    return compute(inputs);
-  }
+  dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) { return compute(inputs); }
 
  protected:
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
@@ -59,8 +57,10 @@ class expert_merge_node : public variadic_op_node {
     for (int i = 1; i <= num_experts_; ++i) {
       const auto& expert_out = inputs[i];
       if (expert_out.ndim() == 3 && expert_out.dim(0) > 0) {
-        if (expert_out.dim(0) != batch || expert_out.dim(1) != seq_len || expert_out.dim(2) != hidden_dim) {
-          throw std::runtime_error("expert_merge: all non-empty expert outputs must have same shape");
+        if (expert_out.dim(0) != batch || expert_out.dim(1) != seq_len ||
+            expert_out.dim(2) != hidden_dim) {
+          throw std::runtime_error(
+              "expert_merge: all non-empty expert outputs must have same shape");
         }
       }
     }
@@ -76,44 +76,44 @@ class expert_merge_node : public variadic_op_node {
     const float* router_data = router_output.data_ptr<float>();
     float* out_data = output.data_ptr<float>();
 
-      // Initialize output to zero
-      std::memset(out_data, 0, output.numel() * sizeof(float));
+    // Initialize output to zero
+    std::memset(out_data, 0, output.numel() * sizeof(float));
 
-      // For each token, compute weighted sum of top-k experts
-      for (int64_t b = 0; b < batch; ++b) {
-        for (int64_t s = 0; s < seq_len; ++s) {
-          int64_t router_base = ((b * seq_len + s) * top_k_) * 2;
-          int64_t output_base = (b * seq_len + s) * hidden_dim;
+    // For each token, compute weighted sum of top-k experts
+    for (int64_t b = 0; b < batch; ++b) {
+      for (int64_t s = 0; s < seq_len; ++s) {
+        int64_t router_base = ((b * seq_len + s) * top_k_) * 2;
+        int64_t output_base = (b * seq_len + s) * hidden_dim;
 
-          // Get top-k expert indices and weights
-          for (int64_t k = 0; k < top_k_; ++k) {
-            int expert_idx = static_cast<int>(router_data[router_base + k * 2 + 0]);
-            float weight = router_data[router_base + k * 2 + 1];
+        // Get top-k expert indices and weights
+        for (int64_t k = 0; k < top_k_; ++k) {
+          int expert_idx = static_cast<int>(router_data[router_base + k * 2 + 0]);
+          float weight = router_data[router_base + k * 2 + 1];
 
-            // Bounds check
-            if (expert_idx < 0 || expert_idx >= num_experts_) {
-              throw std::runtime_error("expert_merge: expert_idx out of range: " +
-                                       std::to_string(expert_idx));
-            }
+          // Bounds check
+          if (expert_idx < 0 || expert_idx >= num_experts_) {
+            throw std::runtime_error("expert_merge: expert_idx out of range: " +
+                                     std::to_string(expert_idx));
+          }
 
-            // Get expert output (inputs[1 + expert_idx])
-            const auto& expert_output = inputs[1 + expert_idx];
+          // Get expert output (inputs[1 + expert_idx])
+          const auto& expert_output = inputs[1 + expert_idx];
 
-            // Skip empty tensors (non-selected experts return [0])
-            if (expert_output.ndim() == 0 || expert_output.dim(0) == 0) {
-              continue;
-            }
+          // Skip empty tensors (non-selected experts return [0])
+          if (expert_output.ndim() == 0 || expert_output.dim(0) == 0) {
+            continue;
+          }
 
-            const float* expert_data = expert_output.data_ptr<float>();
-            int64_t expert_base = (b * seq_len + s) * hidden_dim;
+          const float* expert_data = expert_output.data_ptr<float>();
+          int64_t expert_base = (b * seq_len + s) * hidden_dim;
 
-            // Add weighted expert output to result
-            for (int64_t d = 0; d < hidden_dim; ++d) {
-              out_data[output_base + d] += weight * expert_data[expert_base + d];
-            }
+          // Add weighted expert output to result
+          for (int64_t d = 0; d < hidden_dim; ++d) {
+            out_data[output_base + d] += weight * expert_data[expert_base + d];
           }
         }
       }
+    }
 
     return output;
   }

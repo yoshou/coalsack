@@ -165,14 +165,14 @@ inline void dequantize_block_q4_K(const uint8_t* src, float* dst, int64_t k) {
     // Process 64 values at a time (2 sub-blocks), reading 32 bytes of quants
     const int64_t base = static_cast<int64_t>(i) * QK_K;
     const uint8_t* q_ptr = quants;
-    
+
     for (int block_pair = 0; block_pair < 4; ++block_pair) {
       // Get scales and mins for two consecutive sub-blocks
       uint8_t scale1, scale2, min1, min2;
-      
+
       const int idx1 = block_pair * 2;
       const int idx2 = block_pair * 2 + 1;
-      
+
       if (idx1 < 4) {
         scale1 = scales_data[idx1] & 0x3F;
         min1 = scales_data[idx1 + 4] & 0x3F;
@@ -180,7 +180,7 @@ inline void dequantize_block_q4_K(const uint8_t* src, float* dst, int64_t k) {
         scale1 = (scales_data[idx1 + 4] & 0x0F) | ((scales_data[idx1 - 4] >> 6) << 4);
         min1 = (scales_data[idx1 + 4] >> 4) | ((scales_data[idx1] >> 6) << 4);
       }
-      
+
       if (idx2 < 4) {
         scale2 = scales_data[idx2] & 0x3F;
         min2 = scales_data[idx2 + 4] & 0x3F;
@@ -188,19 +188,19 @@ inline void dequantize_block_q4_K(const uint8_t* src, float* dst, int64_t k) {
         scale2 = (scales_data[idx2 + 4] & 0x0F) | ((scales_data[idx2 - 4] >> 6) << 4);
         min2 = (scales_data[idx2 + 4] >> 4) | ((scales_data[idx2] >> 6) << 4);
       }
-      
+
       const float d1 = d * scale1;
       const float m1 = min * min1;
       const float d2 = d * scale2;
       const float m2 = min * min2;
-      
+
       // Decode 64 values from 32 bytes
       const int out_offset = block_pair * 64;
       for (int l = 0; l < 32; ++l) {
         dst[base + out_offset + l] = d1 * (q_ptr[l] & 0x0F) - m1;
         dst[base + out_offset + 32 + l] = d2 * (q_ptr[l] >> 4) - m2;
       }
-      
+
       q_ptr += 32;
     }
   }
@@ -274,8 +274,11 @@ inline void dequantize_block_q5_K(const uint8_t* src, float* dst, int64_t k) {
       mins[j] = scales_data[j + 4] & 0x3F;
     }
     for (int j = 0; j < 4; ++j) {
-      scales[j + 4] = (scales_data[j] >> 6) | ((scales_data[j + 4] >> 6) << 2) | ((scales_data[j + 8] >> (j * 2)) & 0x03) << 4;
-      mins[j + 4] = (scales_data[j + 4] >> 4) & 0x03 | ((scales_data[j + 8] >> (j * 2 + 4)) & 0x03) << 2 | ((scales_data[j + 8] >> 6) << 4);
+      scales[j + 4] = (scales_data[j] >> 6) | ((scales_data[j + 4] >> 6) << 2) |
+                      ((scales_data[j + 8] >> (j * 2)) & 0x03) << 4;
+      mins[j + 4] = (scales_data[j + 4] >> 4) & 0x03 |
+                    ((scales_data[j + 8] >> (j * 2 + 4)) & 0x03) << 2 |
+                    ((scales_data[j + 8] >> 6) << 4);
     }
 
     // Dequantize: 8 sub-blocks of 32 values each (5-bit quants)
@@ -283,15 +286,15 @@ inline void dequantize_block_q5_K(const uint8_t* src, float* dst, int64_t k) {
       const int sub_block = j / 32;
       const float scale_val = d * scales[sub_block];
       const float min_val = dmin * mins[sub_block];
-      
+
       // Get 4 low bits from qs
       const int qs_idx = j / 2;
       const int q_low = (qs[qs_idx] >> ((j & 1) * 4)) & 0x0F;
-      
+
       // Get 1 high bit from qh
       const int qh_idx = j / 8;
       const int qh_bit = (qh[qh_idx] >> (j % 8)) & 1;
-      
+
       const int q = q_low | (qh_bit << 4);
       dst[i * QK_K + j] = scale_val * q - min_val;
     }

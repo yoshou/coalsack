@@ -1,8 +1,9 @@
 #pragma once
 
+#include <immintrin.h>
+
 #include "../gguf_dequant.h"
 #include "../nn_op_node.h"
-#include <immintrin.h>
 
 namespace coalsack {
 
@@ -36,10 +37,10 @@ class matmul_transpose_mixed_node : public binary_op_node {
       throw std::runtime_error("matmul_transpose_mixed: inputs must be at least 2D");
     }
 
-    int64_t a_rows = a.dim(-2);      // M (output rows)
-    int64_t a_cols = a.dim(-1);      // K (inner dimension)
-    int64_t b_cols = b_fp32.dim(-2); // N (output columns)
-    int64_t b_rows = b_fp32.dim(-1); // K (inner dimension, must equal a_cols)
+    int64_t a_rows = a.dim(-2);       // M (output rows)
+    int64_t a_cols = a.dim(-1);       // K (inner dimension)
+    int64_t b_cols = b_fp32.dim(-2);  // N (output columns)
+    int64_t b_rows = b_fp32.dim(-1);  // K (inner dimension, must equal a_cols)
 
     if (a_cols != b_rows) {
       throw std::runtime_error("matmul_transpose_mixed: incompatible dimensions");
@@ -73,10 +74,8 @@ class matmul_transpose_mixed_node : public binary_op_node {
     int64_t output_matrix_size = a_rows * b_cols;
 
     for (int64_t batch = 0; batch < batch_size; ++batch) {
-      const float* a_matrix =
-          a_data + (batch % (a.numel() / a_matrix_size)) * a_matrix_size;
-      const float* b_matrix =
-          b_data + (batch % (b_fp32.numel() / b_matrix_size)) * b_matrix_size;
+      const float* a_matrix = a_data + (batch % (a.numel() / a_matrix_size)) * a_matrix_size;
+      const float* b_matrix = b_data + (batch % (b_fp32.numel() / b_matrix_size)) * b_matrix_size;
       float* output_matrix = output_data + batch * output_matrix_size;
 
       compute_matmul_avx2(a_matrix, b_matrix, output_matrix, a_rows, a_cols, b_cols, b_rows);
@@ -108,21 +107,20 @@ class matmul_transpose_mixed_node : public binary_op_node {
   }
 
   // Compute A @ B.T with AVX2 (vectorize along k dimension)
-  __attribute__((target("avx2,fma")))
-  static void compute_matmul_avx2(const float* a_matrix, const float* b_matrix,
-                                   float* output_matrix, int64_t a_rows, int64_t a_cols,
-                                   int64_t b_cols, int64_t b_rows) {
+  __attribute__((target("avx2,fma"))) static void compute_matmul_avx2(
+      const float* a_matrix, const float* b_matrix, float* output_matrix, int64_t a_rows,
+      int64_t a_cols, int64_t b_cols, int64_t b_rows) {
     for (int64_t i = 0; i < a_rows; ++i) {
       for (int64_t j = 0; j < b_cols; ++j) {
         __m256 sum_vec = _mm256_setzero_ps();
-        
+
         int64_t k = 0;
         for (; k + 8 <= a_cols; k += 8) {
           __m256 a_vec = _mm256_loadu_ps(&a_matrix[i * a_cols + k]);
           __m256 b_vec = _mm256_loadu_ps(&b_matrix[j * b_rows + k]);
           sum_vec = _mm256_fmadd_ps(a_vec, b_vec, sum_vec);
         }
-        
+
         // Horizontal sum
         __m128 sum_high = _mm256_extractf128_ps(sum_vec, 1);
         __m128 sum_low = _mm256_castps256_ps128(sum_vec);
@@ -130,17 +128,16 @@ class matmul_transpose_mixed_node : public binary_op_node {
         sum_low = _mm_hadd_ps(sum_low, sum_low);
         sum_low = _mm_hadd_ps(sum_low, sum_low);
         float sum = _mm_cvtss_f32(sum_low);
-        
+
         // Scalar remainder
         for (; k < a_cols; ++k) {
           sum += a_matrix[i * a_cols + k] * b_matrix[j * b_rows + k];
         }
-        
+
         output_matrix[i * b_cols + j] = sum;
       }
     }
   }
-
 };
 
 }  // namespace coalsack

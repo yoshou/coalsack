@@ -1,12 +1,12 @@
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
-#include <cstdlib>
-
-#include <spdlog/spdlog.h>
 
 #include "chat_template.h"
 #include "gpt_oss_engine.h"
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
       spdlog::set_level(spdlog::level::err);
     }
   }
-  
+
   std::cout << "=================================\n";
   std::cout << "GPT-OSS Generation Test\n";
   std::cout << "=================================\n\n";
@@ -57,22 +57,22 @@ int main(int argc, char** argv) {
 
   // Build chat prompt
   std::cout << "Building chat prompt...\n";
-  
+
   if (!config.contains("messages")) {
     std::cerr << "ERROR: 'messages' field is required in JSON config\n";
     return 1;
   }
-  
+
   chat_template tpl;
   for (const auto& msg : config["messages"]) {
     if (!msg.contains("role") || !msg.contains("content")) {
       std::cerr << "ERROR: Each message must have 'role' and 'content' fields\n";
       return 1;
     }
-    
+
     std::string role = msg["role"];
     std::string content = msg["content"];
-    
+
     if (role == "system") {
       tpl.add_system(content);
     } else if (role == "user") {
@@ -90,15 +90,15 @@ int main(int argc, char** argv) {
 
   // Load gpt_oss_engine
   std::cout << "Loading gpt_oss_engine...\n";
-  
+
   // model_path is always an array (for both single and multi-file models)
   std::vector<std::string> model_paths = config["model_path"].get<std::vector<std::string>>();
-  
+
   std::cout << "  Model files (" << model_paths.size() << "):\n";
   for (const auto& path : model_paths) {
     std::cout << "    - " << path << "\n";
   }
-  
+
   gpt_oss_engine::config engine_config;
   if (config.contains("n_ctx")) {
     engine_config.kv_cache_size = config["n_ctx"];
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
   engine_config.moe_cache_size_bytes = 1073741824;  // 1 GiB per layer
   std::cout << "  KV cache size: " << engine_config.kv_cache_size << " tokens\n";
   gpt_oss_engine engine(engine_config);
-  
+
   if (!engine.load(model_paths)) {
     std::cerr << "Failed to load engine\n";
     return 1;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
+
 #include <memory>
 #include <set>
 #include <string>
@@ -12,8 +14,6 @@
 #include "moe_weight_provider.h"
 #include "nn_op_node.h"
 #include "result_message.h"
-
-#include <spdlog/spdlog.h>
 
 namespace coalsack {
 
@@ -28,7 +28,7 @@ class moe_weight_fetch_node : public graph_node {
   // Last dimension: [expert_index, weight]
   std::set<int> extract_selected_experts(const dynamic_tensor& router_tensor) const {
     std::set<int> selected_experts;
-    
+
     if (router_tensor.ndim() != 4) {
       return selected_experts;
     }
@@ -92,7 +92,7 @@ class moe_weight_fetch_node : public graph_node {
 
     if (result_msg && !result_msg->is_ok()) {
       spdlog::trace("Skipping moe_weight_fetch_node [{}] (Frame: {})", layer_prefix_, frame_number);
-      
+
       for (const auto& [expert_id, edge] : expert_outputs_) {
         std::unordered_map<std::string, graph_message_ptr> fields;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] = nullptr;
@@ -102,7 +102,7 @@ class moe_weight_fetch_node : public graph_node {
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] = nullptr;
-        
+
         auto error_msg = result_message::error(fields, "Input error");
         error_msg->set_frame_number(frame_number);
         error_msg->set_timestamp(timestamp);
@@ -117,7 +117,7 @@ class moe_weight_fetch_node : public graph_node {
     dynamic_tensor router_tensor;
     std::shared_ptr<dynamic_tensor_message> router_tensor_msg;
     std::set<int> selected_experts;
-    
+
     try {
       router_tensor = get_tensor_from_result_message(result_msg, layer_prefix_ + ".router_out");
       router_tensor_msg = std::make_shared<dynamic_tensor_message>(router_tensor);
@@ -134,7 +134,7 @@ class moe_weight_fetch_node : public graph_node {
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] = nullptr;
-        
+
         auto error_msg = result_message::error(fields, e.what());
         error_msg->set_frame_number(frame_number);
         error_msg->set_timestamp(timestamp);
@@ -150,15 +150,20 @@ class moe_weight_fetch_node : public graph_node {
       if (!is_selected) {
         dynamic_tensor empty_tensor(dtype::float32, {0});
         auto empty_tensor_msg = std::make_shared<dynamic_tensor_message>(empty_tensor);
-        
+
         std::unordered_map<std::string, graph_message_ptr> fields;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] = empty_tensor_msg;
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] = empty_tensor_msg;
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_down"] = empty_tensor_msg;
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] =
+            empty_tensor_msg;
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_down"] =
+            empty_tensor_msg;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_up"] = empty_tensor_msg;
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = empty_tensor_msg;
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = empty_tensor_msg;
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] = router_tensor_msg;
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] =
+            empty_tensor_msg;
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] =
+            empty_tensor_msg;
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] =
+            router_tensor_msg;
 
         auto empty_msg = result_message::ok(fields);
         empty_msg->set_frame_number(frame_number);
@@ -168,24 +173,18 @@ class moe_weight_fetch_node : public graph_node {
       }
 
       std::shared_ptr<result_message> output_msg;
-      
+
       try {
-        auto w_up = weight_provider_->get(
-            layer_prefix_ + ".ffn_up_exps.weight", expert_id);
-        auto w_gate = weight_provider_->get(
-            layer_prefix_ + ".ffn_gate_exps.weight", expert_id);
-        auto w_down = weight_provider_->get(
-            layer_prefix_ + ".ffn_down_exps.weight", expert_id);
-        
-        auto b_up = weight_provider_->get(
-            layer_prefix_ + ".ffn_up_exps.bias", expert_id);
-        auto b_gate = weight_provider_->get(
-            layer_prefix_ + ".ffn_gate_exps.bias", expert_id);
-        auto b_down = weight_provider_->get(
-            layer_prefix_ + ".ffn_down_exps.bias", expert_id);
+        auto w_up = weight_provider_->get(layer_prefix_ + ".ffn_up_exps.weight", expert_id);
+        auto w_gate = weight_provider_->get(layer_prefix_ + ".ffn_gate_exps.weight", expert_id);
+        auto w_down = weight_provider_->get(layer_prefix_ + ".ffn_down_exps.weight", expert_id);
+
+        auto b_up = weight_provider_->get(layer_prefix_ + ".ffn_up_exps.bias", expert_id);
+        auto b_gate = weight_provider_->get(layer_prefix_ + ".ffn_gate_exps.bias", expert_id);
+        auto b_down = weight_provider_->get(layer_prefix_ + ".ffn_down_exps.bias", expert_id);
 
         std::unordered_map<std::string, graph_message_ptr> fields;
-        
+
         // Convert variant to message
         auto make_message = [](const auto& variant) -> graph_message_ptr {
           if (std::holds_alternative<dynamic_tensor>(variant)) {
@@ -198,14 +197,20 @@ class moe_weight_fetch_node : public graph_node {
             return msg;
           }
         };
-        
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] = make_message(w_up);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] = make_message(w_gate);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_down"] = make_message(w_down);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_up"] = make_message(b_up);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = make_message(b_gate);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = make_message(b_down);
-        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] = 
+
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] =
+            make_message(w_up);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] =
+            make_message(w_gate);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_down"] =
+            make_message(w_down);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_up"] =
+            make_message(b_up);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] =
+            make_message(b_gate);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] =
+            make_message(b_down);
+        fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] =
             router_tensor_msg;
 
         output_msg = result_message::ok(fields);
@@ -213,7 +218,8 @@ class moe_weight_fetch_node : public graph_node {
         output_msg->set_timestamp(timestamp);
 
       } catch (const std::exception& e) {
-        spdlog::error("moe_weight_fetch_node [{}] expert {}: {}", layer_prefix_, expert_id, e.what());
+        spdlog::error("moe_weight_fetch_node [{}] expert {}: {}", layer_prefix_, expert_id,
+                      e.what());
         std::unordered_map<std::string, graph_message_ptr> fields;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_up"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".w_gate"] = nullptr;
@@ -222,12 +228,12 @@ class moe_weight_fetch_node : public graph_node {
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_gate"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".b_down"] = nullptr;
         fields[layer_prefix_ + ".expert_" + std::to_string(expert_id) + ".router_out"] = nullptr;
-        
+
         output_msg = result_message::error(fields, e.what());
         output_msg->set_frame_number(frame_number);
         output_msg->set_timestamp(timestamp);
       }
-      
+
       edge->send(output_msg);
     }
   }

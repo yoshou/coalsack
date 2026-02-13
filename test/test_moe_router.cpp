@@ -237,8 +237,8 @@ bool test_gpt_oss_scale() {
       }
 
       if (std::abs(weight_sum - 1.0f) > 1e-4f) {
-        std::cerr << "  ERROR: Weights don't sum to 1 at [" << b << ", " << s
-                  << "]: " << weight_sum << "\n";
+        std::cerr << "  ERROR: Weights don't sum to 1 at [" << b << ", " << s << "]: " << weight_sum
+                  << "\n";
         all_valid = false;
       }
     }

@@ -6,8 +6,8 @@
 #include <optional>
 #include <vector>
 
-#include "../nn_op_node.h"
 #include "../gguf_dequant.h"
+#include "../nn_op_node.h"
 
 namespace coalsack {
 
@@ -46,30 +46,25 @@ class grouped_attention_node : public variadic_op_node {
     scale_ = 1.0f / std::sqrt(static_cast<float>(head_dim));
 
     if (num_q_heads % num_kv_heads != 0) {
-      throw std::runtime_error(
-          "grouped_attention: num_q_heads must be divisible by num_kv_heads");
+      throw std::runtime_error("grouped_attention: num_q_heads must be divisible by num_kv_heads");
     }
 
     if (attn_sinks.has_value()) {
       const auto& sinks = *attn_sinks;
       if (sinks.ndim() != 1) {
-        throw std::runtime_error(
-            "grouped_attention: attn_sinks must be 1D tensor");
+        throw std::runtime_error("grouped_attention: attn_sinks must be 1D tensor");
       }
       if (sinks.dim(0) != num_q_heads_) {
-        throw std::runtime_error(
-            "grouped_attention: attn_sinks size mismatch (expected " +
-            std::to_string(num_q_heads_) + ", got " + 
-            std::to_string(sinks.dim(0)) + ")");
+        throw std::runtime_error("grouped_attention: attn_sinks size mismatch (expected " +
+                                 std::to_string(num_q_heads_) + ", got " +
+                                 std::to_string(sinks.dim(0)) + ")");
       }
       attn_sinks_ = std::move(attn_sinks);
     }
   }
 
   // Public wrapper for testing
-  dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) {
-    return compute(inputs);
-  }
+  dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) { return compute(inputs); }
 
  protected:
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
@@ -95,8 +90,7 @@ class grouped_attention_node : public variadic_op_node {
       throw std::runtime_error("grouped_attention: query hidden_dim mismatch");
     }
 
-    if (key.dim(0) != batch || key.dim(1) != seq_len ||
-        key.dim(2) != num_kv_heads_ * head_dim_) {
+    if (key.dim(0) != batch || key.dim(1) != seq_len || key.dim(2) != num_kv_heads_ * head_dim_) {
       throw std::runtime_error("grouped_attention: key shape mismatch");
     }
 
@@ -108,11 +102,11 @@ class grouped_attention_node : public variadic_op_node {
     // ===== KV Cache Management =====
     const auto& key_new = key;
     const auto& value_new = value;
-    
+
     dynamic_tensor key_to_use;
     dynamic_tensor value_to_use;
     int64_t effective_seq_len;
-    
+
     if (k_cache_.ndim() == 0 || cached_seq_len_ == 0) {
       // Prefill phase: Initialize cache
       if (k_cache_.ndim() == 0) {
@@ -125,7 +119,7 @@ class grouped_attention_node : public variadic_op_node {
         copy_to_cache(k_cache_, key_new, 0);
         copy_to_cache(v_cache_, value_new, 0);
         cached_seq_len_ = seq_len;
-        
+
         // Use the cached portion
         key_to_use = slice_cache(k_cache_, cached_seq_len_);
         value_to_use = slice_cache(v_cache_, cached_seq_len_);
@@ -134,14 +128,14 @@ class grouped_attention_node : public variadic_op_node {
     } else {
       // Decode phase: Append to cache
       if (seq_len != 1) {
-        throw std::runtime_error("grouped_attention: decode phase expects seq_len=1, got " + 
-                               std::to_string(seq_len));
+        throw std::runtime_error("grouped_attention: decode phase expects seq_len=1, got " +
+                                 std::to_string(seq_len));
       }
-      
+
       copy_to_cache(k_cache_, key_new, cached_seq_len_);
       copy_to_cache(v_cache_, value_new, cached_seq_len_);
       cached_seq_len_ += seq_len;
-      
+
       // Use the full cached sequence
       key_to_use = slice_cache(k_cache_, cached_seq_len_);
       value_to_use = slice_cache(v_cache_, cached_seq_len_);
@@ -151,9 +145,11 @@ class grouped_attention_node : public variadic_op_node {
     dynamic_tensor output(query.get_dtype(), query.shape());
 
     if (query.get_dtype() == dtype::float32) {
-      compute_impl<float>(query, key_to_use, value_to_use, output, batch, seq_len, effective_seq_len);
+      compute_impl<float>(query, key_to_use, value_to_use, output, batch, seq_len,
+                          effective_seq_len);
     } else if (query.get_dtype() == dtype::float64) {
-      compute_impl<double>(query, key_to_use, value_to_use, output, batch, seq_len, effective_seq_len);
+      compute_impl<double>(query, key_to_use, value_to_use, output, batch, seq_len,
+                           effective_seq_len);
     } else {
       throw std::runtime_error("grouped_attention: only float32 and float64 supported");
     }
@@ -175,10 +171,10 @@ class grouped_attention_node : public variadic_op_node {
   float scale_;
   int64_t sliding_window_;
   std::optional<dynamic_tensor> attn_sinks_;
-  
+
   // KV cache state
-  dynamic_tensor k_cache_;  // [batch, num_kv_heads, max_seq_len, head_dim]
-  dynamic_tensor v_cache_;  // [batch, num_kv_heads, max_seq_len, head_dim]
+  dynamic_tensor k_cache_;      // [batch, num_kv_heads, max_seq_len, head_dim]
+  dynamic_tensor v_cache_;      // [batch, num_kv_heads, max_seq_len, head_dim]
   int64_t cached_seq_len_ = 0;  // Number of tokens currently cached
 
   template <typename T>
@@ -215,47 +211,50 @@ class grouped_attention_node : public variadic_op_node {
     if (src.get_dtype() != dtype::float32 || cache.get_dtype() != dtype::float32) {
       throw std::runtime_error("grouped_attention: cache only supports float32");
     }
-    
+
     const float* src_data = src.data_ptr<float>();
     float* cache_data = cache.data_ptr<float>();
-    
+
     int64_t batch = src.dim(0);
     int64_t seq_len = src.dim(1);
     int64_t max_seq_len = cache.dim(2);
-    
+
     if (start_pos + seq_len > max_seq_len) {
       throw std::runtime_error("grouped_attention: cache overflow");
     }
-    
-    // Copy data: [batch, seq_len, num_kv_heads, head_dim] -> [batch, num_kv_heads, start_pos:start_pos+seq_len, head_dim]
+
+    // Copy data: [batch, seq_len, num_kv_heads, head_dim] -> [batch, num_kv_heads,
+    // start_pos:start_pos+seq_len, head_dim]
     for (int64_t b = 0; b < batch; ++b) {
       for (int64_t s = 0; s < seq_len; ++s) {
         for (int64_t h = 0; h < num_kv_heads_; ++h) {
           for (int64_t d = 0; d < head_dim_; ++d) {
             int64_t src_idx = ((b * seq_len + s) * num_kv_heads_ + h) * head_dim_ + d;
-            int64_t cache_idx = ((b * num_kv_heads_ + h) * max_seq_len + (start_pos + s)) * head_dim_ + d;
+            int64_t cache_idx =
+                ((b * num_kv_heads_ + h) * max_seq_len + (start_pos + s)) * head_dim_ + d;
             cache_data[cache_idx] = src_data[src_idx];
           }
         }
       }
     }
   }
-  
+
   dynamic_tensor slice_cache(const dynamic_tensor& cache, int64_t seq_len) {
     // cache: [batch, num_kv_heads, max_seq_len, head_dim]
     // output: [batch, seq_len, num_kv_heads * head_dim]
     int64_t batch = cache.dim(0);
     int64_t max_seq_len = cache.dim(2);
-    
+
     if (seq_len > max_seq_len) {
       throw std::runtime_error("grouped_attention: slice exceeds cache size");
     }
-    
+
     dynamic_tensor result(cache.get_dtype(), {batch, seq_len, num_kv_heads_ * head_dim_});
     const float* cache_data = cache.data_ptr<float>();
     float* result_data = result.data_ptr<float>();
-    
-    // Copy data: [batch, num_kv_heads, 0:seq_len, head_dim] -> [batch, seq_len, num_kv_heads, head_dim]
+
+    // Copy data: [batch, num_kv_heads, 0:seq_len, head_dim] -> [batch, seq_len, num_kv_heads,
+    // head_dim]
     for (int64_t b = 0; b < batch; ++b) {
       for (int64_t s = 0; s < seq_len; ++s) {
         for (int64_t h = 0; h < num_kv_heads_; ++h) {
@@ -267,17 +266,17 @@ class grouped_attention_node : public variadic_op_node {
         }
       }
     }
-    
+
     return result;
   }
 
   template <typename T>
-  void compute_single_head_attention(const T* q_data, const T* k_data, const T* v_data,
-                                     T* out_data, int64_t batch_idx, int64_t q_head_idx,
-                                     int64_t kv_head_idx, int64_t query_seq_len, int64_t key_seq_len) {
+  void compute_single_head_attention(const T* q_data, const T* k_data, const T* v_data, T* out_data,
+                                     int64_t batch_idx, int64_t q_head_idx, int64_t kv_head_idx,
+                                     int64_t query_seq_len, int64_t key_seq_len) {
     const int64_t window = sliding_window_ > 0 ? sliding_window_ : key_seq_len;
     const bool has_sinks = attn_sinks_.has_value();
-    
+
     // Load sink logit once per head (dtype-aware conversion)
     T sink_logit = -std::numeric_limits<T>::infinity();
     if (has_sinks) {
@@ -290,7 +289,7 @@ class grouped_attention_node : public variadic_op_node {
         sink_logit = static_cast<T>(fp16_to_fp32(sinks.data_ptr<uint16_t>()[q_head_idx]));
       }
     }
-    
+
     std::vector<T> attn_weights;
 
     // Process each query position (only the new tokens in query)
@@ -332,7 +331,7 @@ class grouped_attention_node : public variadic_op_node {
       if (has_sinks) {
         sum_exp += std::exp(sink_logit - max_score);
       }
-      
+
       const T inv_sum = sum_exp > 0 ? T(1) / sum_exp : T(0);
       for (int64_t jj = 0; jj < span; ++jj) {
         attn_weights[jj] *= inv_sum;
