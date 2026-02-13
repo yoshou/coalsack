@@ -286,6 +286,27 @@ target_compile_definitions(test_expert_mlp PUBLIC
     FMT_HEADER_ONLY
 )
 
+add_executable(bench_expert_mlp_mxfp4
+    ${CMAKE_CURRENT_LIST_DIR}/bench_expert_mlp_mxfp4.cpp
+)
+
+add_dependencies(bench_expert_mlp_mxfp4
+    spdlog
+)
+
+target_include_directories(bench_expert_mlp_mxfp4 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(bench_expert_mlp_mxfp4
+    coalsack
+    pthread
+)
+
+target_compile_definitions(bench_expert_mlp_mxfp4 PUBLIC
+    FMT_HEADER_ONLY
+)
+
 add_executable(test_gpt_oss_engine
     ${CMAKE_CURRENT_LIST_DIR}/test_gpt_oss_engine.cpp
 )

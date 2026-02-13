@@ -45,6 +45,16 @@ class expert_mlp_node : public graph_node {
     return compute_fp16(inputs);
   }
 
+  // Public wrapper for MXFP4 testing
+  void compute_test_mxfp4(const float* hidden_vec, const uint8_t* w_up_data,
+                           const uint8_t* w_gate_data, const uint8_t* w_down_data,
+                           const float* b_up_data, const float* b_gate_data,
+                           const float* b_down_data, float* output_vec, int64_t hidden_dim,
+                           int64_t expert_ffn_dim) {
+    compute_token_mxfp4(hidden_vec, w_up_data, w_gate_data, w_down_data, b_up_data, b_gate_data,
+                         b_down_data, output_vec, hidden_dim, expert_ffn_dim);
+  }
+
   // Override process() to handle both FP16 and MXFP4 weights
   void process(std::string input_name, graph_message_ptr message) override {
     uint64_t frame_number = 0;
@@ -229,23 +239,14 @@ class expert_mlp_node : public graph_node {
     return result;
   }
 
-  // SIMD dot product for 32 elements with fully unrolled loop
-  // Accepts pre-loaded data in SIMD registers
-  __attribute__((target("avx2,fma"))) static inline float simd_dot_product_32(
-      const simd_block_32& w, const simd_block_32& x) {
-    // Compute products (already in registers)
-    __m256 prod0 = _mm256_mul_ps(x.v0, w.v0);
-    __m256 prod1 = _mm256_mul_ps(x.v1, w.v1);
-    __m256 prod2 = _mm256_mul_ps(x.v2, w.v2);
-    __m256 prod3 = _mm256_mul_ps(x.v3, w.v3);
-
-    // Accumulate in SIMD registers
-    __m256 acc = _mm256_add_ps(prod0, prod1);
-    acc = _mm256_add_ps(acc, prod2);
-    acc = _mm256_add_ps(acc, prod3);
-
-    // Horizontal sum and return
-    return horizontal_sum_avx2(acc);
+  // FMA accumulate: acc += hidden.v0*w.v0 + hidden.v1*w.v1 + hidden.v2*w.v2 + hidden.v3*w.v3
+  __attribute__((target("avx2,fma"))) static inline void fma_block_32(__m256& acc,
+                                                                       const simd_block_32& hidden,
+                                                                       const simd_block_32& w) {
+    acc = _mm256_fmadd_ps(hidden.v0, w.v0, acc);
+    acc = _mm256_fmadd_ps(hidden.v1, w.v1, acc);
+    acc = _mm256_fmadd_ps(hidden.v2, w.v2, acc);
+    acc = _mm256_fmadd_ps(hidden.v3, w.v3, acc);
   }
 
   // Compute with FP16 weights
@@ -588,74 +589,81 @@ class expert_mlp_node : public graph_node {
   }
 
   // MXFP4 on-the-fly dequantization and computation with SIMD
+  // Uses accumulator optimization (single horizontal sum per output) + FMA + output tiling N=2
   __attribute__((target("f16c,avx2,fma"))) void compute_token_mxfp4(
       const float* hidden_vec, const uint8_t* w_up_data, const uint8_t* w_gate_data,
       const uint8_t* w_down_data, const float* b_up_data, const float* b_gate_data,
       const float* b_down_data, float* output_vec, int64_t hidden_dim,
       int64_t expert_ffn_dim) const {
+    constexpr int TILE = 2;
     constexpr float alpha = 1.702f;
     constexpr float limit = 7.0f;
     constexpr size_t QK_MXFP4 = 32;
     constexpr size_t MXFP4_BLOCK_BYTES = 17;
 
-    std::vector<float> activated(expert_ffn_dim);
-
-    // Dequantize MXFP4 block using SIMD (pshufb lookup + AVX2 convert)
-
-    // Step 1: Up/gate projections with MXFP4 weights
-    for (int64_t out_idx = 0; out_idx < expert_ffn_dim; ++out_idx) {
-      float up_sum = 0.0f;
-      float gate_sum = 0.0f;
-
-      int64_t in_idx = 0;
-      // Process blocks
-      for (; in_idx + QK_MXFP4 - 1 < hidden_dim; in_idx += QK_MXFP4) {
-        int64_t block_idx = in_idx / QK_MXFP4;
-        int64_t weight_block_offset =
-            (out_idx * ((hidden_dim + QK_MXFP4 - 1) / QK_MXFP4) + block_idx) * MXFP4_BLOCK_BYTES;
-
-        // Dequantize weights and load hidden states to SIMD registers
-        auto w_up_simd = dequantize_mxfp4_block_32(w_up_data + weight_block_offset);
-        auto w_gate_simd = dequantize_mxfp4_block_32(w_gate_data + weight_block_offset);
-        auto hidden_simd = load_fp32_block_32(hidden_vec + in_idx);
-
-        // SIMD dot products (hidden loaded once, used twice)
-        up_sum += simd_dot_product_32(w_up_simd, hidden_simd);
-        gate_sum += simd_dot_product_32(w_gate_simd, hidden_simd);
-      }
-
-      // Add biases and apply activation
-      const float up_v = up_sum + b_up_data[out_idx];
-      const float gate_v = gate_sum + b_gate_data[out_idx];
-
-      const float x = std::min(gate_v, limit);
-      const float y = std::clamp(up_v, -limit, limit);
-      const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
-
-      activated[out_idx] = out_glu * (y + 1.0f);
+    if (expert_ffn_dim % TILE != 0) {
+      throw std::runtime_error(
+          "compute_token_mxfp4: expert_ffn_dim must be even, got " +
+          std::to_string(expert_ffn_dim));
+    }
+    if (hidden_dim % TILE != 0) {
+      throw std::runtime_error(
+          "compute_token_mxfp4: hidden_dim must be even, got " +
+          std::to_string(hidden_dim));
     }
 
-    // Step 2: Down projection with MXFP4 weights
-    for (int64_t out_idx = 0; out_idx < hidden_dim; ++out_idx) {
-      float sum = 0.0f;
+    std::vector<float> activated(expert_ffn_dim);
 
-      int64_t in_idx = 0;
-      // Process blocks
-      for (; in_idx + QK_MXFP4 - 1 < expert_ffn_dim; in_idx += QK_MXFP4) {
-        int64_t block_idx = in_idx / QK_MXFP4;
-        int64_t weight_block_offset =
-            (out_idx * ((expert_ffn_dim + QK_MXFP4 - 1) / QK_MXFP4) + block_idx) *
-            MXFP4_BLOCK_BYTES;
+    int64_t num_blocks_hidden = hidden_dim / QK_MXFP4;
+    int64_t num_blocks_ffn = expert_ffn_dim / QK_MXFP4;
 
-        // Dequantize weight and load activation to SIMD registers
-        auto w_down_simd = dequantize_mxfp4_block_32(w_down_data + weight_block_offset);
-        auto act_simd = load_fp32_block_32(activated.data() + in_idx);
-
-        // SIMD dot product
-        sum += simd_dot_product_32(w_down_simd, act_simd);
+    // Step 1: Up/gate projections with output tiling N=2
+    for (int64_t out_idx = 0; out_idx < expert_ffn_dim; out_idx += TILE) {
+      __m256 up_acc[TILE], gate_acc[TILE];
+      for (int t = 0; t < TILE; ++t) {
+        up_acc[t] = _mm256_setzero_ps();
+        gate_acc[t] = _mm256_setzero_ps();
       }
 
-      output_vec[out_idx] = sum + b_down_data[out_idx];
+      for (int64_t blk = 0; blk < num_blocks_hidden; ++blk) {
+        auto hidden_simd = load_fp32_block_32(hidden_vec + blk * QK_MXFP4);
+
+        for (int t = 0; t < TILE; ++t) {
+          int64_t offset = ((out_idx + t) * num_blocks_hidden + blk) * MXFP4_BLOCK_BYTES;
+          fma_block_32(up_acc[t], hidden_simd, dequantize_mxfp4_block_32(w_up_data + offset));
+          fma_block_32(gate_acc[t], hidden_simd, dequantize_mxfp4_block_32(w_gate_data + offset));
+        }
+      }
+
+      for (int t = 0; t < TILE; ++t) {
+        const float up_v = horizontal_sum_avx2(up_acc[t]) + b_up_data[out_idx + t];
+        const float gate_v = horizontal_sum_avx2(gate_acc[t]) + b_gate_data[out_idx + t];
+        const float x = std::min(gate_v, limit);
+        const float y = std::clamp(up_v, -limit, limit);
+        const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
+        activated[out_idx + t] = out_glu * (y + 1.0f);
+      }
+    }
+
+    // Step 2: Down projection with output tiling N=2
+    for (int64_t out_idx = 0; out_idx < hidden_dim; out_idx += TILE) {
+      __m256 acc[TILE];
+      for (int t = 0; t < TILE; ++t) {
+        acc[t] = _mm256_setzero_ps();
+      }
+
+      for (int64_t blk = 0; blk < num_blocks_ffn; ++blk) {
+        auto act_simd = load_fp32_block_32(activated.data() + blk * QK_MXFP4);
+
+        for (int t = 0; t < TILE; ++t) {
+          int64_t offset = ((out_idx + t) * num_blocks_ffn + blk) * MXFP4_BLOCK_BYTES;
+          fma_block_32(acc[t], act_simd, dequantize_mxfp4_block_32(w_down_data + offset));
+        }
+      }
+
+      for (int t = 0; t < TILE; ++t) {
+        output_vec[out_idx + t] = horizontal_sum_avx2(acc[t]) + b_down_data[out_idx + t];
+      }
     }
   }
 
