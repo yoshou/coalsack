@@ -4,6 +4,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,6 +39,7 @@
 #include "nn_ops/log_node.h"
 #include "nn_ops/log_softmax_node.h"
 #include "nn_ops/matmul_node.h"
+#include "nn_ops/matmul_transpose_mixed_node.h"
 #include "nn_ops/max_pool_node.h"
 #include "nn_ops/mod_node.h"
 #include "nn_ops/mul_node.h"
@@ -639,4 +641,117 @@ TEST(ModelIoNodesTest, ModelOutputNode) {
   model_output->process("default", out_msg);
 
   EXPECT_TRUE(output_called) << "callback not called";
+}
+
+// =============================================================================
+// matmul_transpose_mixed_node tests
+// =============================================================================
+
+// Naive reference: C[i][j] = sum_k A[i][k] * B[j][k]
+static void matmul_transpose_ref(const float* a, const float* b, float* out, int64_t M, int64_t N,
+                                 int64_t K) {
+  for (int64_t i = 0; i < M; ++i) {
+    for (int64_t j = 0; j < N; ++j) {
+      double sum = 0.0;
+      for (int64_t k = 0; k < K; ++k) {
+        sum += static_cast<double>(a[i * K + k]) * static_cast<double>(b[j * K + k]);
+      }
+      out[i * N + j] = static_cast<float>(sum);
+    }
+  }
+}
+
+TEST(MatmulTransposeMixedTest, SmallKnownValues) {
+  // A: [2, 3], B: [4, 3] -> Output: [2, 4] = A @ B.T
+  auto a = dynamic_tensor(dtype::float32, {2, 3}, std::vector<float>{1, 2, 3, 4, 5, 6}.data());
+  auto b = dynamic_tensor(dtype::float32, {4, 3},
+                          std::vector<float>{1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1}.data());
+
+  matmul_transpose_mixed_node node;
+  auto result = node.compute_test(a, b);
+
+  ASSERT_EQ(result.shape(), (std::vector<int64_t>{2, 4}));
+  const float* out = result.data_ptr<float>();
+  EXPECT_FLOAT_EQ(out[0], 1.0f);
+  EXPECT_FLOAT_EQ(out[1], 2.0f);
+  EXPECT_FLOAT_EQ(out[2], 3.0f);
+  EXPECT_FLOAT_EQ(out[3], 6.0f);
+  EXPECT_FLOAT_EQ(out[4], 4.0f);
+  EXPECT_FLOAT_EQ(out[5], 5.0f);
+  EXPECT_FLOAT_EQ(out[6], 6.0f);
+  EXPECT_FLOAT_EQ(out[7], 15.0f);
+}
+
+TEST(MatmulTransposeMixedTest, RandomLarge) {
+  const int64_t M = 4, K = 256, N = 256;
+  std::mt19937 gen(12345);
+  std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+
+  dynamic_tensor a(dtype::float32, {M, K});
+  dynamic_tensor b(dtype::float32, {N, K});
+  for (int64_t i = 0; i < M * K; ++i) a.data_ptr<float>()[i] = dis(gen);
+  for (int64_t i = 0; i < N * K; ++i) b.data_ptr<float>()[i] = dis(gen);
+
+  std::vector<float> ref(M * N);
+  matmul_transpose_ref(a.data_ptr<float>(), b.data_ptr<float>(), ref.data(), M, N, K);
+
+  matmul_transpose_mixed_node node;
+  auto result = node.compute_test(a, b);
+
+  ASSERT_EQ(result.shape(), (std::vector<int64_t>{M, N}));
+  const float* out = result.data_ptr<float>();
+  for (int64_t i = 0; i < M * N; ++i) {
+    EXPECT_NEAR(out[i], ref[i], 1e-4f * std::max(1.0f, std::abs(ref[i])))
+        << "mismatch at index " << i;
+  }
+}
+
+TEST(MatmulTransposeMixedTest, NonAlignedDimensions) {
+  // K=13 (not divisible by 8/16), N=5 (not divisible by 4)
+  const int64_t M = 3, K = 13, N = 5;
+  std::mt19937 gen(99);
+  std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+
+  dynamic_tensor a(dtype::float32, {M, K});
+  dynamic_tensor b(dtype::float32, {N, K});
+  for (int64_t i = 0; i < M * K; ++i) a.data_ptr<float>()[i] = dis(gen);
+  for (int64_t i = 0; i < N * K; ++i) b.data_ptr<float>()[i] = dis(gen);
+
+  std::vector<float> ref(M * N);
+  matmul_transpose_ref(a.data_ptr<float>(), b.data_ptr<float>(), ref.data(), M, N, K);
+
+  matmul_transpose_mixed_node node;
+  auto result = node.compute_test(a, b);
+
+  ASSERT_EQ(result.shape(), (std::vector<int64_t>{M, N}));
+  const float* out = result.data_ptr<float>();
+  for (int64_t i = 0; i < M * N; ++i) {
+    EXPECT_NEAR(out[i], ref[i], 1e-4f * std::max(1.0f, std::abs(ref[i])))
+        << "mismatch at index " << i;
+  }
+}
+
+TEST(MatmulTransposeMixedTest, SingleRow) {
+  // M=1: most common case in LLM autoregressive inference
+  const int64_t M = 1, K = 768, N = 768;
+  std::mt19937 gen(42);
+  std::uniform_real_distribution<float> dis(-0.5f, 0.5f);
+
+  dynamic_tensor a(dtype::float32, {M, K});
+  dynamic_tensor b(dtype::float32, {N, K});
+  for (int64_t i = 0; i < M * K; ++i) a.data_ptr<float>()[i] = dis(gen);
+  for (int64_t i = 0; i < N * K; ++i) b.data_ptr<float>()[i] = dis(gen);
+
+  std::vector<float> ref(M * N);
+  matmul_transpose_ref(a.data_ptr<float>(), b.data_ptr<float>(), ref.data(), M, N, K);
+
+  matmul_transpose_mixed_node node;
+  auto result = node.compute_test(a, b);
+
+  ASSERT_EQ(result.shape(), (std::vector<int64_t>{M, N}));
+  const float* out = result.data_ptr<float>();
+  for (int64_t i = 0; i < M * N; ++i) {
+    EXPECT_NEAR(out[i], ref[i], 1e-4f * std::max(1.0f, std::abs(ref[i])))
+        << "mismatch at index " << i;
+  }
 }

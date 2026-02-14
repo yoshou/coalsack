@@ -307,6 +307,27 @@ target_compile_definitions(bench_expert_mlp_mxfp4 PUBLIC
     FMT_HEADER_ONLY
 )
 
+add_executable(bench_matmul_transpose
+    ${CMAKE_CURRENT_LIST_DIR}/bench_matmul_transpose.cpp
+)
+
+add_dependencies(bench_matmul_transpose
+    spdlog
+)
+
+target_include_directories(bench_matmul_transpose PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(bench_matmul_transpose
+    coalsack
+    pthread
+)
+
+target_compile_definitions(bench_matmul_transpose PUBLIC
+    FMT_HEADER_ONLY
+)
+
 add_executable(test_gpt_oss_engine
     ${CMAKE_CURRENT_LIST_DIR}/test_gpt_oss_engine.cpp
 )
