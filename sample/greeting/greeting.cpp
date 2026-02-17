@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <utility>
 #include <boost/asio.hpp>
 #include <chrono>
 #include <functional>
