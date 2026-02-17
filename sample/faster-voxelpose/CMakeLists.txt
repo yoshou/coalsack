@@ -55,7 +55,6 @@ target_link_libraries(faster_voxelpose
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:camera>
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:camera-base>
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:${ONNXRUNTIME_LIBS}>
-    $<$<BOOL:${ENABLE_TFLITE_EXT}>:tensorflow-lite>
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
@@ -63,5 +62,4 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
     $<$<BOOL:${ENABLE_RS_D435_EXT}>:ENABLE_RS_D435_EXT>
     $<$<BOOL:${ENABLE_LIBCAMERA_EXT}>:ENABLE_LIBCAMERA_EXT>
     $<$<BOOL:${ENABLE_ONNXRUNTIME_EXT}>:ENABLE_ONNXRUNTIME_EXT>
-    $<$<BOOL:${ENABLE_TFLITE_EXT}>:ENABLE_TFLITE_EXT>
 )

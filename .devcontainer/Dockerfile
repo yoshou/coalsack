@@ -1,35 +1,4 @@
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
-
-# Install needed packages. Use a separate RUN statement to add your own dependencies.
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install build-essential cmake cppcheck valgrind clang lldb llvm gdb \
-    && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install sudo locales \
-    && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
-
-# Setup ENV vars for vcpkg
-ENV VCPKG_ROOT=/usr/local/vcpkg \
-    VCPKG_DOWNLOADS=/usr/local/vcpkg-downloads
-ENV PATH="${PATH}:${VCPKG_ROOT}"
-
-RUN locale-gen en_US.UTF-8  
-ENV LANG en_US.UTF-8  
-ENV LANGUAGE en_US:en  
-ENV LC_ALL en_US.UTF-8
-
-ARG USERNAME=vscode
-ARG GROUPNAME=vscode
-ARG UID=1000
-ARG GID=1000
-RUN groupadd -g $GID $GROUPNAME && \
-    useradd -m -s /bin/bash -u $UID -g $GID $USERNAME
-
-# Install vcpkg itself: https://github.com/microsoft/vcpkg/blob/master/README.md#quick-start-unix
-COPY ./install-vcpkg.sh /tmp/
-RUN chmod +x /tmp/install-vcpkg.sh && /tmp/install-vcpkg.sh ${USERNAME} \
-    && rm -f /tmp/install-vcpkg.sh
+FROM mcr.microsoft.com/devcontainers/cpp:1-debian12
 
 ARG REINSTALL_CMAKE_VERSION_FROM_SOURCE="3.22.2"
 
@@ -41,52 +10,64 @@ RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
     fi \
     && rm -f /tmp/reinstall-cmake.sh
 
+# Install build dependencies and required libraries via apt
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install --no-install-recommends gfortran bison python3 python3-pip python3-setuptools libarchive-dev libblas-dev liblapack-dev
+    && apt-get -y install --no-install-recommends \
+    gfortran bison python3 python3-pip python3-setuptools \
+    libarchive-dev libblas-dev liblapack-dev \
+    libboost-all-dev \
+    libopencv-dev \
+    nlohmann-json3-dev \
+    autoconf automake libtool libudev-dev \
+    wget curl \
+    usbutils udev \
+    software-properties-common apt-transport-https \
+    && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
-RUN su vscode -c "${VCPKG_ROOT}/vcpkg install boost-asio opencv4[core,jpeg,png]"
-
+# Build and install librealsense from source (v2.56.5)
+# Following official documentation: https://github.com/IntelRealSense/librealsense/blob/master/doc/installation.md
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install --no-install-recommends autoconf automake libtool libudev-dev
-    
-RUN su vscode -c "${VCPKG_ROOT}/vcpkg install realsense2"
-
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install wget \
+    && apt-get -y install --no-install-recommends \
+    libssl-dev libusb-1.0-0-dev pkg-config libgtk-3-dev \
+    libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev v4l-utils \
+    && cd /tmp \
+    && wget https://github.com/realsenseai/librealsense/archive/refs/tags/v2.56.5.tar.gz \
+    && tar -xzf v2.56.5.tar.gz \
+    && cd librealsense-2.56.5 \
+    && ./scripts/setup_udev_rules.sh || true \
+    && mkdir build && cd build \
+    && cmake ../ -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=false -DBUILD_GRAPHICAL_EXAMPLES=false \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && cd /tmp \
+    && rm -rf librealsense-2.56.5 v2.56.5.tar.gz \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /onnxruntime/
 
+# Install ONNX Runtime CPU version
 RUN curl -L \
-    https://github.com/microsoft/onnxruntime/releases/download/v1.15.1/onnxruntime-linux-x64-gpu-1.15.1.tgz \
-    -o /tmp/onnxruntime-linux-x64-gpu-1.15.1.tgz
+    https://github.com/microsoft/onnxruntime/releases/download/v1.15.1/onnxruntime-linux-x64-1.15.1.tgz \
+    -o /tmp/onnxruntime-linux-x64-1.15.1.tgz \
+    && tar -zxvf /tmp/onnxruntime-linux-x64-1.15.1.tgz --strip-components 1 -C /onnxruntime \
+    && rm /tmp/onnxruntime-linux-x64-1.15.1.tgz
 
-RUN tar -zxvf /tmp/onnxruntime-linux-x64-gpu-1.15.1.tgz --strip-components 1 -C /onnxruntime
-
-WORKDIR /tensorflow/
-
-RUN curl -L \
-    https://github.com/tensorflow/tensorflow/archive/refs/tags/v2.10.1.tar.gz \
-    -o /tmp/tensorflow-2.10.1.tar.gz \
-    && tar -zxvf /tmp/tensorflow-2.10.1.tar.gz --strip-components 1 -C /tensorflow
-
+# Install DepthAI
 RUN curl -L \
     https://github.com/luxonis/depthai-core/releases/download/v2.22.0/depthai-core-v2.22.0.tar.gz \
     -o /tmp/depthai-core-v2.22.0.tar.gz \
     && mkdir /tmp/depthai-core \
     && tar -zxvf /tmp/depthai-core-v2.22.0.tar.gz --strip-components 1 -C /tmp/depthai-core \
     && cd /tmp/depthai-core \
-    && cmake -S. -Bbuild -DOpenCV_DIR=${VCPKG_ROOT}/installed/x64-linux/share/opencv4/ -DDEPTHAI_OPENCV_SUPPORT=ON -DDEPTHAI_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/usr/local \
-    && cmake --build build --target install
+    && cmake -S. -Bbuild -DDEPTHAI_OPENCV_SUPPORT=ON -DDEPTHAI_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && cmake --build build --target install \
+    && rm -rf /tmp/depthai-core /tmp/depthai-core-v2.22.0.tar.gz
 
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install --no-install-recommends usbutils udev
+# Setup udev rules for USB devices
+RUN echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | tee /etc/udev/rules.d/80-movidius.rules
 
-RUN echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules
+# Set environment variables
+ENV ONNXRUNTIME_ROOT=/onnxruntime
 
-ENV PATH $PATH:${VCPKG_ROOT}/installed/x64-linux
-ENV BOOST_ROOT /usr/local/vcpkg/installed/x64-linux
-ENV ONNXRUNTIME_ROOT /onnxruntime
-ENV TENSORFLOW_ROOT /tensorflow
-
-USER ${USERNAME}
+USER vscode

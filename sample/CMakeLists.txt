@@ -30,29 +30,14 @@ else()
     set(ENABLE_ONNXRUNTIME_EXT 0)
 endif()
 
-if(DEFINED ENV{TENSORFLOW_ROOT})
-    set(ENABLE_TFLITE_EXT 1)
-else()
-    set(ENABLE_TFLITE_EXT 0)
-endif()
-
 message("ENABLE_LIBCAMERA_EXT: ${ENABLE_LIBCAMERA_EXT}")
 message("ENABLE_RS_D435_EXT: ${ENABLE_RS_D435_EXT}")
 message("ENABLE_ONNXRUNTIME_EXT: ${ENABLE_ONNXRUNTIME_EXT}")
-message("ENABLE_TFLITE_EXT: ${ENABLE_TFLITE_EXT}")
 message("ENABLE_DEPTHAI_EXT: ${ENABLE_DEPTHAI_EXT}")
 
 if(${ENABLE_ONNXRUNTIME_EXT})
     set(ONNXRUNTIME_INCLUDE_DIRS $ENV{ONNXRUNTIME_ROOT}/include)
     set(ONNXRUNTIME_LIBS $ENV{ONNXRUNTIME_ROOT}/lib/libonnxruntime.so)
-endif()
-
-if(${ENABLE_TFLITE_EXT})
-    add_subdirectory(
-        "$ENV{TENSORFLOW_ROOT}/tensorflow/lite"
-        "${CMAKE_CURRENT_BINARY_DIR}/tensorflow-lite"
-        EXCLUDE_FROM_ALL
-    )
 endif()
 
 ExternalProject_Add (libjpeg-turbo
