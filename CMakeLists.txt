@@ -5,8 +5,6 @@ project(coalsack)
 find_package(Iconv REQUIRED)
 find_package(OpenCV 4.0 REQUIRED)
 find_package(Boost REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
-find_package(ONNX CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -29,6 +27,7 @@ endif()
 add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_server.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc_client.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/onnx_proto_parser.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/onnx_importer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gguf_loader.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/gguf_multi_loader.cpp
@@ -73,10 +72,6 @@ include_directories(
 )
 
 target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    protobuf::libprotobuf
-    ONNX::onnx
-    ONNX::onnx_proto
 )
 
 include(${CMAKE_CURRENT_LIST_DIR}/third-party/CMakeLists.txt)

@@ -8,15 +8,7 @@
 
 #include "graph_proc.h"
 #include "nn_nodes.h"
-
-// Forward declare ONNX types
-namespace onnx {
-class ModelProto;
-class GraphProto;
-class NodeProto;
-class TensorProto;
-class ValueInfoProto;
-}  // namespace onnx
+#include "onnx_proto_parser.h"
 
 namespace coalsack {
 
@@ -57,19 +49,19 @@ class onnx_importer {
                      std::shared_ptr<model_output_node> output_node);
 
  private:
-  bool import_graph(const onnx::GraphProto& graph, int max_nodes = -1);
-  bool import_node(const onnx::NodeProto& node);
-  bool import_initializers(const onnx::GraphProto& graph);
-  dynamic_tensor convert_tensor_proto(const onnx::TensorProto& tensor);
-  void parse_attributes(const onnx::NodeProto& node, graph_node_ptr coalsack_node);
+  bool import_graph(const onnx_graph_proto& graph, int max_nodes = -1);
+  bool import_node(const onnx_node_proto& node);
+  bool import_initializers(const onnx_graph_proto& graph);
+  dynamic_tensor convert_tensor_proto(const onnx_tensor_proto& tensor);
+  void parse_attributes(const onnx_node_proto& node, graph_node_ptr coalsack_node);
   graph_node_ptr create_node_for_op(const std::string& op_type);
-  void set_node_name(const onnx::NodeProto& node, graph_node_ptr coalsack_node);
-  void collect_input_edges(const onnx::NodeProto& node, std::vector<std::string>& input_names,
+  void set_node_name(const onnx_node_proto& node, graph_node_ptr coalsack_node);
+  void collect_input_edges(const onnx_node_proto& node, std::vector<std::string>& input_names,
                            std::vector<graph_edge_ptr>& input_edges);
-  void setup_input_connections(const onnx::NodeProto& node, graph_node_ptr coalsack_node,
+  void setup_input_connections(const onnx_node_proto& node, graph_node_ptr coalsack_node,
                                const std::vector<std::string>& input_names,
                                const std::vector<graph_edge_ptr>& input_edges);
-  void setup_output_connections(const onnx::NodeProto& node, graph_node_ptr coalsack_node,
+  void setup_output_connections(const onnx_node_proto& node, graph_node_ptr coalsack_node,
                                 const std::string& op_type);
 };
 

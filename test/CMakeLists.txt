@@ -37,9 +37,6 @@ target_include_directories(test_superpoint_lightglue PRIVATE
 target_link_libraries(test_superpoint_lightglue
     coalsack
     pthread
-    protobuf::libprotobuf
-    ONNX::onnx
-    ONNX::onnx_proto
     opencv_core
     opencv_imgcodecs
     opencv_imgproc
@@ -325,6 +322,31 @@ target_link_libraries(bench_matmul_transpose
 )
 
 target_compile_definitions(bench_matmul_transpose PUBLIC
+    FMT_HEADER_ONLY
+)
+
+add_executable(test_onnx_parser
+    ${CMAKE_CURRENT_LIST_DIR}/test_onnx_parser.cpp
+)
+
+add_dependencies(test_onnx_parser
+    googletest
+    spdlog
+)
+
+target_include_directories(test_onnx_parser PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_onnx_parser
+    coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
+    pthread
+)
+
+target_compile_definitions(test_onnx_parser PUBLIC
     FMT_HEADER_ONLY
 )
 
