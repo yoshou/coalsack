@@ -1,6 +1,6 @@
 add_executable(tests
-    ${CMAKE_CURRENT_LIST_DIR}/syncer_test.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/tensor_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/test_syncer.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/test_tensor.cpp
 )
 
 add_dependencies(tests

@@ -1,8 +1,8 @@
-#include "syncer.h"
-
 #include <gtest/gtest.h>
 
 #include <numeric>
+
+#include "syncer.h"
 
 using namespace coalsack;
 
