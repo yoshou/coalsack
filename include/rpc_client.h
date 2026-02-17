@@ -1,7 +1,11 @@
 #pragma once
 
+// clang-format off
+#include <utility>
+
 #include <boost/array.hpp>
 #include <boost/asio.hpp>
+// clang-format on
 
 #include "rpc_common.h"
 
