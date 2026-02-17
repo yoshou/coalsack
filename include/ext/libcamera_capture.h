@@ -127,20 +127,20 @@ class libcamera_capture {
       if (cfg.pixelFormat == libcamera::formats::YUV420) {
         std::vector<cv::Mat> planes;
 
-        void *y_ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
-        void *u_ptr = mapped_buffer.at(buffer->planes().at(1).fd.get()).pointer;
-        void *v_ptr = mapped_buffer.at(buffer->planes().at(2).fd.get()).pointer;
+        void *y_ptr = mapped_buffer.at(buffer->planes()[0].fd.get()).pointer;
+        void *u_ptr = mapped_buffer.at(buffer->planes()[1].fd.get()).pointer;
+        void *v_ptr = mapped_buffer.at(buffer->planes()[2].fd.get()).pointer;
 
         frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC1, y_ptr, cfg.stride).clone();
       } else if (cfg.pixelFormat == libcamera::formats::RGB888) {
         std::vector<cv::Mat> planes;
 
-        void *ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
+        void *ptr = mapped_buffer.at(buffer->planes()[0].fd.get()).pointer;
         frame = cv::Mat(cfg.size.height, cfg.size.width, CV_8UC3, ptr, cfg.stride).clone();
       } else if (cfg.pixelFormat == libcamera::formats::SBGGR10) {
         std::vector<cv::Mat> planes;
 
-        void *ptr = mapped_buffer.at(buffer->planes().at(0).fd.get()).pointer;
+        void *ptr = mapped_buffer.at(buffer->planes()[0].fd.get()).pointer;
         frame = cv::Mat(cfg.size.height, cfg.size.width, CV_16UC1, ptr, cfg.stride).clone();
       }
 

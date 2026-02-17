@@ -67,6 +67,21 @@ RUN curl -L \
 # Setup udev rules for USB devices
 RUN echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | tee /etc/udev/rules.d/80-movidius.rules
 
+# Install libcamera build dependencies
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get -y install --no-install-recommends \
+    ninja-build libyaml-dev python3-yaml python3-ply python3-jinja2 libgnutls28-dev libdrm-dev \
+    && pip3 install meson --break-system-packages \
+    && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+# Build and install libcamera from official repository
+RUN git clone https://git.libcamera.org/libcamera/libcamera.git /tmp/libcamera \
+    && cd /tmp/libcamera \
+    && meson setup build --prefix=/usr/local \
+    && ninja -C build install \
+    && ldconfig \
+    && rm -rf /tmp/libcamera
+
 # Set environment variables
 ENV ONNXRUNTIME_ROOT=/onnxruntime
 
