@@ -22,6 +22,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     wget curl \
     usbutils udev \
     software-properties-common apt-transport-https \
+    clang-format \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # Build and install librealsense from source (v2.56.5)
