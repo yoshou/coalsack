@@ -56,14 +56,14 @@ RUN curl -L \
 
 # Install DepthAI
 RUN curl -L \
-    https://github.com/luxonis/depthai-core/releases/download/v2.22.0/depthai-core-v2.22.0.tar.gz \
-    -o /tmp/depthai-core-v2.22.0.tar.gz \
+    https://github.com/luxonis/depthai-core/releases/download/v2.32.0/depthai-core-v2.32.0.tar.gz \
+    -o /tmp/depthai-core-v2.32.0.tar.gz \
     && mkdir /tmp/depthai-core \
-    && tar -zxvf /tmp/depthai-core-v2.22.0.tar.gz --strip-components 1 -C /tmp/depthai-core \
+    && tar -zxvf /tmp/depthai-core-v2.32.0.tar.gz --strip-components 1 -C /tmp/depthai-core \
     && cd /tmp/depthai-core \
-    && cmake -S. -Bbuild -DDEPTHAI_OPENCV_SUPPORT=ON -DDEPTHAI_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && cmake -S. -Bbuild -DDEPTHAI_OPENCV_SUPPORT=ON -DDEPTHAI_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--exclude-libs,ALL" \
     && cmake --build build --target install \
-    && rm -rf /tmp/depthai-core /tmp/depthai-core-v2.22.0.tar.gz
+    && rm -rf /tmp/depthai-core /tmp/depthai-core-v2.32.0.tar.gz
 
 # Setup udev rules for USB devices
 RUN echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | tee /etc/udev/rules.d/80-movidius.rules
