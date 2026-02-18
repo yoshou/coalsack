@@ -1792,6 +1792,9 @@ class console_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "console"; }
 
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
+
   virtual void run() override {}
 
   virtual void stop() override {}
@@ -1881,6 +1884,9 @@ class clock_buffer_node : public graph_node {
 
   virtual std::string get_proc_name() const override { return "clock_buffer"; }
 
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
+
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (input_name == "default") {
       std::lock_guard<std::mutex> lock(mtx);
@@ -1903,6 +1909,9 @@ class mux_node : public graph_node {
   mux_node() : graph_node(), output(std::make_shared<graph_edge>(this)) { set_output(output); }
 
   virtual std::string get_proc_name() const override { return "mux"; }
+
+  template <typename Archive>
+  void serialize([[maybe_unused]] Archive& archive) {}
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     auto msg = std::make_shared<object_message>();
