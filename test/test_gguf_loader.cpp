@@ -2,8 +2,8 @@
 #include <iostream>
 #include <vector>
 
-#include "gguf_loader.h"
-#include "gguf_multi_loader.h"
+#include "coalsack/gguf/gguf_loader.h"
+#include "coalsack/gguf/gguf_multi_loader.h"
 
 using namespace coalsack;
 

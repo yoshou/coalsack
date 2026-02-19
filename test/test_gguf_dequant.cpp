@@ -4,7 +4,7 @@
 #include <cstring>
 #include <vector>
 
-#include "gguf_dequant.h"
+#include "coalsack/gguf/gguf_dequant.h"
 
 using namespace coalsack;
 

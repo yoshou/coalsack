@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "dynamic_tensor.h"
-#include "gguf_dequant.h"
-#include "nn_ops/embedding_lookup_node.h"
-#include "nn_ops/matmul_mixed_node.h"
+#include "coalsack/gguf/gguf_dequant.h"
+#include "coalsack/nn/nn_ops/embedding_lookup_node.h"
+#include "coalsack/nn/nn_ops/matmul_mixed_node.h"
+#include "coalsack/tensor/dynamic_tensor.h"
 
 using namespace coalsack;
 

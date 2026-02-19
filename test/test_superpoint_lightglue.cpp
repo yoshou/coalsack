@@ -4,11 +4,11 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
-#include "graph_proc.h"
-#include "graphviz_exporter.h"
-#include "model_io_nodes.h"
-#include "nn_nodes.h"
-#include "onnx_importer.h"
+#include "coalsack/core/graph_proc.h"
+#include "coalsack/nn/model_io_nodes.h"
+#include "coalsack/nn/nn_nodes.h"
+#include "coalsack/onnx/onnx_importer.h"
+#include "coalsack/util/graphviz_exporter.h"
 
 using namespace coalsack;
 

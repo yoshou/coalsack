@@ -8,8 +8,8 @@
 #include <random>
 #include <vector>
 
-#include "gguf_dequant.h"
-#include "nn_nodes.h"
+#include "coalsack/gguf/gguf_dequant.h"
+#include "coalsack/nn/nn_nodes.h"
 
 using namespace coalsack;
 
@@ -76,7 +76,7 @@ static void quantize_fp32_to_mxfp4(const float* src, uint8_t* dst, int64_t k) {
 // =============================================================================
 
 static void fill_random_fp32(float* data, int64_t count, float min_val, float max_val,
-                              uint32_t seed = 42) {
+                             uint32_t seed = 42) {
   std::mt19937 gen(seed);
   std::uniform_real_distribution<float> dis(min_val, max_val);
   for (int64_t i = 0; i < count; ++i) {
@@ -149,8 +149,8 @@ static void run_benchmark(const BenchConfig& config) {
 
   // Sanity check: verify output is not all zeros
   node.compute_test_mxfp4(hidden_vec.data(), w_up_mxfp4.data(), w_gate_mxfp4.data(),
-                           w_down_mxfp4.data(), b_up.data(), b_gate.data(), b_down.data(),
-                           output.data(), hidden_dim, expert_ffn_dim);
+                          w_down_mxfp4.data(), b_up.data(), b_gate.data(), b_down.data(),
+                          output.data(), hidden_dim, expert_ffn_dim);
   bool has_nonzero = false;
   for (int64_t i = 0; i < hidden_dim; ++i) {
     if (std::abs(output[i]) > 1e-8f) {
@@ -163,8 +163,8 @@ static void run_benchmark(const BenchConfig& config) {
   // Warmup
   for (int i = 0; i < config.warmup_iters; ++i) {
     node.compute_test_mxfp4(hidden_vec.data(), w_up_mxfp4.data(), w_gate_mxfp4.data(),
-                             w_down_mxfp4.data(), b_up.data(), b_gate.data(), b_down.data(),
-                             output.data(), hidden_dim, expert_ffn_dim);
+                            w_down_mxfp4.data(), b_up.data(), b_gate.data(), b_down.data(),
+                            output.data(), hidden_dim, expert_ffn_dim);
   }
 
   // Measure
@@ -172,11 +172,10 @@ static void run_benchmark(const BenchConfig& config) {
   for (int i = 0; i < config.bench_iters; ++i) {
     auto start = std::chrono::high_resolution_clock::now();
     node.compute_test_mxfp4(hidden_vec.data(), w_up_mxfp4.data(), w_gate_mxfp4.data(),
-                             w_down_mxfp4.data(), b_up.data(), b_gate.data(), b_down.data(),
-                             output.data(), hidden_dim, expert_ffn_dim);
+                            w_down_mxfp4.data(), b_up.data(), b_gate.data(), b_down.data(),
+                            output.data(), hidden_dim, expert_ffn_dim);
     auto end = std::chrono::high_resolution_clock::now();
-    times[i] =
-        std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0;
+    times[i] = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0;
   }
 
   double mean = std::accumulate(times.begin(), times.end(), 0.0) / config.bench_iters;

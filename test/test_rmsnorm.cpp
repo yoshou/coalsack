@@ -3,7 +3,7 @@
 #include <random>
 #include <vector>
 
-#include "nn_nodes.h"
+#include "coalsack/nn/nn_nodes.h"
 
 using namespace coalsack;
 

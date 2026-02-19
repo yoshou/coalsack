@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "chat_template.h"
-#include "gpt_oss_engine.h"
+#include "coalsack/llm/chat_template.h"
+#include "coalsack/llm/gpt_oss_engine.h"
 
 using namespace coalsack;
 using json = nlohmann::json;

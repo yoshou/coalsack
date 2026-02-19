@@ -3,7 +3,7 @@
 #include <cstring>
 #include <vector>
 
-#include "onnx_proto_parser.h"
+#include "coalsack/onnx/onnx_proto_parser.h"
 
 using namespace coalsack;
 

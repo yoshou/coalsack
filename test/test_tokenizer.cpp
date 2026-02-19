@@ -1,8 +1,8 @@
 #include <chrono>
 #include <iostream>
 
-#include "gguf_loader.h"
-#include "gpt2_tokenizer.h"
+#include "coalsack/gguf/gguf_loader.h"
+#include "coalsack/llm/gpt2_tokenizer.h"
 
 using namespace coalsack;
 

@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "gpt_oss_engine.h"
+#include "coalsack/llm/gpt_oss_engine.h"
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {

@@ -2,19 +2,22 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <utility>
-#include <boost/asio.hpp>
 #include <filesystem>
 #include <fstream>
 #include <numeric>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
-#include "ext/graph_proc_depthai.h"
-#include "graph_proc.h"
-#include "graph_proc_cv.h"
-#include "graph_proc_img.h"
+#include <boost/asio.hpp>
+
+#include "coalsack/core/graph_proc_client.h"
+#include "coalsack/core/graph_proc_server.h"
+#include "coalsack/core/subgraph.h"
+#include "coalsack/ext/graph_proc_depthai.h"
+#include "coalsack/image/graph_proc_cv.h"
+#include "coalsack/image/image_nodes.h"
 
 using namespace coalsack;
 

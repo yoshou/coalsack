@@ -6,8 +6,8 @@
 #include <random>
 #include <vector>
 
-#include "gguf_dequant.h"
-#include "nn_ops/matmul_transpose_mixed_node.h"
+#include "coalsack/gguf/gguf_dequant.h"
+#include "coalsack/nn/nn_ops/matmul_transpose_mixed_node.h"
 
 using namespace coalsack;
 

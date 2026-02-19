@@ -17,10 +17,14 @@
 #include <thread>
 #include <vector>
 
-#include "graph_proc.h"
-#include "graph_proc_cv.h"
-#include "graph_proc_img.h"
-#include "graph_proc_tensor.h"
+#include "coalsack/core/graph_proc_client.h"
+#include "coalsack/core/graph_proc_server.h"
+#include "coalsack/core/subgraph.h"
+#include "coalsack/image/frame_message.h"
+#include "coalsack/image/graph_proc_cv.h"
+#include "coalsack/image/image_nodes.h"
+#include "coalsack/messages/object_message.h"
+#include "coalsack/tensor/graph_proc_tensor.h"
 
 namespace fs = std::filesystem;
 using namespace coalsack;

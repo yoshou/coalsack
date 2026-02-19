@@ -2,7 +2,7 @@
 
 #include <numeric>
 
-#include "graph_proc_tensor.h"
+#include "coalsack/tensor/graph_proc_tensor.h"
 
 using namespace coalsack;
 

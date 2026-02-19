@@ -2,7 +2,7 @@
 
 #include <numeric>
 
-#include "syncer.h"
+#include "coalsack/util/syncer.h"
 
 using namespace coalsack;
 

@@ -3,17 +3,25 @@
 
 #include <algorithm>
 #include <atomic>
-#include <utility>
-#include <boost/asio.hpp>
 #include <chrono>
 #include <functional>
 #include <numeric>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
-#include "graph_proc.h"
+#include <boost/asio.hpp>
+
+#include "coalsack/core/graph_proc_client.h"
+#include "coalsack/core/subgraph.h"
+#include "coalsack/network/p2p_listener_node.h"
+#include "coalsack/network/p2p_talker_node.h"
+#include "coalsack/nodes/buffer_node.h"
+#include "coalsack/nodes/console_node.h"
+#include "coalsack/nodes/heartbeat_node.h"
+#include "coalsack/nodes/passthrough_node.h"
 
 using namespace coalsack;
 

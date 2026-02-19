@@ -3,14 +3,18 @@
 #include <map>
 #include <memory>
 
-#include "dynamic_tensor.h"
-#include "dynamic_tensor_message.h"
-#include "graph_proc.h"
-#include "graph_proc_img.h"
-#include "nn_op_node.h"
-#include "result_message.h"
-#include "result_message_nodes.h"
-#include "syncer.h"
+#include "coalsack/core/graph_edge.h"
+#include "coalsack/core/graph_message.h"
+#include "coalsack/core/graph_node.h"
+#include "coalsack/core/graph_proc.h"
+#include "coalsack/image/frame_message.h"
+#include "coalsack/image/image_nodes.h"
+#include "coalsack/nn/nn_op_node.h"
+#include "coalsack/nn/result_message.h"
+#include "coalsack/nn/result_message_nodes.h"
+#include "coalsack/tensor/dynamic_tensor.h"
+#include "coalsack/tensor/dynamic_tensor_message.h"
+#include "coalsack/util/syncer.h"
 
 using namespace coalsack;
 

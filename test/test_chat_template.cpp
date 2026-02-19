@@ -2,7 +2,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "chat_template.h"
+#include "coalsack/llm/chat_template.h"
 
 using namespace coalsack;
 using json = nlohmann::json;

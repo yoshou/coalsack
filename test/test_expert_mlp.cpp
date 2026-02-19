@@ -3,8 +3,8 @@
 #include <random>
 #include <vector>
 
-#include "gguf_dequant.h"
-#include "nn_nodes.h"
+#include "coalsack/gguf/gguf_dequant.h"
+#include "coalsack/nn/nn_nodes.h"
 
 using namespace coalsack;
 
