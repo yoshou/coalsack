@@ -148,6 +148,58 @@ bool ggml_is_quantized(ggml_type type) {
          type != ggml_type::I64;
 }
 
+// Number of elements per quantization block
+size_t ggml_blck_size(ggml_type type) {
+  switch (type) {
+    case ggml_type::Q4_0:
+      return 32;
+    case ggml_type::Q4_1:
+      return 32;
+    case ggml_type::Q5_0:
+      return 32;
+    case ggml_type::Q5_1:
+      return 32;
+    case ggml_type::Q8_0:
+      return 32;
+    case ggml_type::Q8_1:
+      return 32;
+    case ggml_type::Q2_K:
+      return 256;
+    case ggml_type::Q3_K:
+      return 256;
+    case ggml_type::Q4_K:
+      return 256;
+    case ggml_type::Q5_K:
+      return 256;
+    case ggml_type::Q6_K:
+      return 256;
+    case ggml_type::Q8_K:
+      return 256;
+    case ggml_type::IQ2_XXS:
+      return 256;
+    case ggml_type::IQ2_XS:
+      return 256;
+    case ggml_type::IQ3_XXS:
+      return 256;
+    case ggml_type::IQ1_S:
+      return 256;
+    case ggml_type::IQ4_NL:
+      return 32;
+    case ggml_type::IQ3_S:
+      return 256;
+    case ggml_type::IQ2_S:
+      return 256;
+    case ggml_type::IQ4_XS:
+      return 256;
+    case ggml_type::IQ1_M:
+      return 256;
+    case ggml_type::MXFP4:
+      return 32;
+    default:
+      return 32;
+  }
+}
+
 // Internal implementation
 struct gguf_loader::impl {
   std::string file_path;
@@ -440,9 +492,8 @@ bool gguf_loader::load(const std::string& path) {
 
     size_t type_size = ggml_type_size(info.type);
     if (ggml_is_quantized(info.type)) {
-      // Quantized types use block size
-      constexpr size_t QK = 32;  // Common block size for K-quants
-      info.size = ((n_elements + QK - 1) / QK) * type_size;
+      size_t block_elems = ggml_blck_size(info.type);
+      info.size = ((n_elements + block_elems - 1) / block_elems) * type_size;
     } else {
       info.size = n_elements * type_size;
     }

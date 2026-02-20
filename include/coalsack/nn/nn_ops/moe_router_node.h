@@ -12,40 +12,53 @@ namespace coalsack {
 // Performs expert selection and weight computation for token routing
 //
 // Architecture:
-// - 3 inputs: hidden_states, gate_weights, gate_bias
+// - 2 or 3 inputs: hidden_states, gate_weights[, gate_bias (optional)]
 // - Input format: hidden_states [batch, seq_len, hidden_dim] in FLOAT32/FLOAT64
 //                 gate_weights [num_experts, hidden_dim] in FLOAT32/FLOAT64
-//                 gate_bias [num_experts] in FLOAT32
+//                 gate_bias [num_experts] in FLOAT32 (optional)
 // - Output format: [batch, seq_len, top_k, 2] where last dim is [expert_index, weight]
 // - Routing strategy: Top-k selection with softmax normalization over selected experts
+//   (or sigmoid gating when use_sigmoid_gating_ is true)
 class moe_router_node : public variadic_op_node {
  public:
-  moe_router_node() : variadic_op_node("moe_router", 3), num_experts_(0), top_k_(0) {}
+  moe_router_node()
+      : variadic_op_node("moe_router", 3), num_experts_(0), top_k_(0), use_sigmoid_gating_(false) {}
 
   void set_config(int64_t num_experts, int64_t top_k) {
     num_experts_ = num_experts;
     top_k_ = top_k;
   }
 
-  // Public wrapper for testing
+  // When true, use sigmoid(logit) as expert weight instead of softmax over top-k.
+  // Top-k selection still uses raw logits; only the weight value changes.
+  void set_sigmoid_gating(bool v) { use_sigmoid_gating_ = v; }
+
+  // Public wrapper for testing (with bias)
   dynamic_tensor compute_test(const dynamic_tensor& hidden_states,
                               const dynamic_tensor& gate_weights, const dynamic_tensor& gate_bias) {
     std::vector<dynamic_tensor> inputs = {hidden_states, gate_weights, gate_bias};
     return compute(inputs);
   }
 
+  // Public wrapper for testing (without bias)
+  dynamic_tensor compute_test(const dynamic_tensor& hidden_states,
+                              const dynamic_tensor& gate_weights) {
+    std::vector<dynamic_tensor> inputs = {hidden_states, gate_weights};
+    return compute(inputs);
+  }
+
  protected:
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
-    // Validate input count
-    if (inputs.size() != 3) {
+    // Validate input count (2 without bias, 3 with bias)
+    if (inputs.size() != 2 && inputs.size() != 3) {
       throw std::runtime_error(
-          "moe_router: expected 3 inputs (hidden_states, gate_weights, gate_bias), got " +
+          "moe_router: expected 2 or 3 inputs (hidden_states, gate_weights[, gate_bias]), got " +
           std::to_string(inputs.size()));
     }
 
     const auto& hidden_states = inputs[0];
     const auto& gate_weights = inputs[1];
-    const auto& gate_bias = inputs[2];
+    const bool has_bias = (inputs.size() == 3);
 
     // Validate hidden_states shape: [batch, seq_len, hidden_dim]
     if (hidden_states.ndim() != 3) {
@@ -61,10 +74,13 @@ class moe_router_node : public variadic_op_node {
           std::to_string(gate_weights.ndim()) + "D");
     }
 
-    // Validate gate_bias shape: [num_experts]
-    if (gate_bias.ndim() != 1) {
-      throw std::runtime_error("moe_router: gate_bias must be 1D [num_experts], got " +
-                               std::to_string(gate_bias.ndim()) + "D");
+    if (has_bias) {
+      const auto& gate_bias = inputs[2];
+      // Validate gate_bias shape: [num_experts]
+      if (gate_bias.ndim() != 1) {
+        throw std::runtime_error("moe_router: gate_bias must be 1D [num_experts], got " +
+                                 std::to_string(gate_bias.ndim()) + "D");
+      }
     }
 
     int64_t batch = hidden_states.dim(0);
@@ -80,11 +96,14 @@ class moe_router_node : public variadic_op_node {
                                std::to_string(gate_weights.dim(1)) + "]");
     }
 
-    // Validate gate_bias dimensions
-    if (gate_bias.dim(0) != num_experts_) {
-      throw std::runtime_error(
-          "moe_router: gate_bias must have num_experts=" + std::to_string(num_experts_) +
-          " elements, got " + std::to_string(gate_bias.dim(0)));
+    if (has_bias) {
+      const auto& gate_bias = inputs[2];
+      // Validate gate_bias dimensions
+      if (gate_bias.dim(0) != num_experts_) {
+        throw std::runtime_error(
+            "moe_router: gate_bias must have num_experts=" + std::to_string(num_experts_) +
+            " elements, got " + std::to_string(gate_bias.dim(0)));
+      }
     }
 
     // Allocate output: [batch, seq_len, top_k, 2] where last dim is [expert_index, weight]
@@ -92,11 +111,11 @@ class moe_router_node : public variadic_op_node {
     dynamic_tensor output(dtype::float32, output_shape);
 
     if (hidden_states.get_dtype() == dtype::float32) {
-      compute_impl<float>(hidden_states, gate_weights, gate_bias, output, batch, seq_len,
-                          hidden_dim);
+      compute_impl<float>(hidden_states, gate_weights, has_bias ? &inputs[2] : nullptr, output,
+                          batch, seq_len, hidden_dim);
     } else if (hidden_states.get_dtype() == dtype::float64) {
-      compute_impl<double>(hidden_states, gate_weights, gate_bias, output, batch, seq_len,
-                           hidden_dim);
+      compute_impl<double>(hidden_states, gate_weights, has_bias ? &inputs[2] : nullptr, output,
+                           batch, seq_len, hidden_dim);
     } else {
       throw std::runtime_error("moe_router: only float32 and float64 supported");
     }
@@ -107,11 +126,12 @@ class moe_router_node : public variadic_op_node {
  private:
   int64_t num_experts_;
   int64_t top_k_;
+  bool use_sigmoid_gating_;
 
   // Expert routing implementation with top-k selection and softmax normalization
   //
   // Algorithm:
-  // 1. Compute gating logits for all experts: logits = hidden_states @ gate_weights^T + gate_bias
+  // 1. Compute gating logits for all experts: logits = hidden_states @ gate_weights^T [+ gate_bias]
   // 2. Select top-k experts with highest logit values (partial sort by descending score)
   // 3. Apply softmax normalization over the selected k logits only to produce routing weights
   //    - Uses numerically stable softmax: exp(logit - max) / sum(exp(logit - max))
@@ -119,11 +139,11 @@ class moe_router_node : public variadic_op_node {
   // 4. Output pairs of (expert_index, routing_weight) for each selected expert
   template <typename T>
   void compute_impl(const dynamic_tensor& hidden_states, const dynamic_tensor& gate_weights,
-                    const dynamic_tensor& gate_bias, dynamic_tensor& output, int64_t batch,
+                    const dynamic_tensor* gate_bias, dynamic_tensor& output, int64_t batch,
                     int64_t seq_len, int64_t hidden_dim) {
     const T* hidden_data = hidden_states.data_ptr<T>();
     const T* gate_data = gate_weights.data_ptr<T>();
-    const float* bias_data = gate_bias.data_ptr<float>();
+    const float* bias_data = gate_bias ? gate_bias->data_ptr<float>() : nullptr;
     float* out_data = output.data_ptr<float>();  // Always float32 output
 
     // Allocate intermediate buffers
@@ -136,14 +156,14 @@ class moe_router_node : public variadic_op_node {
       for (int64_t s = 0; s < seq_len; ++s) {
         const T* hidden_vec = hidden_data + (b * seq_len + s) * hidden_dim;
 
-        // Step 1: Compute gating logits with bias: (hidden_states @ gate_weights.T) + bias
-        // gate_weights shape: [num_experts, hidden_dim]
+        // Step 1: Compute gating logits [with optional bias]: (hidden_states @ gate_weights.T) [+
+        // bias] gate_weights shape: [num_experts, hidden_dim]
         for (int64_t expert = 0; expert < num_experts_; ++expert) {
           T sum = 0;
           for (int64_t d = 0; d < hidden_dim; ++d) {
             sum += hidden_vec[d] * gate_data[expert * hidden_dim + d];
           }
-          logits[expert] = sum + static_cast<T>(bias_data[expert]);
+          logits[expert] = sum + (bias_data ? static_cast<T>(bias_data[expert]) : T(0));
         }
 
         // Step 2: Create scored experts list for selection
@@ -156,27 +176,29 @@ class moe_router_node : public variadic_op_node {
                           scored_experts.end(),
                           [](const auto& a, const auto& b) { return a.first > b.first; });
 
-        // Step 4: Apply softmax over selected top-k logits only
-        // Find max for numerical stability
-        T max_topk = scored_experts[0].first;
-        for (int64_t k = 1; k < top_k_; ++k) {
-          if (scored_experts[k].first > max_topk) {
-            max_topk = scored_experts[k].first;
+        // Step 4: Compute routing weights
+        if (use_sigmoid_gating_) {
+          // sigmoid(logit) per expert, independent of other experts
+          for (int64_t k = 0; k < top_k_; ++k) {
+            const float v = static_cast<float>(scored_experts[k].first);
+            topk_weights[static_cast<size_t>(k)] = 1.0f / (1.0f + std::exp(-v));
           }
-        }
-
-        // Compute exp(logit - max) and sum
-        float sum_exp_topk = 0.0f;
-        for (int64_t k = 0; k < top_k_; ++k) {
-          const float v = static_cast<float>(scored_experts[k].first - max_topk);
-          topk_weights[static_cast<size_t>(k)] = std::exp(v);
-          sum_exp_topk += topk_weights[static_cast<size_t>(k)];
-        }
-
-        // Normalize to get softmax probabilities (sum to 1)
-        const float inv_sum = (sum_exp_topk > 0.0f) ? (1.0f / sum_exp_topk) : 0.0f;
-        for (int64_t k = 0; k < top_k_; ++k) {
-          topk_weights[static_cast<size_t>(k)] *= inv_sum;
+        } else {
+          // Standard: softmax over top-k logits only
+          T max_topk = scored_experts[0].first;
+          for (int64_t k = 1; k < top_k_; ++k) {
+            if (scored_experts[k].first > max_topk) max_topk = scored_experts[k].first;
+          }
+          float sum_exp_topk = 0.0f;
+          for (int64_t k = 0; k < top_k_; ++k) {
+            const float v = static_cast<float>(scored_experts[k].first - max_topk);
+            topk_weights[static_cast<size_t>(k)] = std::exp(v);
+            sum_exp_topk += topk_weights[static_cast<size_t>(k)];
+          }
+          const float inv_sum = (sum_exp_topk > 0.0f) ? (1.0f / sum_exp_topk) : 0.0f;
+          for (int64_t k = 0; k < top_k_; ++k) {
+            topk_weights[static_cast<size_t>(k)] *= inv_sum;
+          }
         }
 
         // Step 5: Write output: [expert_index, weight] for each top-k expert

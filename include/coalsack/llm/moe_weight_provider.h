@@ -51,6 +51,10 @@ class moe_weight_provider {
   std::variant<dynamic_tensor, dynamic_mx_tensor> get(const std::string& tensor_name,
                                                       int expert_id);
 
+  bool has_tensor(const std::string& tensor_name) const {
+    return loader_->get_tensor_info(tensor_name).has_value();
+  }
+
   void set_max_cache_size(size_t max_bytes);
   size_t get_max_cache_size() const;
   size_t get_current_cache_size() const;

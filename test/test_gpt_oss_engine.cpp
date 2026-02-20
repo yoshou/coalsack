@@ -23,8 +23,8 @@ int main(int argc, char* argv[]) {
   std::cout << "=== GPT-OSS Engine Test ===\n\n";
 
   coalsack::gpt_oss_engine::config engine_config;
-  engine_config.kv_cache_size = 4096;
-  engine_config.moe_cache_size_bytes = 1073741824;  // 1 GiB per layer
+  engine_config.kv_cache_size = 512;
+  engine_config.moe_cache_size_bytes = 536870912;  // 512 MiB per layer
   coalsack::gpt_oss_engine engine(engine_config);
 
   std::cout << "Loading model from " << gguf_paths.size() << " file(s):\n";

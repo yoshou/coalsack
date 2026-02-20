@@ -1,8 +1,10 @@
 #include "coalsack/llm/gpt2_tokenizer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <climits>
 #include <iostream>
+#include <regex>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -18,6 +20,11 @@ struct pair_hash {
 };
 
 struct gpt2_tokenizer::impl {
+  enum class pre_type {
+    GPT2,
+    GPT4O_LIKE,
+  };
+
   std::vector<std::string> vocab;
   std::unordered_map<std::string, uint32_t> token_to_id;
   std::vector<std::pair<std::string, std::string>> bpe_merges;
@@ -31,6 +38,8 @@ struct gpt2_tokenizer::impl {
 
   bool add_bos = false;
   bool add_eos = false;
+  std::string tokenizer_pre = "default";
+  pre_type pretokenizer = pre_type::GPT2;
 
   bool loaded = false;
 
@@ -157,6 +166,42 @@ struct gpt2_tokenizer::impl {
 
     return word;
   }
+
+  std::vector<std::string> pretokenize_text(const std::string& text) const {
+    // GPT4O-like: mirrors the llama.cpp regex (ASCII-only version):
+    //   (1) optional non-newline space + word + optional contraction
+    //   (2) digits 1-3 at a time
+    //   (3) optional non-newline space + ASCII punctuation/symbols + optional trailing \r\n/
+    //   (4) \r\n (with optional leading spaces)
+    //   (5) trailing spaces (not followed by non-space)
+    //   (6) remaining spaces
+    //   (7) non-ASCII byte runs
+    static const std::regex gpt4o_re(
+        "[^\\S\\r\\n]?[A-Za-z]+(?:'[sStTmMdD]|'[rR][eE]|'[vV][eE]|'[lL][lL])?"
+        "|[0-9]{1,3}"
+        "|[^\\S\\r\\n]?[^\\s0-9A-Za-z]+[\\r\\n/]*"
+        "|\\s*[\\r\\n]+"
+        "|\\s+(?!\\S)"
+        "|\\s+",
+        std::regex_constants::ECMAScript);
+
+    // GPT2: whitespace / word / digit-run / non-ASCII / symbol runs (unchanged behavior)
+    static const std::regex gpt2_re(
+        "[A-Za-z]+(?:'[sStTmMdD]|'[rR][eE]|'[vV][eE]|'[lL][lL])?"
+        "|[0-9]+"
+        "|\\s+"
+        "|[^\\s0-9A-Za-z]+",
+        std::regex_constants::ECMAScript);
+
+    const std::regex& re = (pretokenizer == pre_type::GPT4O_LIKE) ? gpt4o_re : gpt2_re;
+
+    std::vector<std::string> pieces;
+    for (auto it = std::sregex_iterator(text.begin(), text.end(), re); it != std::sregex_iterator();
+         ++it) {
+      pieces.push_back((*it)[0].str());
+    }
+    return pieces;
+  }
 };
 
 gpt2_tokenizer::gpt2_tokenizer() : pimpl_(std::make_unique<impl>()) {}
@@ -202,6 +247,13 @@ bool gpt2_tokenizer::load_from_gguf_impl(const LoaderType& loader) {
 
   pimpl_->add_bos = loader.get_bool("tokenizer.ggml.add_bos_token").value_or(false);
   pimpl_->add_eos = loader.get_bool("tokenizer.ggml.add_eos_token").value_or(false);
+
+  pimpl_->tokenizer_pre = loader.get_string("tokenizer.ggml.pre").value_or("default");
+  if (pimpl_->tokenizer_pre == "llama4" || pimpl_->tokenizer_pre == "gpt-4o") {
+    pimpl_->pretokenizer = impl::pre_type::GPT4O_LIKE;
+  } else {
+    pimpl_->pretokenizer = impl::pre_type::GPT2;
+  }
 
   // Load token types and register special/control tokens
   auto token_types = loader.get_array_int32("tokenizer.ggml.token_type");
@@ -262,15 +314,17 @@ std::vector<uint32_t> gpt2_tokenizer::encode(const std::string& text) const {
       }
     }
 
-    // Encode the non-special segment with BPE
+    // Encode the non-special segment with pre-tokenization + BPE
     std::string segment = text.substr(pos, next_special - pos);
-    auto byte_tokens = pimpl_->byte_encode_text(segment);
-    auto bpe_tokens = pimpl_->apply_bpe(byte_tokens);
-
-    for (const auto& token : bpe_tokens) {
-      auto it = pimpl_->token_to_id.find(token);
-      if (it != pimpl_->token_to_id.end()) {
-        ids.push_back(it->second);
+    auto pieces = pimpl_->pretokenize_text(segment);
+    for (const auto& piece : pieces) {
+      auto byte_tokens = pimpl_->byte_encode_text(piece);
+      auto bpe_tokens = pimpl_->apply_bpe(byte_tokens);
+      for (const auto& token : bpe_tokens) {
+        auto it = pimpl_->token_to_id.find(token);
+        if (it != pimpl_->token_to_id.end()) {
+          ids.push_back(it->second);
+        }
       }
     }
 

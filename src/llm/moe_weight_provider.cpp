@@ -23,6 +23,15 @@ void dequantize_q4k_to_fp16(const uint8_t* src, uint16_t* dst, size_t num_elemen
   }
 }
 
+void dequantize_q6k_to_fp16(const uint8_t* src, uint16_t* dst, size_t num_elements) {
+  std::vector<float> temp(num_elements);
+  dequantize_block_q6_K(src, temp.data(), num_elements);
+
+  for (size_t i = 0; i < num_elements; ++i) {
+    dst[i] = fp32_to_fp16(temp[i]);
+  }
+}
+
 }  // namespace
 
 moe_weight_provider::moe_weight_provider(std::shared_ptr<gguf_multi_loader> loader,
@@ -108,8 +117,8 @@ std::variant<dynamic_tensor, dynamic_mx_tensor> moe_weight_provider::get(
   size_t slice_elements = dim0 * dim1;
 
   size_t slice_bytes_result = 0;
-  if (tensor_info.type == ggml_type::Q4_K || tensor_info.type == ggml_type::MXFP4 ||
-      tensor_info.type == ggml_type::F16) {
+  if (tensor_info.type == ggml_type::Q4_K || tensor_info.type == ggml_type::Q6_K ||
+      tensor_info.type == ggml_type::MXFP4 || tensor_info.type == ggml_type::F16) {
     slice_bytes_result = slice_elements * sizeof(uint16_t);
   } else if (tensor_info.type == ggml_type::F32) {
     slice_bytes_result = slice_elements * sizeof(float);
@@ -122,12 +131,12 @@ std::variant<dynamic_tensor, dynamic_mx_tensor> moe_weight_provider::get(
 
   dynamic_tensor result;
 
-  if (tensor_info.type == ggml_type::Q4_K) {
+  if (tensor_info.type == ggml_type::Q4_K || tensor_info.type == ggml_type::Q6_K) {
     constexpr size_t QK_K = 256;
-    constexpr size_t Q4_K_BLOCK_SIZE = 144;
+    const size_t block_type_size = (tensor_info.type == ggml_type::Q4_K) ? 144 : 210;
 
     size_t num_blocks = (slice_elements + QK_K - 1) / QK_K;
-    size_t slice_bytes_quantized = num_blocks * Q4_K_BLOCK_SIZE;
+    size_t slice_bytes_quantized = num_blocks * block_type_size;
 
     uint64_t expert_offset = tensor_info.offset + expert_id * slice_bytes_quantized;
 
@@ -135,7 +144,11 @@ std::variant<dynamic_tensor, dynamic_mx_tensor> moe_weight_provider::get(
         load_expert_slice_from_file(tensor_info.shard_idx, expert_offset, slice_bytes_quantized);
 
     std::vector<uint16_t> fp16_data(slice_elements);
-    dequantize_q4k_to_fp16(tensor_data.data(), fp16_data.data(), slice_elements);
+    if (tensor_info.type == ggml_type::Q4_K) {
+      dequantize_q4k_to_fp16(tensor_data.data(), fp16_data.data(), slice_elements);
+    } else {
+      dequantize_q6k_to_fp16(tensor_data.data(), fp16_data.data(), slice_elements);
+    }
 
     if (is_1d_output) {
       result = dynamic_tensor(dtype::float16, {static_cast<int64_t>(dim0)});

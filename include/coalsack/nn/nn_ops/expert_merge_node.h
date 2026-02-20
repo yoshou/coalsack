@@ -8,12 +8,20 @@ namespace coalsack {
 
 class expert_merge_node : public variadic_op_node {
  public:
-  expert_merge_node() : variadic_op_node("expert_merge", 33), num_experts_(0), top_k_(0) {}
+  expert_merge_node()
+      : variadic_op_node("expert_merge", 33),
+        num_experts_(0),
+        top_k_(0),
+        weight_before_ffn_(false) {}
 
   void set_config(int64_t num_experts, int64_t top_k) {
     num_experts_ = num_experts;
     top_k_ = top_k;
   }
+
+  // When true, expert outputs already have routing weights baked in.
+  // In this case, just sum expert outputs without multiplying by weight.
+  void set_weight_before_ffn(bool v) { weight_before_ffn_ = v; }
 
   // Public wrapper for testing
   dynamic_tensor compute_test(const std::vector<dynamic_tensor>& inputs) { return compute(inputs); }
@@ -107,9 +115,16 @@ class expert_merge_node : public variadic_op_node {
           const float* expert_data = expert_output.data_ptr<float>();
           int64_t expert_base = (b * seq_len + s) * hidden_dim;
 
-          // Add weighted expert output to result
-          for (int64_t d = 0; d < hidden_dim; ++d) {
-            out_data[output_base + d] += weight * expert_data[expert_base + d];
+          // Add (weighted) expert output to result
+          if (weight_before_ffn_) {
+            // Weight was already applied inside expert_mlp; just sum
+            for (int64_t d = 0; d < hidden_dim; ++d) {
+              out_data[output_base + d] += expert_data[expert_base + d];
+            }
+          } else {
+            for (int64_t d = 0; d < hidden_dim; ++d) {
+              out_data[output_base + d] += weight * expert_data[expert_base + d];
+            }
           }
         }
       }
@@ -121,6 +136,7 @@ class expert_merge_node : public variadic_op_node {
  private:
   int64_t num_experts_;
   int64_t top_k_;
+  bool weight_before_ffn_;
 };
 
 }  // namespace coalsack

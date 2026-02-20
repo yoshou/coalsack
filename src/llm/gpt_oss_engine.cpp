@@ -20,6 +20,7 @@
 #include "coalsack/nn/nn_nodes.h"
 #include "coalsack/nn/nn_ops/add_node.h"
 #include "coalsack/nn/nn_ops/constant_node.h"
+#include "coalsack/nn/nn_ops/dense_ffn_node.h"
 #include "coalsack/nn/nn_ops/grouped_attention_node.h"
 #include "coalsack/nn/nn_ops/matmul_transpose_mixed_node.h"
 #include "coalsack/nn/nn_ops/reshape_node.h"
@@ -71,9 +72,23 @@ struct gpt_oss_engine::impl {
 
   // RoPE config
   float rope_freq_base = 150000.0f;
-  float rope_scaling_factor = 32.0f;
+  float rope_scaling_factor = 1.0f;
   std::string rope_scaling_type = "none";
   int64_t rope_scaling_orig_ctx = 0;
+
+  // Architecture config (determined from GGUF general.architecture)
+  std::string arch_prefix = "gpt-oss";  // "gpt-oss" or "llama4"
+  bool has_shared_expert = false;       // gpt-oss: false, llama4: true
+  bool has_expert_bias = true;          // gpt-oss: true, llama4: false
+  std::string ffn_norm_weight_name = "post_attention_norm.weight";
+  bool use_sigmoid_gating = false;    // llama4: true
+  bool weight_before_ffn = false;     // llama4: true
+  bool use_kq_norm = false;           // llama4: true
+  bool use_norm_rope = false;         // llama4: true (NORM adjacent-pair RoPE)
+  int64_t no_rope_layer_step = 0;     // llama4 iswa: 4
+  int64_t attn_temp_floor_scale = 0;  // llama4 iswa: 8192
+  float attn_temp_scale = 0.0f;       // llama4 iswa: 0.1
+  float attn_temp_offset = 0.0f;      // llama4 iswa: 1.0
 
   // Weights (loaded from GGUF)
   std::unordered_map<std::string, dynamic_tensor> weights;
@@ -131,25 +146,50 @@ bool gpt_oss_engine::load(const std::vector<std::string>& gguf_paths) {
 void gpt_oss_engine::load_config_from_gguf() {
   auto& loader = *pimpl_->loader;
 
+  // Detect architecture from GGUF general.architecture
+  std::string arch = "gpt-oss";
+  if (auto v = loader.get_string("general.architecture")) {
+    arch = *v;
+  }
+  pimpl_->arch_prefix = arch;
+  spdlog::info("Detected architecture: {}", arch);
+
+  // Architecture-specific defaults
+  if (arch == "llama4") {
+    pimpl_->has_shared_expert = true;
+    pimpl_->has_expert_bias = false;
+    pimpl_->ffn_norm_weight_name = "ffn_norm.weight";
+    pimpl_->rope_scaling_factor = 1.0f;
+    pimpl_->rope_scaling_type = "none";
+    pimpl_->use_sigmoid_gating = true;
+    pimpl_->weight_before_ffn = true;
+    pimpl_->use_kq_norm = true;
+    pimpl_->use_norm_rope = true;
+  } else {
+    pimpl_->has_shared_expert = false;
+    pimpl_->has_expert_bias = true;
+    pimpl_->ffn_norm_weight_name = "post_attention_norm.weight";
+  }
+
+  const std::string& pfx = pimpl_->arch_prefix;
+
   // Helper for required parameters
   auto get_required_uint32 = [&](const std::string& suffix) -> uint32_t {
-    std::string key = "gpt-oss." + suffix;
+    std::string key = pfx + "." + suffix;
     if (auto v = loader.get_uint32(key)) return *v;
     throw std::runtime_error("Missing required parameter: " + key);
   };
 
-  auto get_required_float = [&](const std::string& suffix) -> float {
-    std::string key = "gpt-oss." + suffix;
-    if (auto v = loader.get_float32(key)) return *v;
-    throw std::runtime_error("Missing required parameter: " + key);
+  auto get_optional_uint32 = [&](const std::string& suffix) -> std::optional<uint32_t> {
+    return loader.get_uint32(pfx + "." + suffix);
   };
 
-  auto get_optional_uint32 = [&](const std::string& suffix) -> std::optional<uint32_t> {
-    return loader.get_uint32("gpt-oss." + suffix);
+  auto get_optional_float = [&](const std::string& suffix) -> std::optional<float> {
+    return loader.get_float32(pfx + "." + suffix);
   };
 
   auto get_optional_string = [&](const std::string& suffix) -> std::optional<std::string> {
-    return loader.get_string("gpt-oss." + suffix);
+    return loader.get_string(pfx + "." + suffix);
   };
 
   pimpl_->num_layers = get_required_uint32("block_count");
@@ -169,6 +209,27 @@ void gpt_oss_engine::load_config_from_gguf() {
 
   if (auto v = get_optional_uint32("attention.sliding_window")) {
     pimpl_->attention_sliding_window = static_cast<int64_t>(*v);
+    if (arch == "llama4" && *v == 0) {
+      pimpl_->no_rope_layer_step = 0;
+      pimpl_->attn_temp_floor_scale = 0;
+      pimpl_->attn_temp_scale = 0.0f;
+      pimpl_->attn_temp_offset = 0.0f;
+    }
+  } else if (arch == "llama4") {
+    // ISWA: no sliding_window key -> every 4th layer is full-attention without RoPE
+    pimpl_->attention_sliding_window = 8192;
+    pimpl_->no_rope_layer_step = 4;
+    pimpl_->attn_temp_floor_scale = 8192;
+    pimpl_->attn_temp_scale = 0.1f;
+    pimpl_->attn_temp_offset = 1.0f;
+    spdlog::info("no attention.sliding_window found -> ISWA mode, no_rope_layer_step=4");
+  }
+
+  if (auto v = get_optional_uint32("attention.temperature_length")) {
+    pimpl_->attn_temp_floor_scale = static_cast<int64_t>(*v);
+  }
+  if (auto v = get_optional_float("attention.temperature_scale")) {
+    pimpl_->attn_temp_scale = *v;
   }
 
   if (auto val = get_optional_uint32("expert_count")) {
@@ -195,8 +256,15 @@ void gpt_oss_engine::load_config_from_gguf() {
   }
 
   // RoPE config
-  pimpl_->rope_freq_base = get_required_float("rope.freq_base");
-  pimpl_->rope_scaling_factor = get_required_float("rope.scaling.factor");
+  if (auto v = get_optional_float("rope.freq_base")) {
+    pimpl_->rope_freq_base = *v;
+  } else {
+    throw std::runtime_error("Missing required parameter: " + pfx + ".rope.freq_base");
+  }
+  // rope.scaling.* is optional
+  if (auto v = get_optional_float("rope.scaling.factor")) {
+    pimpl_->rope_scaling_factor = *v;
+  }
   if (auto v = get_optional_string("rope.scaling.type")) {
     pimpl_->rope_scaling_type = *v;
   }
@@ -271,9 +339,7 @@ void gpt_oss_engine::load_weights_from_gguf() {
       throw std::runtime_error("Failed to read tensor data for: " + name);
     }
 
-    dtype output_dtype = (info.type == ggml_type::F16 || info.type == ggml_type::MXFP4)
-                             ? dtype::float16
-                             : dtype::float32;
+    dtype output_dtype = (info.type == ggml_type::F32) ? dtype::float32 : dtype::float16;
 
     dynamic_tensor tensor(output_dtype, shape);
 
@@ -289,8 +355,14 @@ void gpt_oss_engine::load_weights_from_gguf() {
       }
       ++dequantized_count;
     } else {
-      if (!dequantize_tensor(raw_data.data(), tensor.data_ptr<float>(), numel, info.type)) {
+      // Dequantize to F32 temp buffer, then convert to F16 to save memory
+      std::vector<float> tmp_f32(numel);
+      if (!dequantize_tensor(raw_data.data(), tmp_f32.data(), numel, info.type)) {
         throw std::runtime_error("Unsupported quantization type for: " + name);
+      }
+      uint16_t* dst = tensor.data_ptr<uint16_t>();
+      for (int64_t i = 0; i < numel; ++i) {
+        dst[i] = fp32_to_fp16(tmp_f32[i]);
       }
       ++dequantized_count;
     }
@@ -332,6 +404,8 @@ void gpt_oss_engine::build_transformer_graph() {
   pimpl_->input_node = std::make_shared<model_source_node>();
   pimpl_->output_node = std::make_shared<model_output_node>();
 
+  // Build list of required weights (architecture-dependent)
+  // Biases are optional — presence is checked at graph construction time
   std::vector<std::string> required_weights = {
       "token_embd.weight",
       "output_norm.weight",
@@ -342,16 +416,17 @@ void gpt_oss_engine::build_transformer_graph() {
     std::string layer_prefix = "blk." + std::to_string(layer);
     required_weights.push_back(layer_prefix + ".attn_norm.weight");
     required_weights.push_back(layer_prefix + ".attn_q.weight");
-    required_weights.push_back(layer_prefix + ".attn_q.bias");
     required_weights.push_back(layer_prefix + ".attn_k.weight");
-    required_weights.push_back(layer_prefix + ".attn_k.bias");
     required_weights.push_back(layer_prefix + ".attn_v.weight");
-    required_weights.push_back(layer_prefix + ".attn_v.bias");
     required_weights.push_back(layer_prefix + ".attn_output.weight");
-    required_weights.push_back(layer_prefix + ".attn_output.bias");
-    required_weights.push_back(layer_prefix + ".post_attention_norm.weight");
+    required_weights.push_back(layer_prefix + "." + pimpl_->ffn_norm_weight_name);
     required_weights.push_back(layer_prefix + ".ffn_gate_inp.weight");
-    required_weights.push_back(layer_prefix + ".ffn_gate_inp.bias");
+    // shared expert weights
+    if (pimpl_->has_shared_expert) {
+      required_weights.push_back(layer_prefix + ".ffn_gate_shexp.weight");
+      required_weights.push_back(layer_prefix + ".ffn_up_shexp.weight");
+      required_weights.push_back(layer_prefix + ".ffn_down_shexp.weight");
+    }
   }
 
   for (const auto& name : required_weights) {
@@ -362,12 +437,42 @@ void gpt_oss_engine::build_transformer_graph() {
     pimpl_->input_node->set_tensor(name, it->second);
   }
 
+  if (pimpl_->arch_prefix == "llama4") {
+    auto it = pimpl_->weights.find("rope_freqs.weight");
+    if (it == pimpl_->weights.end()) {
+      throw std::runtime_error("Required weight not found: rope_freqs.weight");
+    }
+    pimpl_->input_node->set_tensor("rope_freqs.weight", it->second);
+  }
+
+  // Register optional weights present in this model
+  auto register_optional = [&](const std::string& name) {
+    auto it = pimpl_->weights.find(name);
+    if (it != pimpl_->weights.end()) {
+      pimpl_->input_node->set_tensor(name, it->second);
+    }
+  };
+
+  for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
+    std::string layer_prefix = "blk." + std::to_string(layer);
+    register_optional(layer_prefix + ".attn_q.bias");
+    register_optional(layer_prefix + ".attn_k.bias");
+    register_optional(layer_prefix + ".attn_v.bias");
+    register_optional(layer_prefix + ".attn_output.bias");
+    register_optional(layer_prefix + ".ffn_gate_inp.bias");
+  }
+
   auto extractor = std::make_shared<result_field_extractor_node>();
   pimpl_->graph->add_node(extractor);
   extractor->set_input(pimpl_->input_node->get_output(), "default");
 
   auto input_ids_edge = extractor->add_output("input_ids");
   auto position_ids_edge = extractor->add_output("position_ids");  // Add position_ids
+  auto attn_scale_edge = extractor->add_output("attn_scale");
+  graph_edge_ptr rope_freqs_edge;
+  if (pimpl_->weights.find("rope_freqs.weight") != pimpl_->weights.end()) {
+    rope_freqs_edge = extractor->add_output("rope_freqs.weight");
+  }
   auto token_embd_weight_edge_raw = extractor->add_output("token_embd.weight");
   auto output_norm_weight_edge = extractor->add_output("output_norm.weight");
   auto output_weight_edge = extractor->add_output("output.weight");
@@ -379,12 +484,14 @@ void gpt_oss_engine::build_transformer_graph() {
   for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
     std::string layer_prefix = "blk." + std::to_string(layer);
     std::vector<std::string> layer_weight_names = {
-        layer_prefix + ".attn_norm.weight",    layer_prefix + ".attn_q.weight",
-        layer_prefix + ".attn_q.bias",         layer_prefix + ".attn_k.weight",
-        layer_prefix + ".attn_k.bias",         layer_prefix + ".attn_v.weight",
-        layer_prefix + ".attn_v.bias",         layer_prefix + ".attn_output.weight",
-        layer_prefix + ".attn_output.bias",    layer_prefix + ".post_attention_norm.weight",
-        layer_prefix + ".ffn_gate_inp.weight", layer_prefix + ".ffn_gate_inp.bias",
+        layer_prefix + ".attn_norm.weight",      layer_prefix + ".attn_q.weight",
+        layer_prefix + ".attn_q.bias",           layer_prefix + ".attn_k.weight",
+        layer_prefix + ".attn_k.bias",           layer_prefix + ".attn_v.weight",
+        layer_prefix + ".attn_v.bias",           layer_prefix + ".attn_output.weight",
+        layer_prefix + ".attn_output.bias",      layer_prefix + "." + pimpl_->ffn_norm_weight_name,
+        layer_prefix + ".ffn_gate_inp.weight",   layer_prefix + ".ffn_gate_inp.bias",
+        layer_prefix + ".ffn_gate_shexp.weight", layer_prefix + ".ffn_up_shexp.weight",
+        layer_prefix + ".ffn_down_shexp.weight",
     };
 
     for (const auto& name : layer_weight_names) {
@@ -459,21 +566,26 @@ void gpt_oss_engine::build_transformer_graph() {
     q_proj->set_node_name(layer_prefix + ".q_proj");
     pimpl_->graph->add_node(q_proj);
 
-    // Q bias
-    auto q_bias_add = std::make_shared<add_node>();
-    auto q_bias_sync = std::make_shared<result_message_sync_node>();
-    q_bias_sync->set_input(q_proj->get_output("default"), layer_prefix + ".q_proj_out");
-    q_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_q.bias"],
-                           layer_prefix + ".attn_q.bias");
-    q_bias_sync->set_initial_ids({layer_prefix + ".q_proj_out", layer_prefix + ".attn_q.bias"});
-    pimpl_->graph->add_node(q_bias_sync);
+    // Q bias (optional)
+    graph_edge_ptr q_out = q_proj->get_output("default");
+    std::string q_out_name = layer_prefix + ".q_proj_out";
+    if (layer_weights[layer].count(layer_prefix + ".attn_q.bias")) {
+      auto q_bias_add = std::make_shared<add_node>();
+      auto q_bias_sync = std::make_shared<result_message_sync_node>();
+      q_bias_sync->set_input(q_proj->get_output("default"), layer_prefix + ".q_proj_out");
+      q_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_q.bias"],
+                             layer_prefix + ".attn_q.bias");
+      q_bias_sync->set_initial_ids({layer_prefix + ".q_proj_out", layer_prefix + ".attn_q.bias"});
+      pimpl_->graph->add_node(q_bias_sync);
 
-    q_bias_add->set_input(q_bias_sync->get_output(), "default");
-    q_bias_add->set_input_names(layer_prefix + ".q_proj_out", layer_prefix + ".attn_q.bias");
-    q_bias_add->set_output_name(layer_prefix + ".q_with_bias");
-    q_bias_add->set_node_name(layer_prefix + ".q_bias");
-    pimpl_->graph->add_node(q_bias_add);
-    graph_edge_ptr q_out = q_bias_add->get_output("default");
+      q_bias_add->set_input(q_bias_sync->get_output(), "default");
+      q_bias_add->set_input_names(layer_prefix + ".q_proj_out", layer_prefix + ".attn_q.bias");
+      q_bias_add->set_output_name(layer_prefix + ".q_with_bias");
+      q_bias_add->set_node_name(layer_prefix + ".q_bias");
+      pimpl_->graph->add_node(q_bias_add);
+      q_out = q_bias_add->get_output("default");
+      q_out_name = layer_prefix + ".q_with_bias";
+    }
 
     // K projection
     auto k_proj = std::make_shared<matmul_transpose_mixed_node>();
@@ -490,21 +602,26 @@ void gpt_oss_engine::build_transformer_graph() {
     k_proj->set_node_name(layer_prefix + ".k_proj");
     pimpl_->graph->add_node(k_proj);
 
-    // K bias
-    auto k_bias_add = std::make_shared<add_node>();
-    auto k_bias_sync = std::make_shared<result_message_sync_node>();
-    k_bias_sync->set_input(k_proj->get_output("default"), layer_prefix + ".k_proj_out");
-    k_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_k.bias"],
-                           layer_prefix + ".attn_k.bias");
-    k_bias_sync->set_initial_ids({layer_prefix + ".k_proj_out", layer_prefix + ".attn_k.bias"});
-    pimpl_->graph->add_node(k_bias_sync);
+    // K bias (optional)
+    graph_edge_ptr k_out = k_proj->get_output("default");
+    std::string k_out_name = layer_prefix + ".k_proj_out";
+    if (layer_weights[layer].count(layer_prefix + ".attn_k.bias")) {
+      auto k_bias_add = std::make_shared<add_node>();
+      auto k_bias_sync = std::make_shared<result_message_sync_node>();
+      k_bias_sync->set_input(k_proj->get_output("default"), layer_prefix + ".k_proj_out");
+      k_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_k.bias"],
+                             layer_prefix + ".attn_k.bias");
+      k_bias_sync->set_initial_ids({layer_prefix + ".k_proj_out", layer_prefix + ".attn_k.bias"});
+      pimpl_->graph->add_node(k_bias_sync);
 
-    k_bias_add->set_input(k_bias_sync->get_output(), "default");
-    k_bias_add->set_input_names(layer_prefix + ".k_proj_out", layer_prefix + ".attn_k.bias");
-    k_bias_add->set_output_name(layer_prefix + ".k_with_bias");
-    k_bias_add->set_node_name(layer_prefix + ".k_bias");
-    pimpl_->graph->add_node(k_bias_add);
-    graph_edge_ptr k_out = k_bias_add->get_output("default");
+      k_bias_add->set_input(k_bias_sync->get_output(), "default");
+      k_bias_add->set_input_names(layer_prefix + ".k_proj_out", layer_prefix + ".attn_k.bias");
+      k_bias_add->set_output_name(layer_prefix + ".k_with_bias");
+      k_bias_add->set_node_name(layer_prefix + ".k_bias");
+      pimpl_->graph->add_node(k_bias_add);
+      k_out = k_bias_add->get_output("default");
+      k_out_name = layer_prefix + ".k_with_bias";
+    }
 
     // V projection
     auto v_proj = std::make_shared<matmul_transpose_mixed_node>();
@@ -521,21 +638,26 @@ void gpt_oss_engine::build_transformer_graph() {
     v_proj->set_node_name(layer_prefix + ".v_proj");
     pimpl_->graph->add_node(v_proj);
 
-    // V bias
-    auto v_bias_add = std::make_shared<add_node>();
-    auto v_bias_sync = std::make_shared<result_message_sync_node>();
-    v_bias_sync->set_input(v_proj->get_output("default"), layer_prefix + ".v_proj_out");
-    v_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_v.bias"],
-                           layer_prefix + ".attn_v.bias");
-    v_bias_sync->set_initial_ids({layer_prefix + ".v_proj_out", layer_prefix + ".attn_v.bias"});
-    pimpl_->graph->add_node(v_bias_sync);
+    // V bias (optional)
+    graph_edge_ptr v_out = v_proj->get_output("default");
+    std::string v_out_name = layer_prefix + ".v_proj_out";
+    if (layer_weights[layer].count(layer_prefix + ".attn_v.bias")) {
+      auto v_bias_add = std::make_shared<add_node>();
+      auto v_bias_sync = std::make_shared<result_message_sync_node>();
+      v_bias_sync->set_input(v_proj->get_output("default"), layer_prefix + ".v_proj_out");
+      v_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_v.bias"],
+                             layer_prefix + ".attn_v.bias");
+      v_bias_sync->set_initial_ids({layer_prefix + ".v_proj_out", layer_prefix + ".attn_v.bias"});
+      pimpl_->graph->add_node(v_bias_sync);
 
-    v_bias_add->set_input(v_bias_sync->get_output(), "default");
-    v_bias_add->set_input_names(layer_prefix + ".v_proj_out", layer_prefix + ".attn_v.bias");
-    v_bias_add->set_output_name(layer_prefix + ".v_with_bias");
-    v_bias_add->set_node_name(layer_prefix + ".v_bias");
-    pimpl_->graph->add_node(v_bias_add);
-    graph_edge_ptr v_out = v_bias_add->get_output("default");
+      v_bias_add->set_input(v_bias_sync->get_output(), "default");
+      v_bias_add->set_input_names(layer_prefix + ".v_proj_out", layer_prefix + ".attn_v.bias");
+      v_bias_add->set_output_name(layer_prefix + ".v_with_bias");
+      v_bias_add->set_node_name(layer_prefix + ".v_bias");
+      pimpl_->graph->add_node(v_bias_add);
+      v_out = v_bias_add->get_output("default");
+      v_out_name = layer_prefix + ".v_with_bias";
+    }
 
     // 2.3 Reshape Q/K for RoPE (3D → 4D → transpose → RoPE → transpose → 4D → 3D)
 
@@ -582,14 +704,13 @@ void gpt_oss_engine::build_transformer_graph() {
     // Process Q
     auto q_reshape_4d = std::make_shared<reshape_node>();
     auto q_reshape_4d_sync = std::make_shared<result_message_sync_node>();
-    q_reshape_4d_sync->set_input(q_out, layer_prefix + ".q_with_bias");
+    q_reshape_4d_sync->set_input(q_out, q_out_name);
     q_reshape_4d_sync->set_input(q_reshape_shape_edge, layer_prefix + ".q_reshape_shape");
-    q_reshape_4d_sync->set_initial_ids(
-        {layer_prefix + ".q_with_bias", layer_prefix + ".q_reshape_shape"});
+    q_reshape_4d_sync->set_initial_ids({q_out_name, layer_prefix + ".q_reshape_shape"});
     pimpl_->graph->add_node(q_reshape_4d_sync);
 
     q_reshape_4d->set_input(q_reshape_4d_sync->get_output(), "default");
-    q_reshape_4d->set_input_names(layer_prefix + ".q_with_bias", layer_prefix + ".q_reshape_shape");
+    q_reshape_4d->set_input_names(q_out_name, layer_prefix + ".q_reshape_shape");
     q_reshape_4d->set_output_name(layer_prefix + ".q_4d");
     q_reshape_4d->set_node_name(layer_prefix + ".q_reshape_4d");
     pimpl_->graph->add_node(q_reshape_4d);
@@ -604,28 +725,80 @@ void gpt_oss_engine::build_transformer_graph() {
     pimpl_->graph->add_node(q_transpose);
     graph_edge_ptr q_transposed = q_transpose->get_output("default");
 
-    auto rope_q = std::make_shared<rope_node>();
-    rope_q->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
-                       pimpl_->rope_scaling_factor, pimpl_->rope_scaling_type,
-                       pimpl_->rope_scaling_orig_ctx);
+    // Determine if this layer skips RoPE (ISWA: every 4th layer is full-attention)
+    const bool is_no_rope_layer =
+        pimpl_->no_rope_layer_step > 0 && (layer + 1) % pimpl_->no_rope_layer_step == 0;
 
-    auto rope_q_sync = std::make_shared<result_message_sync_node>();
-    rope_q_sync->set_input(q_transposed, layer_prefix + ".q_transposed");
-    rope_q_sync->set_input(position_ids_edge, "position_ids");
-    rope_q_sync->set_initial_ids({layer_prefix + ".q_transposed", "position_ids"});
-    pimpl_->graph->add_node(rope_q_sync);
+    graph_edge_ptr q_rope;
+    if (is_no_rope_layer) {
+      // No-rope layer: skip positional encoding, apply optional Q temperature scaling
+      if (pimpl_->attn_temp_floor_scale > 0 && std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
+        auto q_attn_temp_mul = std::make_shared<mul_node>();
+        auto q_attn_temp_sync = std::make_shared<result_message_sync_node>();
+        q_attn_temp_sync->set_input(q_transposed, layer_prefix + ".q_transposed");
+        q_attn_temp_sync->set_input(attn_scale_edge, "attn_scale");
+        q_attn_temp_sync->set_initial_ids({layer_prefix + ".q_transposed", "attn_scale"});
+        pimpl_->graph->add_node(q_attn_temp_sync);
 
-    rope_q->set_input(rope_q_sync->get_output(), "default");
-    rope_q->set_input_names({layer_prefix + ".q_transposed", "position_ids"});
-    rope_q->set_output_name(layer_prefix + ".q_rope");
-    rope_q->set_node_name(layer_prefix + ".rope_q");
-    pimpl_->graph->add_node(rope_q);
-    graph_edge_ptr q_rope = rope_q->get_output("default");
+        q_attn_temp_mul->set_input(q_attn_temp_sync->get_output(), "default");
+        q_attn_temp_mul->set_input_names(layer_prefix + ".q_transposed", "attn_scale");
+        q_attn_temp_mul->set_output_name(layer_prefix + ".q_attn_temp_scaled");
+        q_attn_temp_mul->set_node_name(layer_prefix + ".q_attn_temp_mul");
+        pimpl_->graph->add_node(q_attn_temp_mul);
+        q_rope = q_attn_temp_mul->get_output("default");
+      } else {
+        q_rope = q_transposed;
+      }
+    } else {
+      // KQ L2 norm before RoPE
+      graph_edge_ptr q_to_rope = q_transposed;
+      std::string q_to_rope_name = layer_prefix + ".q_transposed";
+      if (pimpl_->use_kq_norm) {
+        auto kq_norm_q = std::make_shared<l2norm_node>();
+        kq_norm_q->set_input(q_transposed, "default");
+        kq_norm_q->set_input_name(layer_prefix + ".q_transposed");
+        kq_norm_q->set_output_name(layer_prefix + ".q_normed");
+        kq_norm_q->set_node_name(layer_prefix + ".kq_norm_q");
+        pimpl_->graph->add_node(kq_norm_q);
+        q_to_rope = kq_norm_q->get_output("default");
+        q_to_rope_name = layer_prefix + ".q_normed";
+      }
+
+      auto rope_q = std::make_shared<rope_node>();
+      rope_q->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
+                         pimpl_->rope_scaling_factor, pimpl_->rope_scaling_type,
+                         pimpl_->rope_scaling_orig_ctx);
+      rope_q->set_neox_style(!pimpl_->use_norm_rope);
+
+      auto rope_q_sync = std::make_shared<result_message_sync_node>();
+      rope_q_sync->set_input(q_to_rope, q_to_rope_name);
+      rope_q_sync->set_input(position_ids_edge, "position_ids");
+      std::vector<std::string> rope_q_input_names = {q_to_rope_name, "position_ids"};
+      if (rope_freqs_edge) {
+        rope_q_sync->set_input(rope_freqs_edge, "rope_freqs.weight");
+        rope_q_input_names.push_back("rope_freqs.weight");
+      }
+      rope_q_sync->set_initial_ids(rope_q_input_names);
+      pimpl_->graph->add_node(rope_q_sync);
+
+      rope_q->set_input(rope_q_sync->get_output(), "default");
+      rope_q->set_input_names(rope_q_input_names);
+      rope_q->set_output_name(layer_prefix + ".q_rope");
+      rope_q->set_node_name(layer_prefix + ".rope_q");
+      pimpl_->graph->add_node(rope_q);
+      q_rope = rope_q->get_output("default");
+    }
 
     auto q_transpose_back = std::make_shared<transpose_node>();
     q_transpose_back->set_perm({0, 2, 1, 3});
     q_transpose_back->set_input(q_rope, "default");
-    q_transpose_back->set_input_name(layer_prefix + ".q_rope");
+    std::string q_rope_edge_name =
+        is_no_rope_layer ? layer_prefix + ".q_transposed" : layer_prefix + ".q_rope";
+    if (is_no_rope_layer && pimpl_->attn_temp_floor_scale > 0 &&
+        std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
+      q_rope_edge_name = layer_prefix + ".q_attn_temp_scaled";
+    }
+    q_transpose_back->set_input_name(q_rope_edge_name);
     q_transpose_back->set_output_name(layer_prefix + ".q_rope_4d");
     q_transpose_back->set_node_name(layer_prefix + ".q_transpose_back");
     pimpl_->graph->add_node(q_transpose_back);
@@ -650,14 +823,13 @@ void gpt_oss_engine::build_transformer_graph() {
     // Process K
     auto k_reshape_4d = std::make_shared<reshape_node>();
     auto k_reshape_4d_sync = std::make_shared<result_message_sync_node>();
-    k_reshape_4d_sync->set_input(k_out, layer_prefix + ".k_with_bias");
+    k_reshape_4d_sync->set_input(k_out, k_out_name);
     k_reshape_4d_sync->set_input(k_reshape_shape_edge, layer_prefix + ".k_reshape_shape");
-    k_reshape_4d_sync->set_initial_ids(
-        {layer_prefix + ".k_with_bias", layer_prefix + ".k_reshape_shape"});
+    k_reshape_4d_sync->set_initial_ids({k_out_name, layer_prefix + ".k_reshape_shape"});
     pimpl_->graph->add_node(k_reshape_4d_sync);
 
     k_reshape_4d->set_input(k_reshape_4d_sync->get_output(), "default");
-    k_reshape_4d->set_input_names(layer_prefix + ".k_with_bias", layer_prefix + ".k_reshape_shape");
+    k_reshape_4d->set_input_names(k_out_name, layer_prefix + ".k_reshape_shape");
     k_reshape_4d->set_output_name(layer_prefix + ".k_4d");
     k_reshape_4d->set_node_name(layer_prefix + ".k_reshape_4d");
     pimpl_->graph->add_node(k_reshape_4d);
@@ -672,28 +844,56 @@ void gpt_oss_engine::build_transformer_graph() {
     pimpl_->graph->add_node(k_transpose);
     graph_edge_ptr k_transposed = k_transpose->get_output("default");
 
-    auto rope_k = std::make_shared<rope_node>();
-    rope_k->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
-                       pimpl_->rope_scaling_factor, pimpl_->rope_scaling_type,
-                       pimpl_->rope_scaling_orig_ctx);
+    graph_edge_ptr k_rope;
+    if (is_no_rope_layer) {
+      // No-rope layer: pass K directly
+      k_rope = k_transposed;
+    } else {
+      auto rope_k = std::make_shared<rope_node>();
+      rope_k->set_config(layer_head_dim, pimpl_->max_seq_len, pimpl_->rope_freq_base,
+                         pimpl_->rope_scaling_factor, pimpl_->rope_scaling_type,
+                         pimpl_->rope_scaling_orig_ctx);
+      rope_k->set_neox_style(!pimpl_->use_norm_rope);
 
-    auto rope_k_sync = std::make_shared<result_message_sync_node>();
-    rope_k_sync->set_input(k_transposed, layer_prefix + ".k_transposed");
-    rope_k_sync->set_input(position_ids_edge, "position_ids");
-    rope_k_sync->set_initial_ids({layer_prefix + ".k_transposed", "position_ids"});
-    pimpl_->graph->add_node(rope_k_sync);
+      // KQ L2 norm before RoPE
+      graph_edge_ptr k_to_rope = k_transposed;
+      std::string k_to_rope_name = layer_prefix + ".k_transposed";
+      if (pimpl_->use_kq_norm) {
+        auto kq_norm_k = std::make_shared<l2norm_node>();
+        kq_norm_k->set_input(k_transposed, "default");
+        kq_norm_k->set_input_name(layer_prefix + ".k_transposed");
+        kq_norm_k->set_output_name(layer_prefix + ".k_normed");
+        kq_norm_k->set_node_name(layer_prefix + ".kq_norm_k");
+        pimpl_->graph->add_node(kq_norm_k);
+        k_to_rope = kq_norm_k->get_output("default");
+        k_to_rope_name = layer_prefix + ".k_normed";
+      }
 
-    rope_k->set_input(rope_k_sync->get_output(), "default");
-    rope_k->set_input_names({layer_prefix + ".k_transposed", "position_ids"});
-    rope_k->set_output_name(layer_prefix + ".k_rope");
-    rope_k->set_node_name(layer_prefix + ".rope_k");
-    pimpl_->graph->add_node(rope_k);
-    graph_edge_ptr k_rope = rope_k->get_output("default");
+      auto rope_k_sync = std::make_shared<result_message_sync_node>();
+      rope_k_sync->set_input(k_to_rope, k_to_rope_name);
+      rope_k_sync->set_input(position_ids_edge, "position_ids");
+      std::vector<std::string> rope_k_input_names = {k_to_rope_name, "position_ids"};
+      if (rope_freqs_edge) {
+        rope_k_sync->set_input(rope_freqs_edge, "rope_freqs.weight");
+        rope_k_input_names.push_back("rope_freqs.weight");
+      }
+      rope_k_sync->set_initial_ids(rope_k_input_names);
+      pimpl_->graph->add_node(rope_k_sync);
+
+      rope_k->set_input(rope_k_sync->get_output(), "default");
+      rope_k->set_input_names(rope_k_input_names);
+      rope_k->set_output_name(layer_prefix + ".k_rope");
+      rope_k->set_node_name(layer_prefix + ".rope_k");
+      pimpl_->graph->add_node(rope_k);
+      k_rope = rope_k->get_output("default");
+    }
 
     auto k_transpose_back = std::make_shared<transpose_node>();
     k_transpose_back->set_perm({0, 2, 1, 3});
     k_transpose_back->set_input(k_rope, "default");
-    k_transpose_back->set_input_name(layer_prefix + ".k_rope");
+    std::string k_rope_edge_name =
+        is_no_rope_layer ? layer_prefix + ".k_transposed" : layer_prefix + ".k_rope";
+    k_transpose_back->set_input_name(k_rope_edge_name);
     k_transpose_back->set_output_name(layer_prefix + ".k_rope_4d");
     k_transpose_back->set_node_name(layer_prefix + ".k_transpose_back");
     pimpl_->graph->add_node(k_transpose_back);
@@ -735,8 +935,13 @@ void gpt_oss_engine::build_transformer_graph() {
       }
     }
 
+    int64_t layer_sliding_window = pimpl_->attention_sliding_window;
+    if (pimpl_->no_rope_layer_step > 0) {
+      // ISWA pattern: no-rope layers use full attention, others use chunked sliding window
+      layer_sliding_window = is_no_rope_layer ? 0 : pimpl_->attention_sliding_window;
+    }
     attn->set_config(pimpl_->num_q_heads, pimpl_->num_kv_heads, layer_head_dim,
-                     pimpl_->attention_sliding_window, attn_sinks);
+                     layer_sliding_window, attn_sinks);
 
     // Store attention node for KV cache management
     pimpl_->attention_nodes.push_back(attn);
@@ -744,14 +949,13 @@ void gpt_oss_engine::build_transformer_graph() {
     auto attn_sync = std::make_shared<result_message_sync_node>();
     attn_sync->set_input(q_rope_out, layer_prefix + ".q_rope_out");
     attn_sync->set_input(k_rope_out, layer_prefix + ".k_rope_out");
-    attn_sync->set_input(v_out, layer_prefix + ".v_with_bias");
-    attn_sync->set_initial_ids({layer_prefix + ".q_rope_out", layer_prefix + ".k_rope_out",
-                                layer_prefix + ".v_with_bias"});
+    attn_sync->set_input(v_out, v_out_name);
+    attn_sync->set_initial_ids(
+        {layer_prefix + ".q_rope_out", layer_prefix + ".k_rope_out", v_out_name});
     pimpl_->graph->add_node(attn_sync);
 
     attn->set_input(attn_sync->get_output(), "default");
-    attn->set_input_names({layer_prefix + ".q_rope_out", layer_prefix + ".k_rope_out",
-                           layer_prefix + ".v_with_bias"});
+    attn->set_input_names({layer_prefix + ".q_rope_out", layer_prefix + ".k_rope_out", v_out_name});
     attn->set_output_name(layer_prefix + ".attn_out");
     attn->set_node_name(layer_prefix + ".grouped_attn");
     pimpl_->graph->add_node(attn);
@@ -773,34 +977,39 @@ void gpt_oss_engine::build_transformer_graph() {
     attn_proj->set_node_name(layer_prefix + ".attn_proj");
     pimpl_->graph->add_node(attn_proj);
 
-    // Attention output bias
-    auto attn_bias_add = std::make_shared<add_node>();
-    auto attn_bias_sync = std::make_shared<result_message_sync_node>();
-    attn_bias_sync->set_input(attn_proj->get_output("default"), layer_prefix + ".attn_proj_out");
-    attn_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_output.bias"],
-                              layer_prefix + ".attn_output.bias");
-    attn_bias_sync->set_initial_ids(
-        {layer_prefix + ".attn_proj_out", layer_prefix + ".attn_output.bias"});
-    pimpl_->graph->add_node(attn_bias_sync);
+    // Attention output bias (optional)
+    graph_edge_ptr attn_proj_out = attn_proj->get_output("default");
+    std::string attn_proj_out_name = layer_prefix + ".attn_proj_out";
+    if (layer_weights[layer].count(layer_prefix + ".attn_output.bias")) {
+      auto attn_bias_add = std::make_shared<add_node>();
+      auto attn_bias_sync = std::make_shared<result_message_sync_node>();
+      attn_bias_sync->set_input(attn_proj->get_output("default"), layer_prefix + ".attn_proj_out");
+      attn_bias_sync->set_input(layer_weights[layer][layer_prefix + ".attn_output.bias"],
+                                layer_prefix + ".attn_output.bias");
+      attn_bias_sync->set_initial_ids(
+          {layer_prefix + ".attn_proj_out", layer_prefix + ".attn_output.bias"});
+      pimpl_->graph->add_node(attn_bias_sync);
 
-    attn_bias_add->set_input(attn_bias_sync->get_output(), "default");
-    attn_bias_add->set_input_names(layer_prefix + ".attn_proj_out",
-                                   layer_prefix + ".attn_output.bias");
-    attn_bias_add->set_output_name(layer_prefix + ".attn_with_bias");
-    attn_bias_add->set_node_name(layer_prefix + ".attn_proj_bias");
-    pimpl_->graph->add_node(attn_bias_add);
-    graph_edge_ptr attn_proj_out = attn_bias_add->get_output("default");
+      attn_bias_add->set_input(attn_bias_sync->get_output(), "default");
+      attn_bias_add->set_input_names(layer_prefix + ".attn_proj_out",
+                                     layer_prefix + ".attn_output.bias");
+      attn_bias_add->set_output_name(layer_prefix + ".attn_with_bias");
+      attn_bias_add->set_node_name(layer_prefix + ".attn_proj_bias");
+      pimpl_->graph->add_node(attn_bias_add);
+      attn_proj_out = attn_bias_add->get_output("default");
+      attn_proj_out_name = layer_prefix + ".attn_with_bias";
+    }
 
     // 2.6 Attention residual connection
     auto attn_residual = std::make_shared<add_node>();
     auto attn_res_sync = std::make_shared<result_message_sync_node>();
     attn_res_sync->set_input(layer_input, layer_input_name);
-    attn_res_sync->set_input(attn_proj_out, layer_prefix + ".attn_with_bias");
-    attn_res_sync->set_initial_ids({layer_input_name, layer_prefix + ".attn_with_bias"});
+    attn_res_sync->set_input(attn_proj_out, attn_proj_out_name);
+    attn_res_sync->set_initial_ids({layer_input_name, attn_proj_out_name});
     pimpl_->graph->add_node(attn_res_sync);
 
     attn_residual->set_input(attn_res_sync->get_output(), "default");
-    attn_residual->set_input_names(layer_input_name, layer_prefix + ".attn_with_bias");
+    attn_residual->set_input_names(layer_input_name, attn_proj_out_name);
     attn_residual->set_output_name(layer_prefix + ".attn_residual_out");
     attn_residual->set_node_name(layer_prefix + ".attn_residual");
     pimpl_->graph->add_node(attn_residual);
@@ -812,15 +1021,13 @@ void gpt_oss_engine::build_transformer_graph() {
 
     auto ffn_norm_sync = std::make_shared<result_message_sync_node>();
     ffn_norm_sync->set_input(attn_res_out, layer_prefix + ".attn_residual_out");
-    ffn_norm_sync->set_input(layer_weights[layer][layer_prefix + ".post_attention_norm.weight"],
-                             layer_prefix + ".post_attention_norm.weight");
-    ffn_norm_sync->set_initial_ids(
-        {layer_prefix + ".attn_residual_out", layer_prefix + ".post_attention_norm.weight"});
+    const std::string ffn_norm_weight_key = layer_prefix + "." + pimpl_->ffn_norm_weight_name;
+    ffn_norm_sync->set_input(layer_weights[layer][ffn_norm_weight_key], ffn_norm_weight_key);
+    ffn_norm_sync->set_initial_ids({layer_prefix + ".attn_residual_out", ffn_norm_weight_key});
     pimpl_->graph->add_node(ffn_norm_sync);
 
     ffn_norm->set_input(ffn_norm_sync->get_output(), "default");
-    ffn_norm->set_input_names(layer_prefix + ".attn_residual_out",
-                              layer_prefix + ".post_attention_norm.weight");
+    ffn_norm->set_input_names(layer_prefix + ".attn_residual_out", ffn_norm_weight_key);
     ffn_norm->set_output_name(layer_prefix + ".ffn_norm_out");
     ffn_norm->set_node_name(layer_prefix + ".ffn_norm");
     pimpl_->graph->add_node(ffn_norm);
@@ -829,21 +1036,24 @@ void gpt_oss_engine::build_transformer_graph() {
     // MoE Router
     auto router = std::make_shared<moe_router_node>();
     router->set_config(pimpl_->num_experts, pimpl_->expert_top_k);
+    router->set_sigmoid_gating(pimpl_->use_sigmoid_gating);
 
     auto router_sync = std::make_shared<result_message_sync_node>();
     router_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
     router_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_inp.weight"],
                            layer_prefix + ".ffn_gate_inp.weight");
-    router_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_inp.bias"],
-                           layer_prefix + ".ffn_gate_inp.bias");
-    router_sync->set_initial_ids({layer_prefix + ".ffn_norm_out",
-                                  layer_prefix + ".ffn_gate_inp.weight",
-                                  layer_prefix + ".ffn_gate_inp.bias"});
+    std::vector<std::string> router_input_names = {layer_prefix + ".ffn_norm_out",
+                                                   layer_prefix + ".ffn_gate_inp.weight"};
+    if (layer_weights[layer].count(layer_prefix + ".ffn_gate_inp.bias")) {
+      router_sync->set_input(layer_weights[layer][layer_prefix + ".ffn_gate_inp.bias"],
+                             layer_prefix + ".ffn_gate_inp.bias");
+      router_input_names.push_back(layer_prefix + ".ffn_gate_inp.bias");
+    }
+    router_sync->set_initial_ids(router_input_names);
     pimpl_->graph->add_node(router_sync);
 
     router->set_input(router_sync->get_output(), "default");
-    router->set_input_names({layer_prefix + ".ffn_norm_out", layer_prefix + ".ffn_gate_inp.weight",
-                             layer_prefix + ".ffn_gate_inp.bias"});
+    router->set_input_names(router_input_names);
     router->set_output_name(layer_prefix + ".router_out");
     router->set_node_name(layer_prefix + ".moe_router");
     pimpl_->graph->add_node(router);
@@ -852,6 +1062,7 @@ void gpt_oss_engine::build_transformer_graph() {
     // On-demand MoE weight fetch node (layer-level, loads expert weights from disk)
     auto fetch_node =
         std::make_shared<moe_weight_fetch_node>(pimpl_->moe_providers[layer], layer_prefix);
+    fetch_node->set_has_bias(pimpl_->has_expert_bias);
     fetch_node->set_input(router_out, layer_prefix + ".router_out");
     pimpl_->graph->add_node(fetch_node);
 
@@ -862,50 +1073,42 @@ void gpt_oss_engine::build_transformer_graph() {
     }
 
     // Expert MLPs (receive dynamically loaded weights from fetch node)
+    const bool has_expert_bias = pimpl_->has_expert_bias;
+    const auto expert_act_type = (pimpl_->arch_prefix == "gpt-oss")
+                                     ? expert_mlp_node::activation_type::MODIFIED_SWIGLU
+                                     : expert_mlp_node::activation_type::STANDARD_SWIGLU;
     std::vector<graph_edge_ptr> expert_outputs;
     for (int expert_id = 0; expert_id < pimpl_->num_experts; ++expert_id) {
-      // Sync for expert MLP: ffn_norm_out + fetched expert weights (7 fields)
+      const std::string ep = layer_prefix + ".expert_" + std::to_string(expert_id);
+      // Sync for expert MLP: ffn_norm_out + fetched expert weights
       auto expert_sync = std::make_shared<result_message_sync_node>();
       expert_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down");
-      expert_sync->set_input(fetch_outputs[expert_id],
-                             layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out");
-      expert_sync->set_initial_ids(
-          {layer_prefix + ".ffn_norm_out",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
+      expert_sync->set_input(fetch_outputs[expert_id], ep + ".w_up");
+      expert_sync->set_input(fetch_outputs[expert_id], ep + ".w_gate");
+      expert_sync->set_input(fetch_outputs[expert_id], ep + ".w_down");
+      std::vector<std::string> expert_input_names = {layer_prefix + ".ffn_norm_out", ep + ".w_up",
+                                                     ep + ".w_gate", ep + ".w_down"};
+      if (has_expert_bias) {
+        expert_sync->set_input(fetch_outputs[expert_id], ep + ".b_up");
+        expert_sync->set_input(fetch_outputs[expert_id], ep + ".b_gate");
+        expert_sync->set_input(fetch_outputs[expert_id], ep + ".b_down");
+        expert_input_names.push_back(ep + ".b_up");
+        expert_input_names.push_back(ep + ".b_gate");
+        expert_input_names.push_back(ep + ".b_down");
+      }
+      expert_sync->set_input(fetch_outputs[expert_id], ep + ".router_out");
+      expert_input_names.push_back(ep + ".router_out");
+      expert_sync->set_initial_ids(expert_input_names);
       pimpl_->graph->add_node(expert_sync);
 
       // Expert MLP node (receives 2D/1D weights from fetch node)
       auto expert = std::make_shared<expert_mlp_node>(expert_id);
+      expert->set_activation_type(expert_act_type);
+      expert->set_weight_before_ffn(pimpl_->weight_before_ffn);
       expert->set_input(expert_sync->get_output(), "default");
-      expert->set_input_names(
-          {layer_prefix + ".ffn_norm_out",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_up",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_gate",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".w_down",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_up",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_gate",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".b_down",
-           layer_prefix + ".expert_" + std::to_string(expert_id) + ".router_out"});
-      expert->set_output_name(layer_prefix + ".expert_" + std::to_string(expert_id) + "_out");
-      expert->set_node_name(layer_prefix + ".expert_" + std::to_string(expert_id));
+      expert->set_input_names(expert_input_names);
+      expert->set_output_name(ep + "_out");
+      expert->set_node_name(ep);
       pimpl_->graph->add_node(expert);
       expert_outputs.push_back(expert->get_output("default"));
     }
@@ -913,6 +1116,7 @@ void gpt_oss_engine::build_transformer_graph() {
     // Expert merge
     auto expert_merge = std::make_shared<expert_merge_node>();
     expert_merge->set_config(pimpl_->num_experts, pimpl_->expert_top_k);
+    expert_merge->set_weight_before_ffn(pimpl_->weight_before_ffn);
 
     std::vector<std::string> merge_input_names = {layer_prefix + ".router_out"};
     for (int i = 0; i < pimpl_->num_experts; ++i) {
@@ -934,19 +1138,58 @@ void gpt_oss_engine::build_transformer_graph() {
     expert_merge->set_node_name(layer_prefix + ".expert_merge");
     pimpl_->graph->add_node(expert_merge);
     graph_edge_ptr merge_out = expert_merge->get_output("default");
+    std::string merge_out_name = layer_prefix + ".expert_merge_out";
+
+    // Shared Expert FFN (optional, Llama-4 style)
+    const std::string shexp_gate_name = layer_prefix + ".ffn_gate_shexp.weight";
+    const std::string shexp_up_name = layer_prefix + ".ffn_up_shexp.weight";
+    const std::string shexp_down_name = layer_prefix + ".ffn_down_shexp.weight";
+    if (pimpl_->has_shared_expert && layer_weights[layer].count(shexp_gate_name) &&
+        layer_weights[layer].count(shexp_up_name) && layer_weights[layer].count(shexp_down_name)) {
+      auto shexp_mlp = std::make_shared<dense_ffn_node>();
+      auto shexp_sync = std::make_shared<result_message_sync_node>();
+      shexp_sync->set_input(ffn_norm_out, layer_prefix + ".ffn_norm_out");
+      shexp_sync->set_input(layer_weights[layer][shexp_gate_name], shexp_gate_name);
+      shexp_sync->set_input(layer_weights[layer][shexp_up_name], shexp_up_name);
+      shexp_sync->set_input(layer_weights[layer][shexp_down_name], shexp_down_name);
+      shexp_sync->set_initial_ids(
+          {layer_prefix + ".ffn_norm_out", shexp_gate_name, shexp_up_name, shexp_down_name});
+      pimpl_->graph->add_node(shexp_sync);
+
+      shexp_mlp->set_input(shexp_sync->get_output(), "default");
+      shexp_mlp->set_input_names(
+          {layer_prefix + ".ffn_norm_out", shexp_gate_name, shexp_up_name, shexp_down_name});
+      shexp_mlp->set_output_name(layer_prefix + ".shexp_out");
+      shexp_mlp->set_node_name(layer_prefix + ".shexp_mlp");
+      pimpl_->graph->add_node(shexp_mlp);
+
+      // Add shared expert output to MoE merge output
+      auto shexp_add = std::make_shared<add_node>();
+      auto shexp_add_sync = std::make_shared<result_message_sync_node>();
+      shexp_add_sync->set_input(merge_out, merge_out_name);
+      shexp_add_sync->set_input(shexp_mlp->get_output("default"), layer_prefix + ".shexp_out");
+      shexp_add_sync->set_initial_ids({merge_out_name, layer_prefix + ".shexp_out"});
+      pimpl_->graph->add_node(shexp_add_sync);
+
+      shexp_add->set_input(shexp_add_sync->get_output(), "default");
+      shexp_add->set_input_names(merge_out_name, layer_prefix + ".shexp_out");
+      shexp_add->set_output_name(layer_prefix + ".moe_combined_out");
+      shexp_add->set_node_name(layer_prefix + ".shexp_add");
+      pimpl_->graph->add_node(shexp_add);
+      merge_out = shexp_add->get_output("default");
+      merge_out_name = layer_prefix + ".moe_combined_out";
+    }
 
     // FFN residual
     auto ffn_residual = std::make_shared<add_node>();
     auto ffn_res_sync = std::make_shared<result_message_sync_node>();
     ffn_res_sync->set_input(attn_res_out, layer_prefix + ".attn_residual_out");
-    ffn_res_sync->set_input(merge_out, layer_prefix + ".expert_merge_out");
-    ffn_res_sync->set_initial_ids(
-        {layer_prefix + ".attn_residual_out", layer_prefix + ".expert_merge_out"});
+    ffn_res_sync->set_input(merge_out, merge_out_name);
+    ffn_res_sync->set_initial_ids({layer_prefix + ".attn_residual_out", merge_out_name});
     pimpl_->graph->add_node(ffn_res_sync);
 
     ffn_residual->set_input(ffn_res_sync->get_output(), "default");
-    ffn_residual->set_input_names(layer_prefix + ".attn_residual_out",
-                                  layer_prefix + ".expert_merge_out");
+    ffn_residual->set_input_names(layer_prefix + ".attn_residual_out", merge_out_name);
     ffn_residual->set_output_name(layer_prefix + ".ffn_residual_out");
     ffn_residual->set_node_name(layer_prefix + ".ffn_residual");
     pimpl_->graph->add_node(ffn_residual);
@@ -1091,6 +1334,7 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
     std::vector<int64_t> shape;
     dynamic_tensor input_tensor;
     dynamic_tensor position_ids_tensor;
+    dynamic_tensor attn_scale_tensor;
 
     if (step == 0) {
       // ===== Prefill phase: process all prompt tokens =====
@@ -1107,6 +1351,22 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
       for (size_t j = 0; j < tokens.size(); ++j) {
         pos_data[j] = static_cast<int64_t>(j);
       }
+
+      // attn_scale shape [1,1,seq_len,1] for broadcasting with Q [B,H,S,D]
+      const int64_t seq_len = static_cast<int64_t>(tokens.size());
+      attn_scale_tensor = dynamic_tensor(dtype::float32, {1, 1, seq_len, 1});
+      float* scale_data = attn_scale_tensor.data_ptr<float>();
+      for (int64_t j = 0; j < seq_len; ++j) {
+        if (pimpl_->attn_temp_floor_scale > 0 && std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
+          const float pos = static_cast<float>(j);
+          const float bucket = std::floor((pos + pimpl_->attn_temp_offset) /
+                                          static_cast<float>(pimpl_->attn_temp_floor_scale)) +
+                               1.0f;
+          scale_data[j] = std::log(bucket) * pimpl_->attn_temp_scale + 1.0f;
+        } else {
+          scale_data[j] = 1.0f;
+        }
+      }
       pimpl_->cached_position_ = tokens.size();
     } else {
       // ===== Decode phase: process only the last token =====
@@ -1119,11 +1379,25 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
       position_ids_tensor = dynamic_tensor(dtype::int64, {1});
       int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
       pos_data[0] = pimpl_->cached_position_;
+
+      attn_scale_tensor = dynamic_tensor(dtype::float32, {1, 1, 1, 1});
+      float* scale_data = attn_scale_tensor.data_ptr<float>();
+      if (pimpl_->attn_temp_floor_scale > 0 && std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
+        const float pos = static_cast<float>(pimpl_->cached_position_);
+        const float bucket = std::floor((pos + pimpl_->attn_temp_offset) /
+                                        static_cast<float>(pimpl_->attn_temp_floor_scale)) +
+                             1.0f;
+        scale_data[0] = std::log(bucket) * pimpl_->attn_temp_scale + 1.0f;
+      } else {
+        scale_data[0] = 1.0f;
+      }
+
       pimpl_->cached_position_++;
     }
 
     pimpl_->input_node->set_tensor("input_ids", input_tensor);
     pimpl_->input_node->set_tensor("position_ids", position_ids_tensor);
+    pimpl_->input_node->set_tensor("attn_scale", attn_scale_tensor);
     pimpl_->input_node->set_frame_number(step + 1);
     pimpl_->input_node->push();
 

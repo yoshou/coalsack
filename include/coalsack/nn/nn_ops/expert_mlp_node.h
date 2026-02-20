@@ -24,8 +24,16 @@ namespace coalsack {
 // - Router output: 4D tensor [batch, seq_len, top_k, 2] where last dim is [expert_id, weight]
 class expert_mlp_node : public graph_node {
  public:
+  enum class activation_type {
+    MODIFIED_SWIGLU,  // gpt-oss: alpha=1.702, clipping, +1 offset
+    STANDARD_SWIGLU,  // Llama-4: silu(gate) * up
+  };
+
   explicit expert_mlp_node(int expert_id = 0)
-      : graph_node(), expert_id_(expert_id), output_(std::make_shared<graph_edge>(this)) {
+      : graph_node(),
+        expert_id_(expert_id),
+        output_(std::make_shared<graph_edge>(this)),
+        activation_type_(activation_type::MODIFIED_SWIGLU) {
     set_output(output_);
   }
 
@@ -36,6 +44,12 @@ class expert_mlp_node : public graph_node {
   void set_input_names(const std::vector<std::string>& names) { input_names_ = names; }
   void set_output_name(const std::string& name) { output_name_ = name; }
   void set_node_name(const std::string& name) { node_name_ = name; }
+  void set_activation_type(activation_type t) { activation_type_ = t; }
+  activation_type get_activation_type() const { return activation_type_; }
+
+  // When true, multiply router weight into hidden_vec BEFORE the FFN.
+  // When false (default), expert_merge multiplies weights after FFN.
+  void set_weight_before_ffn(bool v) { weight_before_ffn_ = v; }
 
   std::vector<std::string> get_input_names() const { return input_names_; }
   std::string get_output_name() const { return output_name_; }
@@ -52,7 +66,7 @@ class expert_mlp_node : public graph_node {
                           const float* b_down_data, float* output_vec, int64_t hidden_dim,
                           int64_t expert_ffn_dim) {
     compute_token_mxfp4(hidden_vec, w_up_data, w_gate_data, w_down_data, b_up_data, b_gate_data,
-                        b_down_data, output_vec, hidden_dim, expert_ffn_dim);
+                        b_down_data, output_vec, hidden_dim, expert_ffn_dim, activation_type_);
   }
 
   // Override process() to handle both FP16 and MXFP4 weights
@@ -139,6 +153,8 @@ class expert_mlp_node : public graph_node {
   std::vector<std::string> input_names_;
   std::string output_name_;
   std::string node_name_;
+  activation_type activation_type_;
+  bool weight_before_ffn_ = false;
 
   // SIMD register structure for 32 FP32 elements (4 x __m256)
   struct simd_block_32 {
@@ -251,21 +267,23 @@ class expert_mlp_node : public graph_node {
 
   // Compute with FP16 weights
   dynamic_tensor compute_fp16(const std::vector<dynamic_tensor>& inputs) {
-    // Validate input count
-    if (inputs.size() != 8) {
+    // Validate input count: 5 without bias, 8 with bias
+    if (inputs.size() != 5 && inputs.size() != 8) {
       throw std::runtime_error(
-          "expert_mlp: expected 8 inputs (hidden_states, weights, biases, router_output), got " +
+          "expert_mlp: expected 5 or 8 inputs (hidden, w_up, w_gate, w_down[, b_up, b_gate, "
+          "b_down], router_output), got " +
           std::to_string(inputs.size()));
     }
 
+    const bool has_bias = (inputs.size() == 8);
     const auto& hidden_states = inputs[0];
     const auto& w_up = inputs[1];
     const auto& w_gate = inputs[2];
     const auto& w_down = inputs[3];
-    const auto& b_up = inputs[4];
-    const auto& b_gate = inputs[5];
-    const auto& b_down = inputs[6];
-    const auto& router_output = inputs[7];
+    const dynamic_tensor* b_up_ptr = has_bias ? &inputs[4] : nullptr;
+    const dynamic_tensor* b_gate_ptr = has_bias ? &inputs[5] : nullptr;
+    const dynamic_tensor* b_down_ptr = has_bias ? &inputs[6] : nullptr;
+    const auto& router_output = inputs[has_bias ? 7 : 4];
 
     // Validate router_output shape: [batch, seq_len, top_k, 2]
     if (router_output.ndim() != 4 || router_output.dim(3) != 2) {
@@ -324,21 +342,26 @@ class expert_mlp_node : public graph_node {
                                std::to_string(w_down.dim(1)) + "]");
     }
 
-    // Validate bias shapes: [expert_ffn_dim] or [hidden_dim] (1D slices)
-    if (b_up.ndim() != 1 || b_up.dim(0) != expert_ffn_dim) {
-      throw std::runtime_error(
-          "expert_mlp: b_up must be [expert_ffn_dim=" + std::to_string(expert_ffn_dim) +
-          "], got [" + std::to_string(b_up.dim(0)) + "]");
-    }
-    if (b_gate.ndim() != 1 || b_gate.dim(0) != expert_ffn_dim) {
-      throw std::runtime_error(
-          "expert_mlp: b_gate must be [expert_ffn_dim=" + std::to_string(expert_ffn_dim) +
-          "], got [" + std::to_string(b_gate.dim(0)) + "]");
-    }
-    if (b_down.ndim() != 1 || b_down.dim(0) != hidden_dim) {
-      throw std::runtime_error(
-          "expert_mlp: b_down must be [hidden_dim=" + std::to_string(hidden_dim) + "], got [" +
-          std::to_string(b_down.dim(0)) + "]");
+    // Validate bias shapes (only when bias is present)
+    if (b_up_ptr) {
+      const auto& b_up = *b_up_ptr;
+      const auto& b_gate = *b_gate_ptr;
+      const auto& b_down = *b_down_ptr;
+      if (b_up.ndim() != 1 || b_up.dim(0) != expert_ffn_dim) {
+        throw std::runtime_error(
+            "expert_mlp: b_up must be [expert_ffn_dim=" + std::to_string(expert_ffn_dim) +
+            "], got [" + std::to_string(b_up.dim(0)) + "]");
+      }
+      if (b_gate.ndim() != 1 || b_gate.dim(0) != expert_ffn_dim) {
+        throw std::runtime_error(
+            "expert_mlp: b_gate must be [expert_ffn_dim=" + std::to_string(expert_ffn_dim) +
+            "], got [" + std::to_string(b_gate.dim(0)) + "]");
+      }
+      if (b_down.ndim() != 1 || b_down.dim(0) != hidden_dim) {
+        throw std::runtime_error(
+            "expert_mlp: b_down must be [hidden_dim=" + std::to_string(hidden_dim) + "], got [" +
+            std::to_string(b_down.dim(0)) + "]");
+      }
     }
 
     // Validate dtype: weights must be FLOAT16
@@ -355,38 +378,56 @@ class expert_mlp_node : public graph_node {
     // Allocate output: same shape as hidden_states
     dynamic_tensor output(dtype::float32, hidden_states.shape());
 
-    // Compute gated MLP with biases (with per-token conditional execution)
-    compute_impl(hidden_states, w_up, w_gate, w_down, b_up, b_gate, b_down, router_output, output,
-                 batch, seq_len, hidden_dim, expert_ffn_dim);
+    // Compute gated MLP with optional biases (with per-token conditional execution)
+    compute_impl(hidden_states, w_up, w_gate, w_down,
+                 b_up_ptr ? b_up_ptr->data_ptr<float>() : nullptr,
+                 b_gate_ptr ? b_gate_ptr->data_ptr<float>() : nullptr,
+                 b_down_ptr ? b_down_ptr->data_ptr<float>() : nullptr, router_output, output, batch,
+                 seq_len, hidden_dim, expert_ffn_dim);
 
     return output;
   }
 
   // Compute with MXFP4 weights
   dynamic_tensor compute_with_mxfp4(const std::vector<graph_message_ptr>& input_msgs) {
+    // 5 inputs without bias, 8 with bias
+    if (input_msgs.size() != 5 && input_msgs.size() != 8) {
+      throw std::runtime_error("expert_mlp: expected 5 or 8 inputs for MXFP4, got " +
+                               std::to_string(input_msgs.size()));
+    }
+    const bool has_bias = (input_msgs.size() == 8);
+
     // Extract inputs
     auto hidden_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[0]);
     auto w_up_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[1]);
     auto w_gate_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[2]);
     auto w_down_msg = std::dynamic_pointer_cast<dynamic_mx_tensor_message>(input_msgs[3]);
-    auto b_up_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[4]);
-    auto b_gate_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[5]);
-    auto b_down_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[6]);
-    auto router_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[7]);
+    auto router_msg =
+        std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[has_bias ? 7 : 4]);
 
-    if (!hidden_msg || !w_up_msg || !w_gate_msg || !w_down_msg || !b_up_msg || !b_gate_msg ||
-        !b_down_msg || !router_msg) {
+    std::shared_ptr<dynamic_tensor_message> b_up_msg, b_gate_msg, b_down_msg;
+    if (has_bias) {
+      b_up_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[4]);
+      b_gate_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[5]);
+      b_down_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(input_msgs[6]);
+    }
+
+    if (!hidden_msg || !w_up_msg || !w_gate_msg || !w_down_msg || !router_msg) {
       throw std::runtime_error("expert_mlp: invalid input message types for MXFP4");
+    }
+    if (has_bias && (!b_up_msg || !b_gate_msg || !b_down_msg)) {
+      throw std::runtime_error("expert_mlp: invalid bias message types for MXFP4");
     }
 
     const auto& hidden_states = hidden_msg->get_tensor();
     const auto& w_up_mx = w_up_msg->get_mx_tensor();
     const auto& w_gate_mx = w_gate_msg->get_mx_tensor();
     const auto& w_down_mx = w_down_msg->get_mx_tensor();
-    const auto& b_up = b_up_msg->get_tensor();
-    const auto& b_gate = b_gate_msg->get_tensor();
-    const auto& b_down = b_down_msg->get_tensor();
     const auto& router_output = router_msg->get_tensor();
+    dynamic_tensor b_up_empty, b_gate_empty, b_down_empty;
+    const dynamic_tensor& b_up = has_bias ? b_up_msg->get_tensor() : b_up_empty;
+    const dynamic_tensor& b_gate = has_bias ? b_gate_msg->get_tensor() : b_gate_empty;
+    const dynamic_tensor& b_down = has_bias ? b_down_msg->get_tensor() : b_down_empty;
 
     // Validate shapes
     if (hidden_states.ndim() != 3) {
@@ -434,8 +475,11 @@ class expert_mlp_node : public graph_node {
     dynamic_tensor output(dtype::float32, hidden_states.shape());
 
     // Compute
-    compute_impl_mxfp4(hidden_states, w_up_mx, w_gate_mx, w_down_mx, b_up, b_gate, b_down,
-                       router_output, output, batch, seq_len, hidden_dim, expert_ffn_dim);
+    compute_impl_mxfp4(hidden_states, w_up_mx, w_gate_mx, w_down_mx,
+                       has_bias ? b_up.data_ptr<float>() : nullptr,
+                       has_bias ? b_gate.data_ptr<float>() : nullptr,
+                       has_bias ? b_down.data_ptr<float>() : nullptr, router_output, output, batch,
+                       seq_len, hidden_dim, expert_ffn_dim);
 
     return output;
   }
@@ -443,17 +487,14 @@ class expert_mlp_node : public graph_node {
   // Compute implementation for MXFP4 weights
   void compute_impl_mxfp4(const dynamic_tensor& hidden_states, const dynamic_mx_tensor& w_up_mx,
                           const dynamic_mx_tensor& w_gate_mx, const dynamic_mx_tensor& w_down_mx,
-                          const dynamic_tensor& b_up, const dynamic_tensor& b_gate,
-                          const dynamic_tensor& b_down, const dynamic_tensor& router_output,
+                          const float* b_up_data, const float* b_gate_data,
+                          const float* b_down_data, const dynamic_tensor& router_output,
                           dynamic_tensor& output, int64_t batch, int64_t seq_len,
                           int64_t hidden_dim, int64_t expert_ffn_dim) {
     const float* hidden_data = hidden_states.data_ptr<float>();
     const uint8_t* w_up_data = w_up_mx.data_ptr();
     const uint8_t* w_gate_data = w_gate_mx.data_ptr();
     const uint8_t* w_down_data = w_down_mx.data_ptr();
-    const float* b_up_data = b_up.data_ptr<float>();
-    const float* b_gate_data = b_gate.data_ptr<float>();
-    const float* b_down_data = b_down.data_ptr<float>();
     float* out_data = output.data_ptr<float>();
     const float* router_data = router_output.data_ptr<float>();
     int64_t top_k = router_output.dim(2);
@@ -471,8 +512,19 @@ class expert_mlp_node : public graph_node {
         }
 
         // Process selected token with MXFP4
-        compute_token_mxfp4(hidden_vec, w_up_data, w_gate_data, w_down_data, b_up_data, b_gate_data,
-                            b_down_data, output_vec, hidden_dim, expert_ffn_dim);
+        if (weight_before_ffn_) {
+          // Scale input by routing weight before FFN
+          float wt = get_router_weight(router_data, b, s, seq_len, top_k, expert_id_);
+          std::vector<float> scaled(hidden_dim);
+          for (int64_t d = 0; d < hidden_dim; ++d) scaled[d] = hidden_vec[d] * wt;
+          compute_token_mxfp4(scaled.data(), w_up_data, w_gate_data, w_down_data, b_up_data,
+                              b_gate_data, b_down_data, output_vec, hidden_dim, expert_ffn_dim,
+                              activation_type_);
+        } else {
+          compute_token_mxfp4(hidden_vec, w_up_data, w_gate_data, w_down_data, b_up_data,
+                              b_gate_data, b_down_data, output_vec, hidden_dim, expert_ffn_dim,
+                              activation_type_);
+        }
       }
     }
   }
@@ -481,17 +533,17 @@ class expert_mlp_node : public graph_node {
   __attribute__((target("f16c,avx2,fma"))) void compute_token(
       const float* hidden_vec, const uint16_t* w_up_data, const uint16_t* w_gate_data,
       const uint16_t* w_down_data, const float* b_up_data, const float* b_gate_data,
-      const float* b_down_data, float* output_vec, int64_t hidden_dim,
-      int64_t expert_ffn_dim) const {
+      const float* b_down_data, float* output_vec, int64_t hidden_dim, int64_t expert_ffn_dim,
+      activation_type act_type) const {
     constexpr float alpha = 1.702f;
     constexpr float limit = 7.0f;
 
     // Allocate intermediate buffer for activated values
     std::vector<float> activated(expert_ffn_dim);
 
-    // Step 1: Up/gate projections with biases, then modified SwiGLU activation
+    // Step 1: Up/gate projections with optional biases, then SwiGLU activation
     // Weights: [expert_ffn_dim, hidden_dim]
-    // Biases: [expert_ffn_dim]
+    // Biases: [expert_ffn_dim] (optional)
     // Access w[out_idx][in_idx] via: out_idx * hidden_dim + in_idx
     // Access b[out_idx] via: out_idx
     for (int64_t out_idx = 0; out_idx < expert_ffn_dim; ++out_idx) {
@@ -532,24 +584,30 @@ class expert_mlp_node : public graph_node {
         gate_sum += hidden_vec[in_idx] * w_gate_f32;
       }
 
-      // Add biases: b[out_idx]
-      const float up_v = up_sum + b_up_data[out_idx];
-      const float gate_v = gate_sum + b_gate_data[out_idx];
+      // Add optional biases
+      const float up_v = up_sum + (b_up_data ? b_up_data[out_idx] : 0.0f);
+      const float gate_v = gate_sum + (b_gate_data ? b_gate_data[out_idx] : 0.0f);
 
-      // Modified SwiGLU activation with clipping:
-      //   gate_clipped = min(gate_v, limit)
-      //   up_clipped = clamp(up_v, -limit, limit)
-      //   activation = (gate_clipped / (1 + exp(-alpha * gate_clipped))) * (up_clipped + 1)
-      const float x = std::min(gate_v, limit);
-      const float y = std::clamp(up_v, -limit, limit);
-      const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
-
-      activated[out_idx] = out_glu * (y + 1.0f);
+      // SwiGLU activation
+      if (act_type == activation_type::MODIFIED_SWIGLU) {
+        // Modified SwiGLU activation with clipping:
+        //   gate_clipped = min(gate_v, limit)
+        //   up_clipped = clamp(up_v, -limit, limit)
+        //   activation = (gate_clipped / (1 + exp(-alpha * gate_clipped))) * (up_clipped + 1)
+        const float x = std::min(gate_v, limit);
+        const float y = std::clamp(up_v, -limit, limit);
+        const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
+        activated[out_idx] = out_glu * (y + 1.0f);
+      } else {
+        // Standard SwiGLU: silu(gate) * up
+        const float silu_gate = gate_v / (1.0f + std::exp(-gate_v));
+        activated[out_idx] = silu_gate * up_v;
+      }
     }
 
-    // Step 2: Down projection with bias
+    // Step 2: Down projection with optional bias
     // Weights: [hidden_dim, expert_ffn_dim]
-    // Biases: [hidden_dim]
+    // Biases: [hidden_dim] (optional)
     // Access w[out_idx][in_idx] via: out_idx * expert_ffn_dim + in_idx
     // Access b[out_idx] via: out_idx
     for (int64_t out_idx = 0; out_idx < hidden_dim; ++out_idx) {
@@ -583,8 +641,8 @@ class expert_mlp_node : public graph_node {
         sum += activated[in_idx] * w_down_f32;
       }
 
-      // Add down projection bias: b[out_idx]
-      output_vec[out_idx] = sum + b_down_data[out_idx];
+      // Add optional down projection bias
+      output_vec[out_idx] = sum + (b_down_data ? b_down_data[out_idx] : 0.0f);
     }
   }
 
@@ -593,8 +651,8 @@ class expert_mlp_node : public graph_node {
   __attribute__((target("f16c,avx2,fma"))) void compute_token_mxfp4(
       const float* hidden_vec, const uint8_t* w_up_data, const uint8_t* w_gate_data,
       const uint8_t* w_down_data, const float* b_up_data, const float* b_gate_data,
-      const float* b_down_data, float* output_vec, int64_t hidden_dim,
-      int64_t expert_ffn_dim) const {
+      const float* b_down_data, float* output_vec, int64_t hidden_dim, int64_t expert_ffn_dim,
+      activation_type act_type) const {
     constexpr int TILE = 2;
     constexpr float alpha = 1.702f;
     constexpr float limit = 7.0f;
@@ -634,12 +692,19 @@ class expert_mlp_node : public graph_node {
       }
 
       for (int t = 0; t < TILE; ++t) {
-        const float up_v = horizontal_sum_avx2(up_acc[t]) + b_up_data[out_idx + t];
-        const float gate_v = horizontal_sum_avx2(gate_acc[t]) + b_gate_data[out_idx + t];
-        const float x = std::min(gate_v, limit);
-        const float y = std::clamp(up_v, -limit, limit);
-        const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
-        activated[out_idx + t] = out_glu * (y + 1.0f);
+        const float up_v =
+            horizontal_sum_avx2(up_acc[t]) + (b_up_data ? b_up_data[out_idx + t] : 0.0f);
+        const float gate_v =
+            horizontal_sum_avx2(gate_acc[t]) + (b_gate_data ? b_gate_data[out_idx + t] : 0.0f);
+        if (act_type == activation_type::MODIFIED_SWIGLU) {
+          const float x = std::min(gate_v, limit);
+          const float y = std::clamp(up_v, -limit, limit);
+          const float out_glu = x / (1.0f + std::exp(alpha * (-x)));
+          activated[out_idx + t] = out_glu * (y + 1.0f);
+        } else {
+          const float silu_gate = gate_v / (1.0f + std::exp(-gate_v));
+          activated[out_idx + t] = silu_gate * up_v;
+        }
       }
     }
 
@@ -660,7 +725,8 @@ class expert_mlp_node : public graph_node {
       }
 
       for (int t = 0; t < TILE; ++t) {
-        output_vec[out_idx + t] = horizontal_sum_avx2(acc[t]) + b_down_data[out_idx + t];
+        output_vec[out_idx + t] =
+            horizontal_sum_avx2(acc[t]) + (b_down_data ? b_down_data[out_idx + t] : 0.0f);
       }
     }
   }
@@ -673,17 +739,13 @@ class expert_mlp_node : public graph_node {
   // Token-level conditional execution: only compute for tokens that selected this expert
   void compute_impl(const dynamic_tensor& hidden_states, const dynamic_tensor& w_up,
                     const dynamic_tensor& w_gate, const dynamic_tensor& w_down,
-                    const dynamic_tensor& b_up, const dynamic_tensor& b_gate,
-                    const dynamic_tensor& b_down, const dynamic_tensor& router_output,
-                    dynamic_tensor& output, int64_t batch, int64_t seq_len, int64_t hidden_dim,
-                    int64_t expert_ffn_dim) {
+                    const float* b_up_data, const float* b_gate_data, const float* b_down_data,
+                    const dynamic_tensor& router_output, dynamic_tensor& output, int64_t batch,
+                    int64_t seq_len, int64_t hidden_dim, int64_t expert_ffn_dim) {
     const float* hidden_data = hidden_states.data_ptr<float>();
     const uint16_t* w_up_data = w_up.data_ptr<uint16_t>();
     const uint16_t* w_gate_data = w_gate.data_ptr<uint16_t>();
     const uint16_t* w_down_data = w_down.data_ptr<uint16_t>();
-    const float* b_up_data = b_up.data_ptr<float>();
-    const float* b_gate_data = b_gate.data_ptr<float>();
-    const float* b_down_data = b_down.data_ptr<float>();
     float* out_data = output.data_ptr<float>();
     const float* router_data = router_output.data_ptr<float>();
     int64_t top_k = router_output.dim(2);
@@ -701,9 +763,18 @@ class expert_mlp_node : public graph_node {
           continue;
         }
 
-        // Process selected token
-        compute_token(hidden_vec, w_up_data, w_gate_data, w_down_data, b_up_data, b_gate_data,
-                      b_down_data, output_vec, hidden_dim, expert_ffn_dim);
+        if (weight_before_ffn_) {
+          // Scale input by routing weight before FFN
+          float w = get_router_weight(router_data, b, s, seq_len, top_k, expert_id_);
+          std::vector<float> scaled(hidden_dim);
+          for (int64_t d = 0; d < hidden_dim; ++d) scaled[d] = hidden_vec[d] * w;
+          compute_token(scaled.data(), w_up_data, w_gate_data, w_down_data, b_up_data, b_gate_data,
+                        b_down_data, output_vec, hidden_dim, expert_ffn_dim, activation_type_);
+        } else {
+          // Process selected token
+          compute_token(hidden_vec, w_up_data, w_gate_data, w_down_data, b_up_data, b_gate_data,
+                        b_down_data, output_vec, hidden_dim, expert_ffn_dim, activation_type_);
+        }
       }
     }
   }
@@ -719,6 +790,18 @@ class expert_mlp_node : public graph_node {
       }
     }
     return false;
+  }
+
+  // Get routing weight for a specific expert/token
+  float get_router_weight(const float* router_data, int64_t b, int64_t s, int64_t seq_len,
+                          int64_t top_k, int expert_id) const {
+    int64_t base_idx = (b * seq_len + s) * top_k * 2;
+    for (int64_t k = 0; k < top_k; ++k) {
+      if (static_cast<int>(router_data[base_idx + k * 2]) == expert_id) {
+        return router_data[base_idx + k * 2 + 1];
+      }
+    }
+    return 0.0f;
   }
 
   // Check if any token in the batch selected this expert (for early return)

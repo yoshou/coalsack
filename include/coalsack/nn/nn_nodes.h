@@ -25,6 +25,7 @@
 #include "coalsack/nn/nn_ops/greater_node.h"
 #include "coalsack/nn/nn_ops/grid_sample_node.h"
 #include "coalsack/nn/nn_ops/grouped_attention_node.h"
+#include "coalsack/nn/nn_ops/l2norm_node.h"
 #include "coalsack/nn/nn_ops/layer_normalization_node.h"
 #include "coalsack/nn/nn_ops/log_node.h"
 #include "coalsack/nn/nn_ops/log_softmax_node.h"

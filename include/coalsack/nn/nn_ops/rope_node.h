@@ -26,10 +26,14 @@ namespace coalsack {
 // - "linear": Simple frequency scaling by 1/scaling_factor
 // - "yarn": Advanced scaling with interpolation and extrapolation mixing
 //           Supports corr-dims for selective dimension scaling
+//
+// RoPE Rotation Styles:
+// - neox (default): NeoX-style - pairs (x[d], x[d+half_dim]) for d in [0, half_dim)
+// - norm: GPT-J/NORM-style - adjacent pairs (x[2d], x[2d+1]) for d in [0, half_dim)
 class rope_node : public variadic_op_node {
  public:
   rope_node()
-      : variadic_op_node("rope", 1),  // Default: 1 required input (can accept 2)
+      : variadic_op_node("rope", 1),  // Default: 1 required input (can accept 2 or 3)
         head_dim_(0),
         base_(10000.0f),
         scaling_factor_(1.0f),
@@ -38,7 +42,11 @@ class rope_node : public variadic_op_node {
         yarn_ext_factor_(-1.0f),
         yarn_attn_factor_(1.0f),
         yarn_beta_fast_(32.0f),
-        yarn_beta_slow_(1.0f) {}
+        yarn_beta_slow_(1.0f),
+        use_neox_style_(true) {}
+
+  // Set rotation style: true = NeoX (split-half), false = NORM/GPT-J (adjacent pairs)
+  void set_neox_style(bool v) { use_neox_style_ = v; }
 
   // Simplified configuration (backward compatible)
   // If scaling_factor is 1.0, uses "none" (no scaling), otherwise "linear"
@@ -81,8 +89,10 @@ class rope_node : public variadic_op_node {
 
  protected:
   dynamic_tensor compute(const std::vector<dynamic_tensor>& inputs) override {
-    if (inputs.empty() || inputs.size() > 2) {
-      throw std::runtime_error("rope: expected 1 or 2 inputs (tensor, optional position_ids)");
+    if (inputs.empty() || inputs.size() > 3) {
+      throw std::runtime_error(
+          "rope: expected 1, 2, or 3 inputs (tensor, optional position_ids, optional "
+          "freq_factors)");
     }
 
     const auto& input = inputs[0];
@@ -100,9 +110,12 @@ class rope_node : public variadic_op_node {
     int64_t seq_len = shape[2];
     int64_t head_dim = shape[3];
 
-    // Parse optional position_ids
+    // Parse optional position_ids and optional freq_factors
+    const bool has_pos = (inputs.size() >= 2);
+    const bool has_freq = (inputs.size() == 3);
+
     std::vector<int64_t> position_ids;
-    if (inputs.size() == 2) {
+    if (has_pos) {
       const auto& pos_tensor = inputs[1];
       // Debug prints
       // std::cout << "RoPE[" << name() << "] Input2 Dims: " << pos_tensor.ndim() << "\n";
@@ -146,6 +159,21 @@ class rope_node : public variadic_op_node {
         position_ids[i] = i;
       }
     }
+
+    const float* freq_factors = nullptr;
+    int64_t freq_factors_len = 0;
+    if (has_freq) {
+      const auto& freq_tensor = inputs[2];
+      if (freq_tensor.ndim() != 1) {
+        throw std::runtime_error("rope: freq_factors must be 1D [head_dim/2]");
+      }
+      if (freq_tensor.get_dtype() != dtype::float32) {
+        throw std::runtime_error("rope: freq_factors must be float32");
+      }
+      freq_factors = freq_tensor.data_ptr<float>();
+      freq_factors_len = freq_tensor.dim(0);
+    }
+
     // Validate head_dim matches configuration
     if (head_dim != head_dim_) {
       throw std::runtime_error("rope: head_dim mismatch, expected " + std::to_string(head_dim_) +
@@ -165,9 +193,11 @@ class rope_node : public variadic_op_node {
 
     // Dispatch to type-specific implementation
     if (input.get_dtype() == dtype::float32) {
-      compute_impl<float>(input, output, batch, num_heads, seq_len, head_dim, position_ids);
+      compute_impl<float>(input, output, batch, num_heads, seq_len, head_dim, position_ids,
+                          freq_factors, freq_factors_len);
     } else if (input.get_dtype() == dtype::float64) {
-      compute_impl<double>(input, output, batch, num_heads, seq_len, head_dim, position_ids);
+      compute_impl<double>(input, output, batch, num_heads, seq_len, head_dim, position_ids,
+                           freq_factors, freq_factors_len);
     } else {
       throw std::runtime_error("rope: only FLOAT32 and FLOAT64 supported");
     }
@@ -189,6 +219,7 @@ class rope_node : public variadic_op_node {
   float yarn_attn_factor_;
   float yarn_beta_fast_;
   float yarn_beta_slow_;
+  bool use_neox_style_;  // true = NeoX (split-half), false = NORM/GPT-J (adjacent)
 
   // YaRN helper: Compute ramp mixing factor for corr-dims interpolation
   // Returns smooth transition weight in [0, 1] based on dimension index
@@ -216,7 +247,7 @@ class rope_node : public variadic_op_node {
 
   // Compute theta and magnitude scale for given position and dimension
   // Supports multiple scaling strategies: none, linear, YaRN
-  void compute_theta_mscale(int64_t pos, int64_t dim_idx, float& theta_out,
+  void compute_theta_mscale(int64_t pos, int64_t dim_idx, float freq_factor, float& theta_out,
                             float& mscale_out) const {
     // Determine scaling strategy and frequency scale factor
     const bool use_yarn = (scaling_type_ == "yarn");
@@ -249,8 +280,10 @@ class rope_node : public variadic_op_node {
     }
 
     // Base theta for extrapolation: pos / (base^(2*dim_idx/head_dim))
-    const float theta_extrap =
-        float(pos) * std::pow(base_, -2.0f * float(dim_idx) / float(head_dim_));
+    float theta_extrap = float(pos) * std::pow(base_, -2.0f * float(dim_idx) / float(head_dim_));
+    if (freq_factor != 0.0f) {
+      theta_extrap /= freq_factor;
+    }
 
     float theta = theta_extrap;
     float mscale = 1.0f;
@@ -278,14 +311,19 @@ class rope_node : public variadic_op_node {
   }
 
   // Apply RoPE rotation to input tensor
-  // NeoX-style: rotates pairs (x[i], x[i+half_dim]) for i in [0, half_dim)
+  // NeoX-style: rotates pairs (x[d], x[d+half_dim]) for d in [0, half_dim)
+  // NORM-style: rotates adjacent pairs (x[2d], x[2d+1]) for d in [0, half_dim)
   // Computes cos/sin on-the-fly for simplicity
   template <typename T>
   void compute_impl(const dynamic_tensor& input, dynamic_tensor& output, int64_t batch,
                     int64_t num_heads, int64_t seq_len, int64_t head_dim,
-                    const std::vector<int64_t>& position_ids) {
+                    const std::vector<int64_t>& position_ids, const float* freq_factors,
+                    int64_t freq_factors_len) {
     const T* x = input.data_ptr<T>();
     T* out = output.data_ptr<T>();
+
+    // First, copy all input to output (handles identity for unrotated dims)
+    std::copy(x, x + batch * num_heads * seq_len * head_dim, out);
 
     int64_t half_dim = head_dim / 2;
 
@@ -295,34 +333,41 @@ class rope_node : public variadic_op_node {
         for (int64_t pos = 0; pos < seq_len; ++pos) {
           // Get absolute position from position_ids
           int64_t absolute_pos = position_ids[pos];
+          int64_t base_idx = ((b * num_heads + h) * seq_len + pos) * head_dim;
 
           // Rotate each dimension pair with on-the-fly cos/sin computation
           for (int64_t d = 0; d < half_dim; ++d) {
-            // Calculate index for input
-            int64_t base_idx = ((b * num_heads + h) * seq_len + pos) * head_dim;
+            T x0, x1;
+            int64_t idx0, idx1;
 
-            // Get dimension pair to rotate: (x[d], x[d+half_dim])
-            // NeoX-style: split first half and second half
-            T x0 = x[base_idx + d];
-            T x1 = x[base_idx + d + half_dim];
+            if (use_neox_style_) {
+              // NeoX-style: (x[d], x[d+half_dim])
+              idx0 = base_idx + d;
+              idx1 = base_idx + d + half_dim;
+            } else {
+              // NORM/GPT-J-style: adjacent pairs (x[2*d], x[2*d+1])
+              idx0 = base_idx + 2 * d;
+              idx1 = base_idx + 2 * d + 1;
+            }
+
+            x0 = x[idx0];
+            x1 = x[idx1];
 
             // Compute theta and magnitude scale for this position and dimension
+            float freq_factor = 1.0f;
+            if (freq_factors && d < freq_factors_len) {
+              freq_factor = freq_factors[d];
+            }
             float theta, mscale;
-            compute_theta_mscale(absolute_pos, d, theta, mscale);
+            compute_theta_mscale(absolute_pos, d, freq_factor, theta, mscale);
 
             // Compute cos/sin values
             T cos_val = static_cast<T>(std::cos(theta) * mscale);
             T sin_val = static_cast<T>(std::sin(theta) * mscale);
 
             // Apply 2D rotation matrix: [cos -sin; sin cos] @ [x0; x1]
-            out[base_idx + d] = x0 * cos_val - x1 * sin_val;
-            out[base_idx + d + half_dim] = x0 * sin_val + x1 * cos_val;
-          }
-
-          // Handle odd head_dim: copy unpaired last element
-          if (head_dim % 2 != 0) {
-            int64_t base_idx = ((b * num_heads + h) * seq_len + pos) * head_dim;
-            out[base_idx + head_dim - 1] = x[base_idx + head_dim - 1];
+            out[idx0] = x0 * cos_val - x1 * sin_val;
+            out[idx1] = x0 * sin_val + x1 * cos_val;
           }
         }
       }

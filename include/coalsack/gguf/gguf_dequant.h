@@ -207,7 +207,16 @@ inline void dequantize_block_q4_K(const uint8_t* src, float* dst, int64_t k) {
 }
 
 // Dequantize Q6_K block (super-block)
-// Block structure: QK_K/2 bytes ql, QK_K/4 bytes qh, QK_K/16 bytes scales, fp16 d
+// Block layout (ggml dequantize_row_q6_K):
+//   ql[QK_K/2]: lower 4 bits of each quant, interleaved with stride 32.
+//               ql[l] holds low4(val[l]) in bits[3:0] and low4(val[l+64]) in bits[7:4].
+//               ql[l+32] holds low4(val[l+32]) in bits[3:0] and low4(val[l+96]) in bits[7:4].
+//   qh[QK_K/4]: upper 2 bits of each quant, 4 values packed per byte.
+//               qh[l] holds high2(val[l]) in bits[1:0], high2(val[l+32]) in bits[3:2],
+//                       high2(val[l+64]) in bits[5:4], high2(val[l+96]) in bits[7:6].
+//   scales[QK_K/16]: int8 scales (one per 16 elements)
+//   fp16 d: super-block scale
+// Reference: ggml dequantize_row_q6_K
 inline void dequantize_block_q6_K(const uint8_t* src, float* dst, int64_t k) {
   const int nb = k / QK_K;
 
@@ -218,31 +227,33 @@ inline void dequantize_block_q6_K(const uint8_t* src, float* dst, int64_t k) {
     const uint8_t* qh = src;
     src += QK_K / 4;
 
-    const int8_t* scales = reinterpret_cast<const int8_t*>(src);
+    const int8_t* sc = reinterpret_cast<const int8_t*>(src);
     src += QK_K / 16;
 
     const uint16_t* d_ptr = reinterpret_cast<const uint16_t*>(src);
     float d = fp16_to_fp32(*d_ptr);
     src += 2;
 
+    float* y = dst + i * QK_K;
+
+    // Process two halves of 128 elements each
     for (int n = 0; n < QK_K; n += 128) {
       for (int l = 0; l < 32; ++l) {
-        int is = n / 16 + l / 16;
-
-        uint8_t q_low = ql[n / 2 + l];
-        uint8_t q_high = qh[n / 4 + l % 32];
-
-        int q0 = (q_low & 0x0F) | (((q_high >> (2 * (l / 16))) & 0x03) << 4);
-        int q1 = ((q_low >> 4) & 0x0F) | (((q_high >> (2 * (l / 16) + 4)) & 0x03) << 4);
-
-        // Center around 0 (subtract 32)
-        q0 -= 32;
-        q1 -= 32;
-
-        float scale = d * scales[is];
-        dst[i * QK_K + n + l] = scale * q0;
-        dst[i * QK_K + n + l + 32] = scale * q1;
+        const int is = l / 16;
+        // Each qh[l] byte packs upper 2 bits for 4 positions: l, l+32, l+64, l+96
+        const int8_t q1 = static_cast<int8_t>((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+        const int8_t q2 = static_cast<int8_t>((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+        const int8_t q3 = static_cast<int8_t>((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+        const int8_t q4 = static_cast<int8_t>((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+        y[l + 0] = d * static_cast<float>(sc[is + 0]) * static_cast<float>(q1);
+        y[l + 32] = d * static_cast<float>(sc[is + 2]) * static_cast<float>(q2);
+        y[l + 64] = d * static_cast<float>(sc[is + 4]) * static_cast<float>(q3);
+        y[l + 96] = d * static_cast<float>(sc[is + 6]) * static_cast<float>(q4);
       }
+      y += 128;
+      ql += 64;
+      qh += 32;
+      sc += 8;
     }
   }
 }
