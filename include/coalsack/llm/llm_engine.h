@@ -17,7 +17,7 @@ class gpt2_tokenizer;
 class subgraph;
 class graph_proc;
 
-class gpt_oss_engine {
+class llm_engine {
  public:
   struct config {
     int64_t kv_cache_size =
@@ -25,9 +25,9 @@ class gpt_oss_engine {
     size_t moe_cache_size_bytes = 2147483648;  // 2 GiB default
   };
 
-  gpt_oss_engine();
-  explicit gpt_oss_engine(const config& cfg);
-  ~gpt_oss_engine();
+  llm_engine();
+  explicit llm_engine(const config& cfg);
+  ~llm_engine();
 
   // Load model from GGUF file(s)
   bool load(const std::string& gguf_path);

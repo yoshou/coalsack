@@ -33,7 +33,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/gguf/gguf_multi_loader.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/llm/gpt2_tokenizer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/llm/chat_template.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/gpt_oss_engine.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/llm/llm_engine.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/llm/moe_weight_provider.cpp
 )
 
@@ -73,7 +73,7 @@ target_sources(${PROJECT_NAME}
     "${CMAKE_CURRENT_LIST_DIR}/include/coalsack/gguf/gguf_multi_loader.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/coalsack/llm/gpt2_tokenizer.h"
     "${CMAKE_CURRENT_LIST_DIR}/include/coalsack/llm/chat_template.h"
-    "${CMAKE_CURRENT_LIST_DIR}/include/coalsack/llm/gpt_oss_engine.h"
+    "${CMAKE_CURRENT_LIST_DIR}/include/coalsack/llm/llm_engine.h"
 )
 
 include_directories(

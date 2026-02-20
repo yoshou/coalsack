@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "coalsack/llm/chat_template.h"
-#include "coalsack/llm/gpt_oss_engine.h"
+#include "coalsack/llm/llm_engine.h"
 
 using namespace coalsack;
 using json = nlohmann::json;
@@ -88,8 +88,8 @@ int main(int argc, char** argv) {
   std::cout << "  ✓ Prompt built (" << prompt.size() << " chars)\n";
   std::cout << "\n--- Prompt ---\n" << prompt << "\n--- End of Prompt ---\n\n";
 
-  // Load gpt_oss_engine
-  std::cout << "Loading gpt_oss_engine...\n";
+  // Load llm_engine
+  std::cout << "Loading llm_engine...\n";
 
   // model_path is always an array (for both single and multi-file models)
   std::vector<std::string> model_paths = config["model_path"].get<std::vector<std::string>>();
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     std::cout << "    - " << path << "\n";
   }
 
-  gpt_oss_engine::config engine_config;
+  llm_engine::config engine_config;
   if (config.contains("n_ctx")) {
     engine_config.kv_cache_size = config["n_ctx"];
   } else {
@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
   }
   engine_config.moe_cache_size_bytes = 1073741824;  // 1 GiB per layer
   std::cout << "  KV cache size: " << engine_config.kv_cache_size << " tokens\n";
-  gpt_oss_engine engine(engine_config);
+  llm_engine engine(engine_config);
 
   if (!engine.load(model_paths)) {
     std::cerr << "Failed to load engine\n";

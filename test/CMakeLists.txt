@@ -350,21 +350,21 @@ target_compile_definitions(test_onnx_parser PUBLIC
     FMT_HEADER_ONLY
 )
 
-add_executable(test_gpt_oss_engine
-    ${CMAKE_CURRENT_LIST_DIR}/test_gpt_oss_engine.cpp
+add_executable(test_llm_engine
+    ${CMAKE_CURRENT_LIST_DIR}/test_llm_engine.cpp
 )
 
 
-target_include_directories(test_gpt_oss_engine PRIVATE
+target_include_directories(test_llm_engine PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 
-target_link_libraries(test_gpt_oss_engine
+target_link_libraries(test_llm_engine
     coalsack
     pthread
 )
 
-target_compile_definitions(test_gpt_oss_engine PUBLIC
+target_compile_definitions(test_llm_engine PUBLIC
     FMT_HEADER_ONLY
 )
 

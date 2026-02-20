@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "coalsack/llm/gpt_oss_engine.h"
+#include "coalsack/llm/llm_engine.h"
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
@@ -22,10 +22,10 @@ int main(int argc, char* argv[]) {
 
   std::cout << "=== GPT-OSS Engine Test ===\n\n";
 
-  coalsack::gpt_oss_engine::config engine_config;
+  coalsack::llm_engine::config engine_config;
   engine_config.kv_cache_size = 512;
   engine_config.moe_cache_size_bytes = 536870912;  // 512 MiB per layer
-  coalsack::gpt_oss_engine engine(engine_config);
+  coalsack::llm_engine engine(engine_config);
 
   std::cout << "Loading model from " << gguf_paths.size() << " file(s):\n";
   for (const auto& path : gguf_paths) {

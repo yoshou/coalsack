@@ -1,4 +1,4 @@
-#include "coalsack/llm/gpt_oss_engine.h"
+#include "coalsack/llm/llm_engine.h"
 
 #include <spdlog/spdlog.h>
 
@@ -28,7 +28,7 @@
 
 namespace coalsack {
 
-struct gpt_oss_engine::impl {
+struct llm_engine::impl {
   // Config
   config cfg;
 
@@ -96,26 +96,26 @@ struct gpt_oss_engine::impl {
   bool loaded = false;
 };
 
-gpt_oss_engine::gpt_oss_engine() : pimpl_(std::make_unique<impl>()) {
+llm_engine::llm_engine() : pimpl_(std::make_unique<impl>()) {
   pimpl_->loader = std::make_shared<gguf_multi_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = std::numeric_limits<int64_t>::max();
 }
 
-gpt_oss_engine::gpt_oss_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
+llm_engine::llm_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
   pimpl_->cfg = cfg;
   pimpl_->loader = std::make_shared<gguf_multi_loader>();
   pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = cfg.kv_cache_size;
 }
 
-gpt_oss_engine::~gpt_oss_engine() = default;
+llm_engine::~llm_engine() = default;
 
-bool gpt_oss_engine::load(const std::string& gguf_path) {
+bool llm_engine::load(const std::string& gguf_path) {
   return load(std::vector<std::string>{gguf_path});
 }
 
-bool gpt_oss_engine::load(const std::vector<std::string>& gguf_paths) {
+bool llm_engine::load(const std::vector<std::string>& gguf_paths) {
   if (pimpl_->loaded) {
     throw std::runtime_error("Model already loaded");
   }
@@ -143,7 +143,7 @@ bool gpt_oss_engine::load(const std::vector<std::string>& gguf_paths) {
   return true;
 }
 
-void gpt_oss_engine::load_config_from_gguf() {
+void llm_engine::load_config_from_gguf() {
   auto& loader = *pimpl_->loader;
 
   // Detect architecture from GGUF general.architecture
@@ -273,7 +273,7 @@ void gpt_oss_engine::load_config_from_gguf() {
   }
 }
 
-void gpt_oss_engine::load_weights_from_gguf() {
+void llm_engine::load_weights_from_gguf() {
   auto& loader = *pimpl_->loader;
   const auto& tensor_names = loader.get_tensor_names();
   const auto& shard_paths = loader.get_shard_paths();
@@ -397,7 +397,7 @@ void gpt_oss_engine::load_weights_from_gguf() {
   }
 }
 
-void gpt_oss_engine::build_transformer_graph() {
+void llm_engine::build_transformer_graph() {
   pimpl_->graph = std::make_shared<subgraph>();
 
   // Create I/O nodes
@@ -1251,7 +1251,7 @@ void gpt_oss_engine::build_transformer_graph() {
   initialize_kv_caches();
 }
 
-void gpt_oss_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr logits_output) {
+void llm_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr logits_output) {
   pimpl_->input_node = std::make_shared<model_source_node>();
   pimpl_->output_node = std::make_shared<model_output_node>();
 
@@ -1291,8 +1291,7 @@ void gpt_oss_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_
   pimpl_->proc->deploy(pimpl_->graph);
 }
 
-std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_tokens,
-                                     float temperature) {
+std::string llm_engine::generate(const std::string& prompt, size_t max_tokens, float temperature) {
   if (!pimpl_->loaded) {
     throw std::runtime_error("Model not loaded");
   }
@@ -1440,7 +1439,7 @@ std::string gpt_oss_engine::generate(const std::string& prompt, size_t max_token
   return generated_text;
 }
 
-uint32_t gpt_oss_engine::sample_token(const float* logits, int64_t vocab_size, float temperature) {
+uint32_t llm_engine::sample_token(const float* logits, int64_t vocab_size, float temperature) {
   if (temperature < 1e-6f) {
     return static_cast<uint32_t>(
         std::distance(logits, std::max_element(logits, logits + vocab_size)));
@@ -1466,15 +1465,15 @@ uint32_t gpt_oss_engine::sample_token(const float* logits, int64_t vocab_size, f
   return static_cast<uint32_t>(dist(gen));
 }
 
-bool gpt_oss_engine::is_loaded() const { return pimpl_->loaded; }
+bool llm_engine::is_loaded() const { return pimpl_->loaded; }
 
-int64_t gpt_oss_engine::get_vocab_size() const { return pimpl_->vocab_size; }
+int64_t llm_engine::get_vocab_size() const { return pimpl_->vocab_size; }
 
-int64_t gpt_oss_engine::get_num_layers() const { return pimpl_->num_layers; }
+int64_t llm_engine::get_num_layers() const { return pimpl_->num_layers; }
 
-int64_t gpt_oss_engine::get_hidden_dim() const { return pimpl_->hidden_dim; }
+int64_t llm_engine::get_hidden_dim() const { return pimpl_->hidden_dim; }
 
-void gpt_oss_engine::initialize_kv_caches() {
+void llm_engine::initialize_kv_caches() {
   if (pimpl_->attention_nodes.empty()) {
     return;
   }
@@ -1503,7 +1502,7 @@ void gpt_oss_engine::initialize_kv_caches() {
   }
 }
 
-void gpt_oss_engine::reset_kv_caches() {
+void llm_engine::reset_kv_caches() {
   for (auto& attn_node : pimpl_->attention_nodes) {
     attn_node->reset_cache();
   }
