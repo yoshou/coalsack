@@ -37,6 +37,10 @@ class graph_builder {
     int64_t expert_top_k = 0;
     bool use_sigmoid_gating = false;
     bool weight_before_ffn = false;
+    // Attention temperature (ISWA) config — used to build attn_scale in graph
+    int64_t attn_temp_floor_scale = 0;  // 0 means temperature scaling is disabled
+    float attn_temp_scale = 0.0f;
+    float attn_temp_offset = 0.0f;
   };
 
   graph_builder(std::shared_ptr<subgraph> graph, const config& cfg)
@@ -363,6 +367,150 @@ class graph_builder {
     node->set_input_names(input_names);
     node->set_output_name(out_name);
     node->set_node_name(lprefix + ".expert_merge");
+    graph_->add_node(node);
+    return node->get_output("default");
+  }
+
+  // cast_node — single input, no sync required
+  graph_edge_ptr make_cast(graph_edge_ptr in, const std::string& in_name, dtype target_dtype,
+                           const std::string& out_name, const std::string& node_name) {
+    auto node = std::make_shared<cast_node>();
+    node->set_target_dtype(target_dtype);
+    node->set_input(in, "default");
+    node->set_input_name(in_name);
+    node->set_output_name(out_name);
+    node->set_node_name(node_name);
+    graph_->add_node(node);
+    return node->get_output("default");
+  }
+
+  // floor_node — single input, no sync required
+  graph_edge_ptr make_floor(graph_edge_ptr in, const std::string& in_name,
+                            const std::string& out_name, const std::string& node_name) {
+    auto node = std::make_shared<floor_node>();
+    node->set_input(in, "default");
+    node->set_input_name(in_name);
+    node->set_output_name(out_name);
+    node->set_node_name(node_name);
+    graph_->add_node(node);
+    return node->get_output("default");
+  }
+
+  // log_node — single input, no sync required
+  graph_edge_ptr make_log(graph_edge_ptr in, const std::string& in_name,
+                          const std::string& out_name, const std::string& node_name) {
+    auto node = std::make_shared<log_node>();
+    node->set_input(in, "default");
+    node->set_input_name(in_name);
+    node->set_output_name(out_name);
+    node->set_node_name(node_name);
+    graph_->add_node(node);
+    return node->get_output("default");
+  }
+
+  // unsqueeze_node — single input, no sync required
+  graph_edge_ptr make_unsqueeze(graph_edge_ptr in, const std::string& in_name,
+                                const std::vector<int64_t>& axes, const std::string& out_name,
+                                const std::string& node_name) {
+    auto node = std::make_shared<unsqueeze_node>();
+    node->set_axes(axes);
+    node->set_input(in, "default");
+    node->set_input_names(in_name);
+    node->set_output_name(out_name);
+    node->set_node_name(node_name);
+    graph_->add_node(node);
+    return node->get_output("default");
+  }
+
+  // Build an attn_scale [1, 1, seq_len, 1] tensor from position_ids in the graph.
+  // Formula: scale[j] = log(floor((pos[j] + offset) / floor_scale) + 1) * temp_scale + 1
+  // If disabled (floor_scale == 0 or temp_scale == 0), returns nullptr (caller should use
+  // a constant 1.0 tensor or skip the multiplication).
+  graph_edge_ptr make_attn_scale_from_pos_ids(graph_edge_ptr pos_ids, const std::string& prefix,
+                                              graph_edge_ptr frame_ref) {
+    if (cfg_.attn_temp_floor_scale <= 0 || std::abs(cfg_.attn_temp_scale) < 1e-12f) {
+      return nullptr;
+    }
+    const float floor_scale_f = static_cast<float>(cfg_.attn_temp_floor_scale);
+    const float temp_scale_f = cfg_.attn_temp_scale;
+    const float offset_f = cfg_.attn_temp_offset;
+
+    // Cast position_ids (int64) → float32
+    graph_edge_ptr pos_f = make_cast(pos_ids, "position_ids", dtype::float32,
+                                     prefix + ".atmp_pos_f", prefix + ".atmp_cast");
+
+    // Add offset scalar
+    dynamic_tensor offset_t(dtype::float32, {1});
+    offset_t.data_ptr<float>()[0] = offset_f;
+    graph_edge_ptr offset_edge = make_shape_const(offset_t, prefix + ".atmp_offset", frame_ref);
+    graph_edge_ptr shifted =
+        make_add(pos_f, prefix + ".atmp_pos_f", offset_edge, prefix + ".atmp_offset",
+                 prefix + ".atmp_shifted", prefix + ".atmp_add_offset");
+
+    // Divide by floor_scale scalar
+    dynamic_tensor fs_t(dtype::float32, {1});
+    fs_t.data_ptr<float>()[0] = floor_scale_f;
+    graph_edge_ptr fs_edge = make_shape_const(fs_t, prefix + ".atmp_fs", frame_ref);
+    graph_edge_ptr divided =
+        make_div(shifted, prefix + ".atmp_shifted", fs_edge, prefix + ".atmp_fs",
+                 prefix + ".atmp_divided", prefix + ".atmp_div");
+
+    // Floor
+    graph_edge_ptr floored = make_floor(divided, prefix + ".atmp_divided", prefix + ".atmp_floored",
+                                        prefix + ".atmp_floor");
+
+    // Add 1.0
+    dynamic_tensor one_t(dtype::float32, {1});
+    one_t.data_ptr<float>()[0] = 1.0f;
+    graph_edge_ptr one1_edge = make_shape_const(one_t, prefix + ".atmp_one1", frame_ref);
+    graph_edge_ptr bucket =
+        make_add(floored, prefix + ".atmp_floored", one1_edge, prefix + ".atmp_one1",
+                 prefix + ".atmp_bucket", prefix + ".atmp_add_one");
+
+    // Log
+    graph_edge_ptr log_bucket =
+        make_log(bucket, prefix + ".atmp_bucket", prefix + ".atmp_log", prefix + ".atmp_log_node");
+
+    // Multiply by temp_scale scalar
+    dynamic_tensor ts_t(dtype::float32, {1});
+    ts_t.data_ptr<float>()[0] = temp_scale_f;
+    graph_edge_ptr ts_edge = make_shape_const(ts_t, prefix + ".atmp_ts", frame_ref);
+    graph_edge_ptr scaled = make_mul(log_bucket, prefix + ".atmp_log", ts_edge, prefix + ".atmp_ts",
+                                     prefix + ".atmp_scaled", prefix + ".atmp_mul");
+
+    // Add 1.0 → scale 1D [seq_len]
+    dynamic_tensor one2_t(dtype::float32, {1});
+    one2_t.data_ptr<float>()[0] = 1.0f;
+    graph_edge_ptr one2_edge = make_shape_const(one2_t, prefix + ".atmp_one2", frame_ref);
+    graph_edge_ptr scale_1d =
+        make_add(scaled, prefix + ".atmp_scaled", one2_edge, prefix + ".atmp_one2",
+                 prefix + ".atmp_scale_1d", prefix + ".atmp_add_final");
+
+    // Unsqueeze to [1, 1, seq_len, 1]: axes [0], then [0], then [-1]
+    graph_edge_ptr s2 = make_unsqueeze(scale_1d, prefix + ".atmp_scale_1d", {0},
+                                       prefix + ".atmp_s2", prefix + ".atmp_unsq0a");
+    graph_edge_ptr s3 =
+        make_unsqueeze(s2, prefix + ".atmp_s2", {0}, prefix + ".atmp_s3", prefix + ".atmp_unsq0b");
+    // Output name is "attn_scale" (without prefix) so callers can reference it uniformly.
+    graph_edge_ptr attn_scale =
+        make_unsqueeze(s3, prefix + ".atmp_s3", {-1}, "attn_scale", prefix + ".atmp_unsq_end");
+    return attn_scale;
+  }
+
+  // sync + div_node
+  graph_edge_ptr make_div(graph_edge_ptr in1, const std::string& name1, graph_edge_ptr in2,
+                          const std::string& name2, const std::string& out_name,
+                          const std::string& node_name) {
+    auto sync = std::make_shared<result_message_sync_node>();
+    sync->set_input(in1, name1);
+    sync->set_input(in2, name2);
+    sync->set_initial_ids({name1, name2});
+    graph_->add_node(sync);
+    auto node = std::make_shared<div_node>();
+    node->set_input(sync->get_output(), "default");
+    node->set_input_names(name1, name2);
+    node->set_output_name(out_name);
+    node->set_node_name(node_name);
     graph_->add_node(node);
     return node->get_output("default");
   }

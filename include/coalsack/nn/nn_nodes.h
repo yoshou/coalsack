@@ -20,6 +20,7 @@
 #include "coalsack/nn/nn_ops/expert_merge_node.h"
 #include "coalsack/nn/nn_ops/expert_mlp_node.h"
 #include "coalsack/nn/nn_ops/flatten_node.h"
+#include "coalsack/nn/nn_ops/floor_node.h"
 #include "coalsack/nn/nn_ops/gather_elements_node.h"
 #include "coalsack/nn/nn_ops/gather_node.h"
 #include "coalsack/nn/nn_ops/greater_node.h"

@@ -469,7 +469,6 @@ void llm_engine::build_transformer_graph() {
 
   auto input_ids_edge = extractor->add_output("input_ids");
   auto position_ids_edge = extractor->add_output("position_ids");  // Add position_ids
-  auto attn_scale_edge = extractor->add_output("attn_scale");
   graph_edge_ptr rope_freqs_edge;
   if (pimpl_->weights.find("rope_freqs.weight") != pimpl_->weights.end()) {
     rope_freqs_edge = extractor->add_output("rope_freqs.weight");
@@ -514,7 +513,15 @@ void llm_engine::build_transformer_graph() {
   gb_cfg.expert_top_k = pimpl_->expert_top_k;
   gb_cfg.use_sigmoid_gating = pimpl_->use_sigmoid_gating;
   gb_cfg.weight_before_ffn = pimpl_->weight_before_ffn;
+  gb_cfg.attn_temp_floor_scale = pimpl_->attn_temp_floor_scale;
+  gb_cfg.attn_temp_scale = pimpl_->attn_temp_scale;
+  gb_cfg.attn_temp_offset = pimpl_->attn_temp_offset;
   graph_builder gb(pimpl_->graph, gb_cfg);
+
+  // Compute attn_scale [1,1,seq_len,1] from position_ids inside the graph.
+  // Returns nullptr when temperature scaling is disabled.
+  graph_edge_ptr attn_scale_edge =
+      gb.make_attn_scale_from_pos_ids(position_ids_edge, "attn_scale", token_embd_weight_edge_raw);
 
   // Embedding layer
   graph_edge_ptr current = gb.make_embedding(input_ids_edge, "input_ids", token_embd_weight_edge,
@@ -620,7 +627,7 @@ void llm_engine::build_transformer_graph() {
     std::string q_rope_edge_name;
     if (is_no_rope_layer) {
       // No-rope layer: skip positional encoding, apply optional Q temperature scaling
-      if (pimpl_->attn_temp_floor_scale > 0 && std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
+      if (attn_scale_edge) {
         q_rope =
             gb.make_mul(q_transposed, layer_prefix + ".q_transposed", attn_scale_edge, "attn_scale",
                         layer_prefix + ".q_attn_temp_scaled", layer_prefix + ".q_attn_temp_mul");
@@ -901,7 +908,6 @@ std::string llm_engine::generate(const std::string& prompt, size_t max_tokens, f
     std::vector<int64_t> shape;
     dynamic_tensor input_tensor;
     dynamic_tensor position_ids_tensor;
-    dynamic_tensor attn_scale_tensor;
 
     if (step == 0) {
       // ===== Prefill phase: process all prompt tokens =====
@@ -919,21 +925,6 @@ std::string llm_engine::generate(const std::string& prompt, size_t max_tokens, f
         pos_data[j] = static_cast<int64_t>(j);
       }
 
-      // attn_scale shape [1,1,seq_len,1] for broadcasting with Q [B,H,S,D]
-      const int64_t seq_len = static_cast<int64_t>(tokens.size());
-      attn_scale_tensor = dynamic_tensor(dtype::float32, {1, 1, seq_len, 1});
-      float* scale_data = attn_scale_tensor.data_ptr<float>();
-      for (int64_t j = 0; j < seq_len; ++j) {
-        if (pimpl_->attn_temp_floor_scale > 0 && std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
-          const float pos = static_cast<float>(j);
-          const float bucket = std::floor((pos + pimpl_->attn_temp_offset) /
-                                          static_cast<float>(pimpl_->attn_temp_floor_scale)) +
-                               1.0f;
-          scale_data[j] = std::log(bucket) * pimpl_->attn_temp_scale + 1.0f;
-        } else {
-          scale_data[j] = 1.0f;
-        }
-      }
       pimpl_->cached_position_ = tokens.size();
     } else {
       // ===== Decode phase: process only the last token =====
@@ -947,24 +938,11 @@ std::string llm_engine::generate(const std::string& prompt, size_t max_tokens, f
       int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
       pos_data[0] = pimpl_->cached_position_;
 
-      attn_scale_tensor = dynamic_tensor(dtype::float32, {1, 1, 1, 1});
-      float* scale_data = attn_scale_tensor.data_ptr<float>();
-      if (pimpl_->attn_temp_floor_scale > 0 && std::abs(pimpl_->attn_temp_scale) > 1e-12f) {
-        const float pos = static_cast<float>(pimpl_->cached_position_);
-        const float bucket = std::floor((pos + pimpl_->attn_temp_offset) /
-                                        static_cast<float>(pimpl_->attn_temp_floor_scale)) +
-                             1.0f;
-        scale_data[0] = std::log(bucket) * pimpl_->attn_temp_scale + 1.0f;
-      } else {
-        scale_data[0] = 1.0f;
-      }
-
       pimpl_->cached_position_++;
     }
 
     pimpl_->input_node->set_tensor("input_ids", input_tensor);
     pimpl_->input_node->set_tensor("position_ids", position_ids_tensor);
-    pimpl_->input_node->set_tensor("attn_scale", attn_scale_tensor);
     pimpl_->input_node->set_frame_number(step + 1);
     pimpl_->input_node->push();
 
