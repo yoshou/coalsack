@@ -417,3 +417,20 @@ target_compile_definitions(test_gguf_dequant PUBLIC
     FMT_HEADER_ONLY
 )
 
+add_executable(test_vision_encoder
+    ${CMAKE_CURRENT_LIST_DIR}/test_vision_encoder.cpp
+)
+
+target_include_directories(test_vision_encoder PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_vision_encoder
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_vision_encoder PUBLIC
+    FMT_HEADER_ONLY
+)
+
