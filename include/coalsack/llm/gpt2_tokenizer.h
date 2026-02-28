@@ -18,8 +18,8 @@ class gpt2_tokenizer {
   gpt2_tokenizer(const gpt2_tokenizer&) = delete;
   gpt2_tokenizer& operator=(const gpt2_tokenizer&) = delete;
 
-  bool load_from_gguf(const gguf_loader& loader);
-  bool load_from_gguf(const gguf_multi_loader& loader);
+  bool load(const gguf_loader& loader);
+  bool load(const gguf_multi_loader& loader);
 
   std::vector<uint32_t> encode(const std::string& text) const;
   std::string decode(const std::vector<uint32_t>& tokens) const;

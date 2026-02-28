@@ -10,10 +10,11 @@ int main(int argc, char** argv) {
   std::cout << "Testing GPT2 Tokenizer\n";
   std::cout << "======================\n\n";
 
-  std::string model_path = "/workspaces/stargazer/models/gpt-oss-20b-GGUF/gpt-oss-20b-Q4_K_M.gguf";
-  if (argc > 1) {
-    model_path = argv[1];
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <gguf_path>\n";
+    return 1;
   }
+  std::string model_path = argv[1];
 
   gguf_loader loader;
   if (!loader.load(model_path)) {
@@ -24,7 +25,7 @@ int main(int argc, char** argv) {
   auto start = std::chrono::high_resolution_clock::now();
 
   gpt2_tokenizer tokenizer;
-  if (!tokenizer.load_from_gguf(loader)) {
+  if (!tokenizer.load(loader)) {
     std::cerr << "Failed to load tokenizer\n";
     return 1;
   }

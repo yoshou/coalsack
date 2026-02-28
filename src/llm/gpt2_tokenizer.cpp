@@ -272,13 +272,9 @@ bool gpt2_tokenizer::load_from_gguf_impl(const LoaderType& loader) {
   return true;
 }
 
-bool gpt2_tokenizer::load_from_gguf(const gguf_loader& loader) {
-  return load_from_gguf_impl(loader);
-}
+bool gpt2_tokenizer::load(const gguf_loader& loader) { return load_from_gguf_impl(loader); }
 
-bool gpt2_tokenizer::load_from_gguf(const gguf_multi_loader& loader) {
-  return load_from_gguf_impl(loader);
-}
+bool gpt2_tokenizer::load(const gguf_multi_loader& loader) { return load_from_gguf_impl(loader); }
 
 std::vector<uint32_t> gpt2_tokenizer::encode(const std::string& text) const {
   if (!pimpl_->loaded) {

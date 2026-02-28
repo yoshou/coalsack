@@ -9,12 +9,10 @@
 #include <fstream>
 #include <future>
 #include <iostream>
-#include <random>
 
 #include "coalsack/core/graph_proc.h"
 #include "coalsack/gguf/gguf_dequant.h"
 #include "coalsack/gguf/gguf_multi_loader.h"
-#include "coalsack/llm/gpt2_tokenizer.h"
 #include "coalsack/llm/graph_builder.h"
 #include "coalsack/llm/moe_weight_provider.h"
 #include "coalsack/nn/model_io_nodes.h"
@@ -35,7 +33,6 @@ struct llm_engine::impl {
 
   // Components
   std::shared_ptr<gguf_multi_loader> loader;
-  std::unique_ptr<gpt2_tokenizer> tokenizer;
   std::shared_ptr<subgraph> graph;
   std::unique_ptr<graph_proc> proc;
 
@@ -54,6 +51,7 @@ struct llm_engine::impl {
 
   // Position tracking for RoPE
   int64_t cached_position_ = 0;
+  uint64_t step_counter_ = 0;
 
   // Model config (from GGUF metadata)
   int64_t num_layers = 24;
@@ -64,7 +62,6 @@ struct llm_engine::impl {
   int64_t num_experts = 32;
   int64_t expert_top_k = 4;
   int64_t expert_ffn_dim = 2880;
-  int64_t vocab_size = 201088;
   int64_t max_seq_len = 8192;
   int64_t kv_cache_size = std::numeric_limits<int64_t>::max();
 
@@ -97,41 +94,24 @@ struct llm_engine::impl {
   bool loaded = false;
 };
 
-llm_engine::llm_engine() : pimpl_(std::make_unique<impl>()) {
-  pimpl_->loader = std::make_shared<gguf_multi_loader>();
-  pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
-  pimpl_->kv_cache_size = std::numeric_limits<int64_t>::max();
-}
+llm_engine::llm_engine() : pimpl_(std::make_unique<impl>()) {}
 
 llm_engine::llm_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
   pimpl_->cfg = cfg;
-  pimpl_->loader = std::make_shared<gguf_multi_loader>();
-  pimpl_->tokenizer = std::make_unique<gpt2_tokenizer>();
   pimpl_->kv_cache_size = cfg.kv_cache_size;
 }
 
 llm_engine::~llm_engine() = default;
 
-bool llm_engine::load(const std::string& gguf_path) {
-  return load(std::vector<std::string>{gguf_path});
-}
-
-bool llm_engine::load(const std::vector<std::string>& gguf_paths) {
+void llm_engine::load(std::shared_ptr<gguf_multi_loader> loader) {
   if (pimpl_->loaded) {
     throw std::runtime_error("Model already loaded");
   }
-
-  if (gguf_paths.empty()) {
-    throw std::runtime_error("No GGUF files specified");
+  if (!loader) {
+    throw std::runtime_error("loader is null");
   }
 
-  if (!pimpl_->loader->load(gguf_paths)) {
-    throw std::runtime_error("Failed to load GGUF file(s)");
-  }
-
-  if (!pimpl_->tokenizer->load_from_gguf(*pimpl_->loader)) {
-    throw std::runtime_error("Failed to load tokenizer");
-  }
+  pimpl_->loader = loader;
 
   load_config_from_gguf();
 
@@ -140,8 +120,6 @@ bool llm_engine::load(const std::vector<std::string>& gguf_paths) {
   build_transformer_graph();
 
   pimpl_->loaded = true;
-
-  return true;
 }
 
 void llm_engine::load_config_from_gguf() {
@@ -197,14 +175,6 @@ void llm_engine::load_config_from_gguf() {
   pimpl_->hidden_dim = get_required_uint32("embedding_length");
   pimpl_->num_q_heads = get_required_uint32("attention.head_count");
   pimpl_->num_kv_heads = get_required_uint32("attention.head_count_kv");
-
-  if (auto val = get_optional_uint32("vocab_size")) {
-    pimpl_->vocab_size = *val;
-  } else if (pimpl_->tokenizer) {
-    pimpl_->vocab_size = pimpl_->tokenizer->vocab_size();
-  } else {
-    throw std::runtime_error("vocab_size missing and tokenizer not loaded");
-  }
 
   pimpl_->max_seq_len = get_required_uint32("context_length");
 
@@ -388,13 +358,6 @@ void llm_engine::load_weights_from_gguf() {
   if (tok_w.dim(1) != pimpl_->hidden_dim || out_w.dim(1) != pimpl_->hidden_dim) {
     throw std::runtime_error("Embedding weight dim(1) should be hidden_dim=" +
                              std::to_string(pimpl_->hidden_dim));
-  }
-
-  if (pimpl_->vocab_size > 0) {
-    if (tok_w.dim(0) != pimpl_->vocab_size || out_w.dim(0) != pimpl_->vocab_size) {
-      throw std::runtime_error("Embedding weight dim(0) should be vocab_size=" +
-                               std::to_string(pimpl_->vocab_size));
-    }
   }
 }
 
@@ -866,154 +829,91 @@ void llm_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr 
   pimpl_->proc->deploy(pimpl_->graph);
 }
 
-std::string llm_engine::generate(const std::string& prompt, size_t max_tokens, float temperature) {
+std::vector<float> llm_engine::run_inference_step(const std::vector<uint32_t>& tokens) {
+  std::promise<std::unordered_map<std::string, dynamic_tensor>> output_promise;
+  auto output_future = output_promise.get_future();
+
+  pimpl_->output_node->set_callback(
+      [&output_promise](const std::unordered_map<std::string, dynamic_tensor>& result) {
+        spdlog::debug("Output callback invoked");
+        output_promise.set_value(result);
+      });
+
+  // Build input tensor [1, seq_len]
+  dynamic_tensor input_tensor(dtype::int32, {1, static_cast<int64_t>(tokens.size())});
+  {
+    int32_t* data = input_tensor.data_ptr<int32_t>();
+    for (size_t j = 0; j < tokens.size(); ++j) {
+      data[j] = static_cast<int32_t>(tokens[j]);
+    }
+  }
+
+  // Build position_ids tensor: [cached_position_, cached_position_+1, ...]
+  dynamic_tensor position_ids_tensor(dtype::int64, {static_cast<int64_t>(tokens.size())});
+  {
+    int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
+    for (size_t j = 0; j < tokens.size(); ++j) {
+      pos_data[j] = pimpl_->cached_position_ + static_cast<int64_t>(j);
+    }
+  }
+  pimpl_->cached_position_ += static_cast<int64_t>(tokens.size());
+
+  pimpl_->input_node->set_tensor("input_ids", input_tensor);
+  pimpl_->input_node->set_tensor("position_ids", position_ids_tensor);
+  pimpl_->input_node->set_frame_number(++pimpl_->step_counter_);
+  pimpl_->input_node->push();
+
+  // Wait for output synchronously
+  auto outputs = output_future.get();
+
+  auto it = outputs.find("logits");
+  if (it == outputs.end()) {
+    throw std::runtime_error("No logits output");
+  }
+
+  const auto& logits = it->second;
+  if (logits.get_dtype() != dtype::float32) {
+    throw std::runtime_error("logits must be float32");
+  }
+  if (logits.ndim() != 3 || logits.dim(0) != 1) {
+    throw std::runtime_error("logits must have shape [1, seq_len, vocab_size]");
+  }
+
+  // Return logits for the last token position
+  const int64_t seq_len = logits.dim(1);
+  const int64_t vocab_size = logits.dim(2);
+  const float* last_logits = logits.data_ptr<float>() + (seq_len - 1) * vocab_size;
+  return std::vector<float>(last_logits, last_logits + vocab_size);
+}
+
+std::vector<float> llm_engine::start(const std::vector<uint32_t>& prompt_tokens) {
   if (!pimpl_->loaded) {
     throw std::runtime_error("Model not loaded");
   }
-
-  std::vector<uint32_t> tokens = pimpl_->tokenizer->encode(prompt);
-
-  if (pimpl_->tokenizer->add_bos_token()) {
-    const uint32_t bos = pimpl_->tokenizer->bos_token_id();
-    if (tokens.empty() || tokens.front() != bos) {
-      tokens.insert(tokens.begin(), bos);
-    }
-  }
-  if (pimpl_->tokenizer->add_eos_token()) {
-    const uint32_t eos = pimpl_->tokenizer->eos_token_id();
-    if (tokens.empty() || tokens.back() != eos) {
-      tokens.push_back(eos);
-    }
+  if (prompt_tokens.empty()) {
+    throw std::runtime_error("prompt_tokens must not be empty");
   }
 
-  // Reset KV caches and position counter at the start of generation
+  // Reset state
   reset_kv_caches();
   pimpl_->cached_position_ = 0;
-
-  std::string generated_text;
+  pimpl_->step_counter_ = 0;
 
   pimpl_->proc->run();
 
-  for (size_t step = 0; step < max_tokens; ++step) {
-    // Create promise/future for this step
-    std::promise<std::unordered_map<std::string, dynamic_tensor>> output_promise;
-    auto output_future = output_promise.get_future();
-
-    pimpl_->output_node->set_callback(
-        [&output_promise](const std::unordered_map<std::string, dynamic_tensor>& result) {
-          spdlog::debug("Output callback invoked");
-          output_promise.set_value(result);
-        });
-
-    std::vector<int64_t> shape;
-    dynamic_tensor input_tensor;
-    dynamic_tensor position_ids_tensor;
-
-    if (step == 0) {
-      // ===== Prefill phase: process all prompt tokens =====
-      shape = {1, static_cast<int64_t>(tokens.size())};
-      input_tensor = dynamic_tensor(dtype::int32, shape);
-      int32_t* data = input_tensor.data_ptr<int32_t>();
-      for (size_t j = 0; j < tokens.size(); ++j) {
-        data[j] = static_cast<int32_t>(tokens[j]);
-      }
-
-      // Generate position_ids: [0, 1, 2, ..., seq_len-1]
-      position_ids_tensor = dynamic_tensor(dtype::int64, {static_cast<int64_t>(tokens.size())});
-      int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
-      for (size_t j = 0; j < tokens.size(); ++j) {
-        pos_data[j] = static_cast<int64_t>(j);
-      }
-
-      pimpl_->cached_position_ = tokens.size();
-    } else {
-      // ===== Decode phase: process only the last token =====
-      shape = {1, 1};
-      input_tensor = dynamic_tensor(dtype::int32, shape);
-      int32_t* data = input_tensor.data_ptr<int32_t>();
-      data[0] = static_cast<int32_t>(tokens.back());
-
-      // Generate position_ids: [cached_position_] (current absolute position)
-      position_ids_tensor = dynamic_tensor(dtype::int64, {1});
-      int64_t* pos_data = position_ids_tensor.data_ptr<int64_t>();
-      pos_data[0] = pimpl_->cached_position_;
-
-      pimpl_->cached_position_++;
-    }
-
-    pimpl_->input_node->set_tensor("input_ids", input_tensor);
-    pimpl_->input_node->set_tensor("position_ids", position_ids_tensor);
-    pimpl_->input_node->set_frame_number(step + 1);
-    pimpl_->input_node->push();
-
-    // Wait for output synchronously
-    auto outputs = output_future.get();
-
-    auto it = outputs.find("logits");
-    if (it == outputs.end()) {
-      throw std::runtime_error("No logits output");
-    }
-
-    const auto& logits = it->second;
-    if (logits.get_dtype() != dtype::float32) {
-      throw std::runtime_error("logits must be float32");
-    }
-    if (logits.ndim() != 3 || logits.dim(0) != 1) {
-      throw std::runtime_error("logits must have shape [1, seq_len, vocab_size]");
-    }
-    const float* logits_data = logits.data_ptr<float>();
-
-    int64_t seq_len = logits.dim(1);
-    int64_t vocab_size = logits.dim(2);
-    int64_t last_pos = seq_len - 1;
-    const float* last_logits = logits_data + (0 * seq_len + last_pos) * vocab_size;
-
-    uint32_t next_token = sample_token(last_logits, vocab_size, temperature);
-
-    if (next_token == pimpl_->tokenizer->eos_token_id()) {
-      break;
-    }
-
-    tokens.push_back(next_token);
-
-    std::string piece = pimpl_->tokenizer->decode({next_token});
-    generated_text += piece;
-  }
-
-  pimpl_->proc->stop();
-
-  return generated_text;
+  return run_inference_step(prompt_tokens);
 }
 
-uint32_t llm_engine::sample_token(const float* logits, int64_t vocab_size, float temperature) {
-  if (temperature < 1e-6f) {
-    return static_cast<uint32_t>(
-        std::distance(logits, std::max_element(logits, logits + vocab_size)));
+std::vector<float> llm_engine::next(uint32_t token) {
+  if (!pimpl_->loaded) {
+    throw std::runtime_error("Model not loaded");
   }
-
-  std::vector<float> probs(vocab_size);
-  float max_logit = *std::max_element(logits, logits + vocab_size);
-
-  float sum = 0.0f;
-  for (int64_t i = 0; i < vocab_size; ++i) {
-    probs[i] = std::exp((logits[i] - max_logit) / temperature);
-    sum += probs[i];
-  }
-
-  for (int64_t i = 0; i < vocab_size; ++i) {
-    probs[i] /= sum;
-  }
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::discrete_distribution<> dist(probs.begin(), probs.end());
-
-  return static_cast<uint32_t>(dist(gen));
+  return run_inference_step({token});
 }
+
+void llm_engine::stop() { pimpl_->proc->stop(); }
 
 bool llm_engine::is_loaded() const { return pimpl_->loaded; }
-
-int64_t llm_engine::get_vocab_size() const { return pimpl_->vocab_size; }
 
 int64_t llm_engine::get_num_layers() const { return pimpl_->num_layers; }
 

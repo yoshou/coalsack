@@ -1,18 +1,48 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <random>
 #include <string>
 #include <vector>
 
+#include "coalsack/gguf/gguf_multi_loader.h"
 #include "coalsack/llm/chat_template.h"
+#include "coalsack/llm/gpt2_tokenizer.h"
 #include "coalsack/llm/llm_engine.h"
 
 using namespace coalsack;
 using json = nlohmann::json;
+
+// Sample next token from logits with temperature.
+// temperature <= 0 uses greedy (argmax).
+static uint32_t sample_token(const std::vector<float>& logits, float temperature) {
+  const int64_t vocab_size = static_cast<int64_t>(logits.size());
+  if (temperature < 1e-6f) {
+    return static_cast<uint32_t>(
+        std::distance(logits.begin(), std::max_element(logits.begin(), logits.end())));
+  }
+
+  std::vector<float> probs(vocab_size);
+  float max_logit = *std::max_element(logits.begin(), logits.end());
+  float sum = 0.0f;
+  for (int64_t i = 0; i < vocab_size; ++i) {
+    probs[i] = std::exp((logits[i] - max_logit) / temperature);
+    sum += probs[i];
+  }
+  for (int64_t i = 0; i < vocab_size; ++i) {
+    probs[i] /= sum;
+  }
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::discrete_distribution<> dist(probs.begin(), probs.end());
+  return static_cast<uint32_t>(dist(gen));
+}
 
 int main(int argc, char** argv) {
   // Set log level from environment variable
@@ -69,10 +99,8 @@ int main(int argc, char** argv) {
       std::cerr << "ERROR: Each message must have 'role' and 'content' fields\n";
       return 1;
     }
-
     std::string role = msg["role"];
     std::string content = msg["content"];
-
     if (role == "system") {
       tpl.add_system(content);
     } else if (role == "user") {
@@ -88,17 +116,31 @@ int main(int argc, char** argv) {
   std::cout << "  ✓ Prompt built (" << prompt.size() << " chars)\n";
   std::cout << "\n--- Prompt ---\n" << prompt << "\n--- End of Prompt ---\n\n";
 
-  // Load llm_engine
-  std::cout << "Loading llm_engine...\n";
-
   // model_path is always an array (for both single and multi-file models)
   std::vector<std::string> model_paths = config["model_path"].get<std::vector<std::string>>();
 
-  std::cout << "  Model files (" << model_paths.size() << "):\n";
+  std::cout << "Loading GGUF (" << model_paths.size() << " file(s)):\n";
   for (const auto& path : model_paths) {
     std::cout << "    - " << path << "\n";
   }
 
+  auto loader = std::make_shared<gguf_multi_loader>();
+  if (!loader->load(model_paths)) {
+    std::cerr << "ERROR: Failed to load GGUF file(s)\n";
+    return 1;
+  }
+
+  // Load tokenizer
+  gpt2_tokenizer tokenizer;
+  if (!tokenizer.load(*loader)) {
+    std::cerr << "ERROR: Failed to load tokenizer\n";
+    return 1;
+  }
+  const uint32_t eos_id = tokenizer.eos_token_id();
+  std::cout << "  Vocab size (tokenizer): " << tokenizer.vocab_size() << "  EOS: " << eos_id
+            << "\n";
+
+  // Load engine
   llm_engine::config engine_config;
   if (config.contains("n_ctx")) {
     engine_config.kv_cache_size = config["n_ctx"];
@@ -107,22 +149,37 @@ int main(int argc, char** argv) {
   }
   engine_config.moe_cache_size_bytes = 1073741824;  // 1 GiB per layer
   std::cout << "  KV cache size: " << engine_config.kv_cache_size << " tokens\n";
-  llm_engine engine(engine_config);
 
-  if (!engine.load(model_paths)) {
-    std::cerr << "Failed to load engine\n";
-    return 1;
-  }
-  std::cout << "  Vocab size: " << engine.get_vocab_size() << "\n";
+  llm_engine engine(engine_config);
+  engine.load(loader);
+
   std::cout << "  Layers: " << engine.get_num_layers() << "\n";
   std::cout << "  Hidden dim: " << engine.get_hidden_dim() << "\n";
   std::cout << "  ✓ Engine loaded successfully\n\n";
 
+  // Encode prompt
+  std::vector<uint32_t> prompt_tokens = tokenizer.encode(prompt);
+  if (tokenizer.add_bos_token()) {
+    const uint32_t bos = tokenizer.bos_token_id();
+    if (prompt_tokens.empty() || prompt_tokens.front() != bos) {
+      prompt_tokens.insert(prompt_tokens.begin(), bos);
+    }
+  }
+
   std::cout << "Generating (max " << max_tokens << " tokens, temp=" << temperature << ")...\n";
   std::cout << "\n--- Response ---\n" << std::flush;
 
-  std::string result = engine.generate(prompt, max_tokens, temperature);
-  std::cout << result << std::flush;
+  // Generation loop
+  std::vector<uint32_t> output_tokens;
+  auto logits = engine.start(prompt_tokens);
+  for (int step = 0; step < max_tokens; ++step) {
+    uint32_t token = sample_token(logits, temperature);
+    if (token == eos_id) break;
+    output_tokens.push_back(token);
+    std::cout << tokenizer.decode({token}) << std::flush;
+    logits = engine.next(token);
+  }
+  engine.stop();
 
   std::cout << "\n--- End of Response ---\n\n";
   std::cout << "=================================\n";

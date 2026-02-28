@@ -13,7 +13,7 @@ namespace coalsack {
 
 // Forward declarations
 class gguf_loader;
-class gpt2_tokenizer;
+class gguf_multi_loader;
 class subgraph;
 class graph_proc;
 
@@ -29,20 +29,22 @@ class llm_engine {
   explicit llm_engine(const config& cfg);
   ~llm_engine();
 
-  // Load model from GGUF file(s)
-  bool load(const std::string& gguf_path);
-  bool load(const std::vector<std::string>& gguf_paths);
+  // Load model from an already-opened gguf_multi_loader
+  void load(std::shared_ptr<gguf_multi_loader> loader);
 
-  // Generate text from prompt
-  // Returns generated text (without prompt)
-  std::string generate(const std::string& prompt, size_t max_tokens = 128,
-                       float temperature = 0.7f);
+  // Prefill with prompt tokens and start the graph processor
+  std::vector<float> start(const std::vector<uint32_t>& prompt_tokens);
+
+  // Decode one token and return logits for the next token
+  std::vector<float> next(uint32_t token);
+
+  // Stop the graph processor
+  void stop();
 
   // Check if model is loaded
   bool is_loaded() const;
 
   // Get model info
-  int64_t get_vocab_size() const;
   int64_t get_num_layers() const;
   int64_t get_hidden_dim() const;
 
@@ -63,8 +65,8 @@ class llm_engine {
   void wire_io_nodes(std::shared_ptr<class graph_edge> input_placeholder,
                      std::shared_ptr<class graph_edge> logits_output);
 
-  // Sample next token from logits
-  uint32_t sample_token(const float* logits, int64_t vocab_size, float temperature);
+  // Single-step inference helper used by start() and next()
+  std::vector<float> run_inference_step(const std::vector<uint32_t>& tokens);
 
   // KV cache management
   void initialize_kv_caches();
