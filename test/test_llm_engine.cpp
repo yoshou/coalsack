@@ -84,12 +84,12 @@ int main(int argc, char* argv[]) {
   std::cout << "Generating (max " << max_new_tokens << " tokens, greedy)...\n\n";
 
   std::vector<uint32_t> output_tokens;
-  auto logits = engine.start(prompt_tokens);
+  engine.start(prompt_tokens);
   for (size_t step = 0; step < max_new_tokens; ++step) {
-    uint32_t token = sample_greedy(logits);
+    uint32_t token = sample_greedy(engine.get_logits());
     if (token == eos_id) break;
     output_tokens.push_back(token);
-    logits = engine.next(token);
+    engine.next(token);
   }
   engine.stop();
 

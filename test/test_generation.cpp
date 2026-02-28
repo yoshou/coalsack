@@ -171,13 +171,13 @@ int main(int argc, char** argv) {
 
   // Generation loop
   std::vector<uint32_t> output_tokens;
-  auto logits = engine.start(prompt_tokens);
+  engine.start(prompt_tokens);
   for (int step = 0; step < max_tokens; ++step) {
-    uint32_t token = sample_token(logits, temperature);
+    uint32_t token = sample_token(engine.get_logits(), temperature);
     if (token == eos_id) break;
     output_tokens.push_back(token);
     std::cout << tokenizer.decode({token}) << std::flush;
-    logits = engine.next(token);
+    engine.next(token);
   }
   engine.stop();
 

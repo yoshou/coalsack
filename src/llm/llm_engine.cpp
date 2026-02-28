@@ -91,6 +91,13 @@ struct llm_engine::impl {
   // Weights (loaded from GGUF)
   std::unordered_map<std::string, dynamic_tensor> weights;
 
+  // Hidden-layer capture config
+  std::vector<int> hidden_layer_indices;
+
+  // Per-step output state
+  std::vector<float> current_logits_;
+  std::unordered_map<int, std::vector<float>> current_hidden_layers_;
+
   bool loaded = false;
 };
 
@@ -99,6 +106,7 @@ llm_engine::llm_engine() : pimpl_(std::make_unique<impl>()) {}
 llm_engine::llm_engine(const config& cfg) : pimpl_(std::make_unique<impl>()) {
   pimpl_->cfg = cfg;
   pimpl_->kv_cache_size = cfg.kv_cache_size;
+  pimpl_->hidden_layer_indices = cfg.hidden_layer_indices;
 }
 
 llm_engine::~llm_engine() = default;
@@ -491,6 +499,9 @@ void llm_engine::build_transformer_graph() {
                                              "token_embd.weight", "embeddings", "embedding_lookup");
   std::string current_name = "embeddings";
 
+  // Edges to capture per layer for speculative decoding (filled inside the loop)
+  std::unordered_map<int, graph_edge_ptr> captured_hidden_edges;
+
   // Transformer layers
   for (int layer = 0; layer < pimpl_->num_layers; ++layer) {
     // Insert layer_scheduler_node at layer entrance to break call stack and trim memory
@@ -762,6 +773,14 @@ void llm_engine::build_transformer_graph() {
         gb.make_add(attn_res_out, layer_prefix + ".attn_residual_out", merge_out, merge_out_name,
                     layer_prefix + ".ffn_residual_out", layer_prefix + ".ffn_residual");
     current_name = layer_prefix + ".ffn_residual_out";
+
+    // Capture hidden state for speculative decoding if this layer is configured
+    {
+      const auto& hl = pimpl_->hidden_layer_indices;
+      if (std::find(hl.begin(), hl.end(), layer) != hl.end()) {
+        captured_hidden_edges[layer] = current;
+      }
+    }
   }
 
   // Final RMSNorm
@@ -773,7 +792,23 @@ void llm_engine::build_transformer_graph() {
   graph_edge_ptr logits_edge = gb.make_matmul(final_norm_out, "final_norm_out", output_weight_edge,
                                               "output.weight", "logits", "output_projection");
 
-  pimpl_->output_node->set_input(logits_edge, "logits");
+  auto sync_node = std::make_shared<result_message_sync_node>();
+
+  std::vector<std::string> sync_ids;
+  sync_ids.push_back("logits");
+  for (const auto& [layer_idx, _] : captured_hidden_edges) {
+    sync_ids.push_back("blk." + std::to_string(layer_idx) + ".ffn_residual_out");
+  }
+  sync_node->set_initial_ids(sync_ids);
+
+  sync_node->set_input(logits_edge, "logits");
+  for (const auto& [layer_idx, edge] : captured_hidden_edges) {
+    const std::string field = "blk." + std::to_string(layer_idx) + ".ffn_residual_out";
+    sync_node->set_input(edge, field);
+  }
+
+  pimpl_->graph->add_node(sync_node);
+  pimpl_->output_node->set_input(sync_node->get_output(), "default");
 
   // Add I/O nodes to graph
   pimpl_->graph->add_node(pimpl_->input_node);
@@ -829,7 +864,7 @@ void llm_engine::wire_io_nodes(graph_edge_ptr input_placeholder, graph_edge_ptr 
   pimpl_->proc->deploy(pimpl_->graph);
 }
 
-std::vector<float> llm_engine::run_inference_step(const std::vector<uint32_t>& tokens) {
+void llm_engine::run_inference_step(const std::vector<uint32_t>& tokens) {
   std::promise<std::unordered_map<std::string, dynamic_tensor>> output_promise;
   auto output_future = output_promise.get_future();
 
@@ -883,10 +918,24 @@ std::vector<float> llm_engine::run_inference_step(const std::vector<uint32_t>& t
   const int64_t seq_len = logits.dim(1);
   const int64_t vocab_size = logits.dim(2);
   const float* last_logits = logits.data_ptr<float>() + (seq_len - 1) * vocab_size;
-  return std::vector<float>(last_logits, last_logits + vocab_size);
+  pimpl_->current_logits_.assign(last_logits, last_logits + vocab_size);
+
+  // Save hidden layer states for speculative decoding
+  pimpl_->current_hidden_layers_.clear();
+  for (int layer_idx : pimpl_->hidden_layer_indices) {
+    const std::string key = "blk." + std::to_string(layer_idx) + ".ffn_residual_out";
+    auto hit = outputs.find(key);
+    if (hit == outputs.end()) continue;
+    const auto& hs = hit->second;
+    if (hs.get_dtype() != dtype::float32 || hs.ndim() != 3) continue;
+    const int64_t hs_seq_len = hs.dim(1);
+    const int64_t hs_hidden = hs.dim(2);
+    const float* last_hs = hs.data_ptr<float>() + (hs_seq_len - 1) * hs_hidden;
+    pimpl_->current_hidden_layers_[layer_idx].assign(last_hs, last_hs + hs_hidden);
+  }
 }
 
-std::vector<float> llm_engine::start(const std::vector<uint32_t>& prompt_tokens) {
+void llm_engine::start(const std::vector<uint32_t>& prompt_tokens) {
   if (!pimpl_->loaded) {
     throw std::runtime_error("Model not loaded");
   }
@@ -901,14 +950,14 @@ std::vector<float> llm_engine::start(const std::vector<uint32_t>& prompt_tokens)
 
   pimpl_->proc->run();
 
-  return run_inference_step(prompt_tokens);
+  run_inference_step(prompt_tokens);
 }
 
-std::vector<float> llm_engine::next(uint32_t token) {
+void llm_engine::next(uint32_t token) {
   if (!pimpl_->loaded) {
     throw std::runtime_error("Model not loaded");
   }
-  return run_inference_step({token});
+  run_inference_step({token});
 }
 
 void llm_engine::stop() { pimpl_->proc->stop(); }
@@ -918,6 +967,18 @@ bool llm_engine::is_loaded() const { return pimpl_->loaded; }
 int64_t llm_engine::get_num_layers() const { return pimpl_->num_layers; }
 
 int64_t llm_engine::get_hidden_dim() const { return pimpl_->hidden_dim; }
+
+const std::vector<float>& llm_engine::get_logits() const { return pimpl_->current_logits_; }
+
+const std::vector<float>& llm_engine::get_hidden_layer(int layer_index) const {
+  auto it = pimpl_->current_hidden_layers_.find(layer_index);
+  if (it == pimpl_->current_hidden_layers_.end()) {
+    throw std::runtime_error(
+        "Hidden layer " + std::to_string(layer_index) +
+        " was not captured. Add it to config::hidden_layer_indices before loading.");
+  }
+  return it->second;
+}
 
 void llm_engine::initialize_kv_caches() {
   if (pimpl_->attention_nodes.empty()) {
