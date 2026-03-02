@@ -30,17 +30,17 @@ class eagle3_speculative_decoder {
   int64_t get_target_hidden_size() const;
   int64_t get_draft_vocab_size() const;
 
-  // Compute g_norm from target model hidden states: concat(h_layers) → fc → RMSNorm
+  // Compute g_embeddings from target model hidden states: concat(h_layers) → fc
   // all_hidden_states: layer_index → flat float32 [seq_len * target_hidden_size]
-  // Returns [1, seq_len, eagle3_H]
+  // Returns [1, seq_len, eagle3_H]  (pre-normalization; decoder graph applies hidden_norm)
   dynamic_tensor encode(const std::unordered_map<int, std::vector<float>>& all_hidden_states,
                         int64_t seq_len) const;
 
   // Reset KV cache and start graph processor
   void start();
 
-  // Run one decode step; g_norm is [1, n, eagle3_H], start_pos is KV cache offset
-  void decode(const std::vector<uint32_t>& tokens, const dynamic_tensor& g_norm, int64_t start_pos);
+  // Run one decode step; g_embd is [1, n, eagle3_H], start_pos is KV cache offset
+  void decode(const std::vector<uint32_t>& tokens, const dynamic_tensor& g_embd, int64_t start_pos);
 
   void stop();
 

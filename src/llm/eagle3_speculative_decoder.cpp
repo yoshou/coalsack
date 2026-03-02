@@ -515,18 +515,18 @@ void eagle3_speculative_decoder::start() {
 void eagle3_speculative_decoder::stop() { pimpl_->proc->stop(); }
 
 void eagle3_speculative_decoder::decode(const std::vector<uint32_t>& tokens,
-                                        const dynamic_tensor& g_norm, int64_t start_pos) {
+                                        const dynamic_tensor& g_embd, int64_t start_pos) {
   if (!pimpl_->loaded) throw std::runtime_error("eagle3 not loaded");
   auto& p = *pimpl_;
 
   int64_t n = static_cast<int64_t>(tokens.size());
 
-  if (g_norm.ndim() != 3 || g_norm.dim(0) != 1 || g_norm.dim(1) != n ||
-      g_norm.dim(2) != p.hidden_size) {
-    throw std::runtime_error("eagle3::decode: g_norm shape mismatch; expected [1, " +
+  if (g_embd.ndim() != 3 || g_embd.dim(0) != 1 || g_embd.dim(1) != n ||
+      g_embd.dim(2) != p.hidden_size) {
+    throw std::runtime_error("eagle3::decode: g_embd shape mismatch; expected [1, " +
                              std::to_string(n) + ", " + std::to_string(p.hidden_size) + "] got [" +
-                             std::to_string(g_norm.dim(0)) + ", " + std::to_string(g_norm.dim(1)) +
-                             ", " + std::to_string(g_norm.dim(2)) + "]");
+                             std::to_string(g_embd.dim(0)) + ", " + std::to_string(g_embd.dim(1)) +
+                             ", " + std::to_string(g_embd.dim(2)) + "]");
   }
 
   // Build input tensors for this decode step
@@ -547,7 +547,7 @@ void eagle3_speculative_decoder::decode(const std::vector<uint32_t>& tokens,
   }
 
   p.input_node->set_tensor("input_ids", input_ids_t);
-  p.input_node->set_tensor("g_embd", g_norm);
+  p.input_node->set_tensor("g_embd", g_embd);
   p.input_node->set_tensor("position_ids", pos_ids_t);
   p.input_node->set_frame_number(++p.step_counter);
 
