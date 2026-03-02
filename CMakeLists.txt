@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/llm/llm_engine.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/llm/moe_weight_provider.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/llm/vision_encoder.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/llm/eagle3_speculative_decoder.cpp
 )
 
 add_dependencies(${PROJECT_NAME}

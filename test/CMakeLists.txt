@@ -434,3 +434,19 @@ target_compile_definitions(test_vision_encoder PUBLIC
     FMT_HEADER_ONLY
 )
 
+add_executable(test_eagle3_speculative_decoding
+    ${CMAKE_CURRENT_LIST_DIR}/test_eagle3_speculative_decoding.cpp
+)
+
+target_include_directories(test_eagle3_speculative_decoding PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_eagle3_speculative_decoding
+    coalsack
+    pthread
+)
+
+target_compile_definitions(test_eagle3_speculative_decoding PUBLIC
+    FMT_HEADER_ONLY
+)

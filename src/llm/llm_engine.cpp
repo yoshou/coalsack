@@ -97,6 +97,7 @@ struct llm_engine::impl {
   // Per-step output state
   std::vector<float> current_logits_;
   std::unordered_map<int, std::vector<float>> current_hidden_layers_;
+  std::unordered_map<int, std::vector<float>> current_hidden_layers_all_pos_;
 
   bool loaded = false;
 };
@@ -922,6 +923,7 @@ void llm_engine::run_inference_step(const std::vector<uint32_t>& tokens) {
 
   // Save hidden layer states for speculative decoding
   pimpl_->current_hidden_layers_.clear();
+  pimpl_->current_hidden_layers_all_pos_.clear();
   for (int layer_idx : pimpl_->hidden_layer_indices) {
     const std::string key = "blk." + std::to_string(layer_idx) + ".ffn_residual_out";
     auto hit = outputs.find(key);
@@ -932,6 +934,9 @@ void llm_engine::run_inference_step(const std::vector<uint32_t>& tokens) {
     const int64_t hs_hidden = hs.dim(2);
     const float* last_hs = hs.data_ptr<float>() + (hs_seq_len - 1) * hs_hidden;
     pimpl_->current_hidden_layers_[layer_idx].assign(last_hs, last_hs + hs_hidden);
+    const float* all_hs = hs.data_ptr<float>();
+    pimpl_->current_hidden_layers_all_pos_[layer_idx].assign(all_hs,
+                                                             all_hs + hs_seq_len * hs_hidden);
   }
 }
 
@@ -976,6 +981,16 @@ const std::vector<float>& llm_engine::get_hidden_layer(int layer_index) const {
     throw std::runtime_error(
         "Hidden layer " + std::to_string(layer_index) +
         " was not captured. Add it to config::hidden_layer_indices before loading.");
+  }
+  return it->second;
+}
+
+const std::vector<float>& llm_engine::get_hidden_layer_all_pos(int layer_index) const {
+  auto it = pimpl_->current_hidden_layers_all_pos_.find(layer_index);
+  if (it == pimpl_->current_hidden_layers_all_pos_.end()) {
+    throw std::runtime_error(
+        "Hidden layer " + std::to_string(layer_index) +
+        " (all_pos) was not captured. Add it to config::hidden_layer_indices before loading.");
   }
   return it->second;
 }

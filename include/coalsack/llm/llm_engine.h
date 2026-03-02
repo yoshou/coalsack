@@ -52,7 +52,10 @@ class llm_engine {
   // State accessors — valid after start() / next().
   const std::vector<float>& get_logits() const;
   // Throws if layer_index was not in hidden_layer_indices.
-  const std::vector<float>& get_hidden_layer(int layer_index) const;
+  const std::vector<float>& get_hidden_layer(
+      int layer_index) const;  // last token only [hidden_dim]
+  const std::vector<float>& get_hidden_layer_all_pos(
+      int layer_index) const;  // all positions [seq_len * hidden_dim]
 
  private:
   struct impl;
