@@ -96,6 +96,7 @@ struct llm_engine::impl {
 
   // Per-step output state
   std::vector<float> current_logits_;
+  std::vector<float> current_logits_all_pos_;  // [seq_len * vocab_size]
   std::unordered_map<int, std::vector<float>> current_hidden_layers_;
   std::unordered_map<int, std::vector<float>> current_hidden_layers_all_pos_;
 
@@ -918,8 +919,10 @@ void llm_engine::run_inference_step(const std::vector<uint32_t>& tokens) {
   // Return logits for the last token position
   const int64_t seq_len = logits.dim(1);
   const int64_t vocab_size = logits.dim(2);
-  const float* last_logits = logits.data_ptr<float>() + (seq_len - 1) * vocab_size;
+  const float* all_logits_ptr = logits.data_ptr<float>();
+  const float* last_logits = all_logits_ptr + (seq_len - 1) * vocab_size;
   pimpl_->current_logits_.assign(last_logits, last_logits + vocab_size);
+  pimpl_->current_logits_all_pos_.assign(all_logits_ptr, all_logits_ptr + seq_len * vocab_size);
 
   // Save hidden layer states for speculative decoding
   pimpl_->current_hidden_layers_.clear();
@@ -965,6 +968,20 @@ void llm_engine::next(uint32_t token) {
   run_inference_step({token});
 }
 
+void llm_engine::next_batch(const std::vector<uint32_t>& tokens) {
+  if (!pimpl_->loaded) {
+    throw std::runtime_error("Model not loaded");
+  }
+  run_inference_step(tokens);
+}
+
+void llm_engine::rollback_to(int64_t position) {
+  pimpl_->cached_position_ = position;
+  for (auto& attn_node : pimpl_->attention_nodes) {
+    attn_node->set_cached_seq_len(position);
+  }
+}
+
 void llm_engine::stop() { pimpl_->proc->stop(); }
 
 bool llm_engine::is_loaded() const { return pimpl_->loaded; }
@@ -974,6 +991,10 @@ int64_t llm_engine::get_num_layers() const { return pimpl_->num_layers; }
 int64_t llm_engine::get_hidden_dim() const { return pimpl_->hidden_dim; }
 
 const std::vector<float>& llm_engine::get_logits() const { return pimpl_->current_logits_; }
+
+const std::vector<float>& llm_engine::get_logits_all_pos() const {
+  return pimpl_->current_logits_all_pos_;
+}
 
 const std::vector<float>& llm_engine::get_hidden_layer(int layer_index) const {
   auto it = pimpl_->current_hidden_layers_.find(layer_index);

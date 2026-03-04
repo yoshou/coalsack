@@ -39,6 +39,12 @@ class llm_engine {
   // Decode one token
   void next(uint32_t token);
 
+  // Decode multiple tokens in one batch (for speculative decoding verification)
+  void next_batch(const std::vector<uint32_t>& tokens);
+
+  // Rollback KV cache and position to a given sequence position
+  void rollback_to(int64_t position);
+
   // Stop the graph processor
   void stop();
 
@@ -51,6 +57,8 @@ class llm_engine {
 
   // State accessors — valid after start() / next().
   const std::vector<float>& get_logits() const;
+  // All positions: [seq_len * vocab_size] — valid after next_batch()
+  const std::vector<float>& get_logits_all_pos() const;
   // Throws if layer_index was not in hidden_layer_indices.
   const std::vector<float>& get_hidden_layer(
       int layer_index) const;  // last token only [hidden_dim]

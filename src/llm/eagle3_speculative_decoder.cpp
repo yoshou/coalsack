@@ -514,6 +514,12 @@ void eagle3_speculative_decoder::start() {
 
 void eagle3_speculative_decoder::stop() { pimpl_->proc->stop(); }
 
+void eagle3_speculative_decoder::rollback_to(int64_t position) {
+  for (auto& attn : pimpl_->attention_nodes) {
+    attn->set_cached_seq_len(position);
+  }
+}
+
 void eagle3_speculative_decoder::decode(const std::vector<uint32_t>& tokens,
                                         const dynamic_tensor& g_embd, int64_t start_pos) {
   if (!pimpl_->loaded) throw std::runtime_error("eagle3 not loaded");

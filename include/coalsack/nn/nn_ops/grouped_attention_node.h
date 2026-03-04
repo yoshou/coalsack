@@ -126,12 +126,7 @@ class grouped_attention_node : public variadic_op_node {
         effective_seq_len = cached_seq_len_;
       }
     } else {
-      // Decode phase: Append to cache
-      if (seq_len != 1) {
-        throw std::runtime_error("grouped_attention: decode phase expects seq_len=1, got " +
-                                 std::to_string(seq_len));
-      }
-
+      // Decode phase: Append to cache (supports seq_len >= 1 for batch verification)
       copy_to_cache(k_cache_, key_new, cached_seq_len_);
       copy_to_cache(v_cache_, value_new, cached_seq_len_);
       cached_seq_len_ += seq_len;
@@ -163,6 +158,12 @@ class grouped_attention_node : public variadic_op_node {
   void set_v_cache(const dynamic_tensor& cache) { v_cache_ = cache; }
   void reset_cache() { cached_seq_len_ = 0; }
   int64_t get_cached_seq_len() const { return cached_seq_len_; }
+  void set_cached_seq_len(int64_t n) {
+    if (n < 0) throw std::runtime_error("grouped_attention: set_cached_seq_len n < 0");
+    if (k_cache_.ndim() > 0 && n > k_cache_.dim(2))
+      throw std::runtime_error("grouped_attention: set_cached_seq_len n > max_seq_len");
+    cached_seq_len_ = n;
+  }
 
  private:
   int64_t num_q_heads_;

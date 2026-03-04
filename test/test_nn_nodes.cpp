@@ -755,3 +755,146 @@ TEST(MatmulTransposeMixedTest, SingleRow) {
         << "mismatch at index " << i;
   }
 }
+
+// -----------------------------------------------------------------------
+// GroupedAttention tests
+// -----------------------------------------------------------------------
+#include "coalsack/nn/nn_ops/grouped_attention_node.h"
+
+namespace {
+// Build a small random QKV tensor [1, seq_len, num_heads * head_dim]
+static dynamic_tensor make_qkv(int64_t seq_len, int64_t num_heads, int64_t head_dim,
+                               std::mt19937& gen) {
+  std::uniform_real_distribution<float> dis(-0.5f, 0.5f);
+  dynamic_tensor t(dtype::float32, {1, seq_len, num_heads * head_dim});
+  for (int64_t i = 0; i < t.numel(); ++i) t.data_ptr<float>()[i] = dis(gen);
+  return t;
+}
+}  // namespace
+
+// Rollback test: prefill(10) → decode(×3) → set_cached_seq_len(10) → decode(same ×3) must match
+TEST(GroupedAttentionTest, Rollback) {
+  const int64_t num_q = 2, num_kv = 2, head_dim = 8, max_seq = 32;
+  const int64_t prefill_len = 10, n_decode = 3;
+
+  grouped_attention_node node;
+  node.set_config(num_q, num_kv, head_dim);
+
+  // Initialize KV cache
+  dynamic_tensor k_cache(dtype::float32, {1, num_kv, max_seq, head_dim});
+  dynamic_tensor v_cache(dtype::float32, {1, num_kv, max_seq, head_dim});
+  std::fill(k_cache.data_ptr<float>(), k_cache.data_ptr<float>() + k_cache.numel(), 0.0f);
+  std::fill(v_cache.data_ptr<float>(), v_cache.data_ptr<float>() + v_cache.numel(), 0.0f);
+  node.set_k_cache(k_cache);
+  node.set_v_cache(v_cache);
+
+  std::mt19937 gen(42);
+
+  // Prefill: seq_len=10 → cache populated, cached_seq_len=10
+  {
+    auto q = make_qkv(prefill_len, num_q, head_dim, gen);
+    auto k = make_qkv(prefill_len, num_kv, head_dim, gen);
+    auto v = make_qkv(prefill_len, num_kv, head_dim, gen);
+    node.compute_test({q, k, v});
+  }
+  ASSERT_EQ(node.get_cached_seq_len(), prefill_len);
+
+  // Decode 3 times; save inputs and outputs
+  std::vector<dynamic_tensor> dec_q(n_decode), dec_k(n_decode), dec_v(n_decode);
+  std::vector<dynamic_tensor> first_pass_out(n_decode);
+  for (int64_t j = 0; j < n_decode; ++j) {
+    dec_q[j] = make_qkv(1, num_q, head_dim, gen);
+    dec_k[j] = make_qkv(1, num_kv, head_dim, gen);
+    dec_v[j] = make_qkv(1, num_kv, head_dim, gen);
+    first_pass_out[j] = node.compute_test({dec_q[j], dec_k[j], dec_v[j]});
+  }
+  ASSERT_EQ(node.get_cached_seq_len(), prefill_len + n_decode);
+
+  // Rollback to prefill position
+  node.set_cached_seq_len(prefill_len);
+  ASSERT_EQ(node.get_cached_seq_len(), prefill_len);
+
+  // Decode again with identical inputs; outputs must match first pass
+  for (int64_t j = 0; j < n_decode; ++j) {
+    auto out = node.compute_test({dec_q[j], dec_k[j], dec_v[j]});
+    ASSERT_EQ(out.shape(), first_pass_out[j].shape());
+    const float* a = out.data_ptr<float>();
+    const float* b = first_pass_out[j].data_ptr<float>();
+    for (int64_t i = 0; i < out.numel(); ++i) {
+      EXPECT_FLOAT_EQ(a[i], b[i]) << "mismatch at decode step " << j << " element " << i;
+    }
+  }
+}
+
+// MultiBatch test: sequential decode (1 token × 5) == batch decode (5 tokens at once)
+TEST(GroupedAttentionTest, MultiBatch) {
+  const int64_t num_q = 2, num_kv = 2, head_dim = 8, max_seq = 32;
+  const int64_t prefill_len = 6, n_decode = 5;
+
+  auto make_node = [&]() {
+    grouped_attention_node node;
+    node.set_config(num_q, num_kv, head_dim);
+    dynamic_tensor k_cache(dtype::float32, {1, num_kv, max_seq, head_dim});
+    dynamic_tensor v_cache(dtype::float32, {1, num_kv, max_seq, head_dim});
+    std::fill(k_cache.data_ptr<float>(), k_cache.data_ptr<float>() + k_cache.numel(), 0.0f);
+    std::fill(v_cache.data_ptr<float>(), v_cache.data_ptr<float>() + v_cache.numel(), 0.0f);
+    node.set_k_cache(k_cache);
+    node.set_v_cache(v_cache);
+    return node;
+  };
+
+  std::mt19937 gen(7);
+
+  // Shared prefill inputs
+  auto pq = make_qkv(prefill_len, num_q, head_dim, gen);
+  auto pk = make_qkv(prefill_len, num_kv, head_dim, gen);
+  auto pv = make_qkv(prefill_len, num_kv, head_dim, gen);
+
+  // Decode inputs: n_decode steps each of seq_len=1
+  std::vector<dynamic_tensor> dq(n_decode), dk(n_decode), dv(n_decode);
+  for (int64_t j = 0; j < n_decode; ++j) {
+    dq[j] = make_qkv(1, num_q, head_dim, gen);
+    dk[j] = make_qkv(1, num_kv, head_dim, gen);
+    dv[j] = make_qkv(1, num_kv, head_dim, gen);
+  }
+
+  // --- Sequential path: prefill then decode 1 token at a time ---
+  auto node_seq = make_node();
+  node_seq.compute_test({pq, pk, pv});  // prefill
+  std::vector<dynamic_tensor> seq_out(n_decode);
+  for (int64_t j = 0; j < n_decode; ++j) {
+    seq_out[j] = node_seq.compute_test({dq[j], dk[j], dv[j]});
+  }
+
+  // --- Batch path: prefill then decode all n_decode tokens at once ---
+  // Concatenate the n_decode single-token Q/K/V tensors along seq_len axis
+  auto cat_qkv = [&](const std::vector<dynamic_tensor>& parts, int64_t num_heads) {
+    int64_t H = num_heads * head_dim;
+    dynamic_tensor out(dtype::float32, {1, n_decode, H});
+    for (int64_t j = 0; j < n_decode; ++j) {
+      const float* src = parts[j].data_ptr<float>();
+      float* dst = out.data_ptr<float>() + j * H;
+      std::copy(src, src + H, dst);
+    }
+    return out;
+  };
+  auto batch_q = cat_qkv(dq, num_q);
+  auto batch_k = cat_qkv(dk, num_kv);
+  auto batch_v = cat_qkv(dv, num_kv);
+
+  auto node_batch = make_node();
+  node_batch.compute_test({pq, pk, pv});  // same prefill
+  auto batch_out = node_batch.compute_test({batch_q, batch_k, batch_v});
+
+  ASSERT_EQ(node_batch.get_cached_seq_len(), prefill_len + n_decode);
+
+  // Each position j in batch_out must match seq_out[j]
+  for (int64_t j = 0; j < n_decode; ++j) {
+    const int64_t H = num_q * head_dim;
+    const float* b = batch_out.data_ptr<float>() + j * H;
+    const float* s = seq_out[j].data_ptr<float>();
+    for (int64_t i = 0; i < H; ++i) {
+      EXPECT_FLOAT_EQ(b[i], s[i]) << "mismatch at decode step " << j << " element " << i;
+    }
+  }
+}

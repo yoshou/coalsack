@@ -39,6 +39,9 @@ class eagle3_speculative_decoder {
   // Reset KV cache and start graph processor
   void start();
 
+  // Rollback KV cache to a given sequence position
+  void rollback_to(int64_t position);
+
   // Run one decode step; g_embd is [1, n, eagle3_H], start_pos is KV cache offset
   void decode(const std::vector<uint32_t>& tokens, const dynamic_tensor& g_embd, int64_t start_pos);
 
