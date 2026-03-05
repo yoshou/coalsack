@@ -1,5 +1,6 @@
+#include <gtest/gtest.h>
+
 #include <cmath>
-#include <iostream>
 #include <random>
 #include <vector>
 
@@ -29,9 +30,7 @@ float compute_norm(const float* data, int64_t size) {
 }
 
 // Test basic RoPE operation
-bool test_rope_basic() {
-  std::cout << "Test 1: Basic RoPE operation\n";
-
+TEST(RopeTest, Basic) {
   // Create input tensor [1, 1, 4, 8] (batch=1, heads=1, seq_len=4, head_dim=8)
   std::vector<int64_t> input_shape = {1, 1, 4, 8};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -45,42 +44,24 @@ bool test_rope_basic() {
   dynamic_tensor output = node.compute_test(input);
 
   // Verify output shape
-  if (output.shape() != input.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), input.shape()) << "Output shape mismatch";
 
   // Verify that rotation preserves norms (rotation doesn't change magnitude)
   const float* input_data = input.data_ptr<float>();
   const float* output_data = output.data_ptr<float>();
 
-  bool all_passed = true;
   int64_t head_dim = 8;
   int64_t seq_len = 4;
 
   for (int64_t pos = 0; pos < seq_len; ++pos) {
     float input_norm = compute_norm(input_data + pos * head_dim, head_dim);
     float output_norm = compute_norm(output_data + pos * head_dim, head_dim);
-    float diff = std::abs(input_norm - output_norm);
-
-    if (diff > 1e-5f) {
-      std::cerr << "  ERROR: Norm not preserved at pos " << pos << ": input_norm=" << input_norm
-                << ", output_norm=" << output_norm << ", diff=" << diff << "\n";
-      all_passed = false;
-    }
+    EXPECT_NEAR(output_norm, input_norm, 1e-5f) << "Norm not preserved at pos " << pos;
   }
-
-  if (all_passed) {
-    std::cout << "  ✓ RoPE preserves norms correctly\n";
-  }
-
-  return all_passed;
 }
 
 // Test RoPE rotation correctness with known values
-bool test_rope_rotation() {
-  std::cout << "\nTest 2: RoPE rotation correctness\n";
-
+TEST(RopeTest, Rotation) {
   // Create simple input [1, 1, 2, 4] with known values
   std::vector<int64_t> input_shape = {1, 1, 2, 4};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -118,12 +99,8 @@ bool test_rope_rotation() {
   // Check position 0, first half dim 0
   float expected_00 = 1.0f;  // cos(0) * 1 - sin(0) * 1 = 1
   float expected_02 = 1.0f;  // sin(0) * 1 + cos(0) * 1 = 1
-  if (std::abs(output_data[0] - expected_00) > 1e-5f ||
-      std::abs(output_data[2] - expected_02) > 1e-5f) {
-    std::cerr << "  ERROR: Position 0, pair 0 mismatch: expected [" << expected_00 << ", "
-              << expected_02 << "], got [" << output_data[0] << ", " << output_data[2] << "]\n";
-    return false;
-  }
+  EXPECT_NEAR(output_data[0], expected_00, 1e-5f) << "Position 0, pair 0, first element";
+  EXPECT_NEAR(output_data[2], expected_02, 1e-5f) << "Position 0, pair 0, second element";
 
   // At position 1, angle for dimension 0 is 1 * freq_0 = 1
   // Pair (x[4]=1, x[6]=1) rotated by angle 1
@@ -132,21 +109,12 @@ bool test_rope_rotation() {
   float expected_10 = std::cos(angle1) - std::sin(angle1);  // ~-0.301
   float expected_12 = std::sin(angle1) + std::cos(angle1);  // ~1.382
 
-  if (std::abs(output_data[4] - expected_10) > 1e-5f ||
-      std::abs(output_data[6] - expected_12) > 1e-5f) {
-    std::cerr << "  ERROR: Position 1, pair 0 mismatch: expected [" << expected_10 << ", "
-              << expected_12 << "], got [" << output_data[4] << ", " << output_data[6] << "]\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Rotation angles correct\n";
-  return true;
+  EXPECT_NEAR(output_data[4], expected_10, 1e-5f) << "Position 1, pair 0, first element";
+  EXPECT_NEAR(output_data[6], expected_12, 1e-5f) << "Position 1, pair 0, second element";
 }
 
 // Test YaRN scaling
-bool test_rope_yarn_scaling() {
-  std::cout << "\nTest 3: RoPE with YaRN scaling\n";
-
+TEST(RopeTest, YarnScaling) {
   // Create input tensor [1, 1, 2, 8]
   std::vector<int64_t> input_shape = {1, 1, 2, 8};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -160,41 +128,24 @@ bool test_rope_yarn_scaling() {
   dynamic_tensor output = node.compute_test(input);
 
   // Verify output shape
-  if (output.shape() != input.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), input.shape()) << "Output shape mismatch";
 
   // Verify norms are preserved
   const float* input_data = input.data_ptr<float>();
   const float* output_data = output.data_ptr<float>();
 
-  bool all_passed = true;
   int64_t head_dim = 8;
   int64_t seq_len = 2;
 
   for (int64_t pos = 0; pos < seq_len; ++pos) {
     float input_norm = compute_norm(input_data + pos * head_dim, head_dim);
     float output_norm = compute_norm(output_data + pos * head_dim, head_dim);
-    float diff = std::abs(input_norm - output_norm);
-
-    if (diff > 1e-5f) {
-      std::cerr << "  ERROR: Norm not preserved at pos " << pos << ": diff=" << diff << "\n";
-      all_passed = false;
-    }
+    EXPECT_NEAR(output_norm, input_norm, 1e-5f) << "Norm not preserved at pos " << pos;
   }
-
-  if (all_passed) {
-    std::cout << "  ✓ YaRN scaling works correctly\n";
-  }
-
-  return all_passed;
 }
 
 // Test multiple heads
-bool test_rope_multiple_heads() {
-  std::cout << "\nTest 4: RoPE with multiple heads\n";
-
+TEST(RopeTest, MultipleHeads) {
   // Create input tensor [2, 4, 3, 16] (batch=2, heads=4, seq_len=3, head_dim=16)
   std::vector<int64_t> input_shape = {2, 4, 3, 16};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -208,16 +159,12 @@ bool test_rope_multiple_heads() {
   dynamic_tensor output = node.compute_test(input);
 
   // Verify output shape
-  if (output.shape() != input.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), input.shape()) << "Output shape mismatch";
 
   // Verify norms are preserved for all heads and batches
   const float* input_data = input.data_ptr<float>();
   const float* output_data = output.data_ptr<float>();
 
-  bool all_passed = true;
   int64_t batch = 2;
   int64_t num_heads = 4;
   int64_t seq_len = 3;
@@ -229,38 +176,9 @@ bool test_rope_multiple_heads() {
         int64_t idx = ((b * num_heads + h) * seq_len + pos) * head_dim;
         float input_norm = compute_norm(input_data + idx, head_dim);
         float output_norm = compute_norm(output_data + idx, head_dim);
-        float diff = std::abs(input_norm - output_norm);
-
-        if (diff > 1e-4f) {
-          std::cerr << "  ERROR: Norm not preserved at batch=" << b << ", head=" << h
-                    << ", pos=" << pos << ": diff=" << diff << "\n";
-          all_passed = false;
-        }
+        EXPECT_NEAR(output_norm, input_norm, 1e-4f)
+            << "Norm not preserved at batch=" << b << ", head=" << h << ", pos=" << pos;
       }
     }
-  }
-
-  if (all_passed) {
-    std::cout << "  ✓ Multiple heads handled correctly\n";
-  }
-
-  return all_passed;
-}
-
-int main() {
-  std::cout << "Testing RoPE Node\n";
-  std::cout << "=================\n\n";
-
-  bool test1 = test_rope_basic();
-  bool test2 = test_rope_rotation();
-  bool test3 = test_rope_yarn_scaling();
-  bool test4 = test_rope_multiple_heads();
-
-  if (test1 && test2 && test3 && test4) {
-    std::cout << "\n✓ All tests passed!\n";
-    return 0;
-  } else {
-    std::cerr << "\n✗ Some tests failed\n";
-    return 1;
   }
 }

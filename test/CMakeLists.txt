@@ -183,15 +183,19 @@ add_executable(test_rmsnorm
 )
 
 add_dependencies(test_rmsnorm
+    googletest
     spdlog
 )
 
 target_include_directories(test_rmsnorm PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_rmsnorm
     coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
     pthread
 )
 
@@ -204,15 +208,19 @@ add_executable(test_rope
 )
 
 add_dependencies(test_rope
+    googletest
     spdlog
 )
 
 target_include_directories(test_rope PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_rope
     coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
     pthread
 )
 
@@ -225,15 +233,19 @@ add_executable(test_grouped_attention
 )
 
 add_dependencies(test_grouped_attention
+    googletest
     spdlog
 )
 
 target_include_directories(test_grouped_attention PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_grouped_attention
     coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
     pthread
 )
 
@@ -246,15 +258,19 @@ add_executable(test_moe_router
 )
 
 add_dependencies(test_moe_router
+    googletest
     spdlog
 )
 
 target_include_directories(test_moe_router PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_moe_router
     coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
     pthread
 )
 
@@ -267,15 +283,19 @@ add_executable(test_expert_mlp
 )
 
 add_dependencies(test_expert_mlp
+    googletest
     spdlog
 )
 
 target_include_directories(test_expert_mlp PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${GTEST_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_expert_mlp
     coalsack
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest.a
+    ${CMAKE_BINARY_DIR}/third-party/googletest-build/lib/libgtest_main.a
     pthread
 )
 

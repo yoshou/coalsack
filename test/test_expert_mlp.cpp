@@ -1,5 +1,6 @@
+#include <gtest/gtest.h>
+
 #include <cmath>
-#include <iostream>
 #include <random>
 #include <vector>
 
@@ -45,9 +46,7 @@ float modified_swiglu_ref(float gate_v, float up_v) {
 }
 
 // Test basic expert MLP operation with 2D/1D weights and biases
-bool test_expert_mlp_basic() {
-  std::cout << "Test 1: Basic expert MLP with 2D/1D weights and biases\n";
-
+TEST(ExpertMlpTest, Basic) {
   // Simple setup: batch=1, seq_len=2, hidden_dim=8, expert_ffn_dim=16
   int64_t batch = 1;
   int64_t seq_len = 2;
@@ -101,10 +100,7 @@ bool test_expert_mlp_basic() {
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape matches input shape
-  if (output.shape() != hidden_states.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), hidden_states.shape()) << "Output shape mismatch";
 
   // Verify output is not all zeros
   const float* output_data = output.data_ptr<float>();
@@ -115,20 +111,11 @@ bool test_expert_mlp_basic() {
       break;
     }
   }
-
-  if (!has_nonzero) {
-    std::cerr << "  ERROR: Output is all zeros\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Basic expert MLP works\n";
-  return true;
+  EXPECT_TRUE(has_nonzero) << "Output is all zeros";
 }
 
 // Test modified SwiGLU activation
-bool test_modified_swiglu_activation() {
-  std::cout << "\nTest 2: Modified SwiGLU activation\n";
-
+TEST(ExpertMlpTest, ModifiedSwigluActivation) {
   // Create simple case where we can verify the activation is applied correctly
   int64_t batch = 1;
   int64_t seq_len = 1;
@@ -209,22 +196,11 @@ bool test_modified_swiglu_activation() {
   // Expected: output[0] = modified_swiglu(gate=1.0, up=1.5)
   float expected_0 = modified_swiglu_ref(1.0f, 1.5f);
 
-  float diff_0 = std::abs(output_data[0] - expected_0);
-
-  if (diff_0 > 1e-3f) {  // Relaxed tolerance due to fp16 conversion
-    std::cerr << "  ERROR: Modified SwiGLU not applied correctly at position 0: expected="
-              << expected_0 << ", got=" << output_data[0] << ", diff=" << diff_0 << "\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Modified SwiGLU activation correct\n";
-  return true;
+  EXPECT_NEAR(output_data[0], expected_0, 1e-3f) << "Modified SwiGLU not applied correctly";
 }
 
 // Test multiple experts with 2D/1D weights and biases
-bool test_multiple_experts() {
-  std::cout << "\nTest 3: Multiple expert IDs with 2D/1D weights and biases\n";
-
+TEST(ExpertMlpTest, MultipleExperts) {
   int64_t batch = 1;
   int64_t seq_len = 2;
   int64_t hidden_dim = 8;
@@ -261,11 +237,7 @@ bool test_multiple_experts() {
   for (int expert_id : expert_ids) {
     expert_mlp_node node(expert_id);
 
-    if (node.get_expert_id() != expert_id) {
-      std::cerr << "  ERROR: Expert ID mismatch: expected=" << expert_id
-                << ", got=" << node.get_expert_id() << "\n";
-      return false;
-    }
+    EXPECT_EQ(node.get_expert_id(), expert_id) << "Expert ID mismatch";
 
     // Compute with 2D/1D weights and biases
     dynamic_tensor router_output(dtype::float32, {batch, seq_len, top_k, 2});
@@ -286,10 +258,8 @@ bool test_multiple_experts() {
     dynamic_tensor output = node.compute_test(inputs);
 
     // Verify output shape
-    if (output.shape() != hidden_states.shape()) {
-      std::cerr << "  ERROR: Output shape mismatch for expert " << expert_id << "\n";
-      return false;
-    }
+    EXPECT_EQ(output.shape(), hidden_states.shape())
+        << "Output shape mismatch for expert " << expert_id;
 
     // Verify output is not all zeros
     const float* output_data = output.data_ptr<float>();
@@ -301,20 +271,12 @@ bool test_multiple_experts() {
       }
     }
 
-    if (!has_nonzero) {
-      std::cerr << "  ERROR: Output is all zeros for expert " << expert_id << "\n";
-      return false;
-    }
+    EXPECT_TRUE(has_nonzero) << "Output is all zeros for expert " << expert_id;
   }
-
-  std::cout << "  ✓ Multiple experts with 2D/1D weights and biases work correctly\n";
-  return true;
 }
 
 // Test GPT-OSS scale dimensions
-bool test_gpt_oss_scale() {
-  std::cout << "\nTest 4: GPT-OSS scale dimensions\n";
-
+TEST(ExpertMlpTest, GptOssScale) {
   // GPT-OSS: hidden_dim=2880, expert_ffn_dim=2880
   int64_t batch = 2;
   int64_t seq_len = 4;
@@ -370,10 +332,7 @@ bool test_gpt_oss_scale() {
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape
-  if (output.shape() != hidden_states.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), hidden_states.shape()) << "Output shape mismatch";
 
   // Verify output is not NaN or all zeros
   const float* output_data = output.data_ptr<float>();
@@ -390,34 +349,6 @@ bool test_gpt_oss_scale() {
     }
   }
 
-  if (has_nan) {
-    std::cerr << "  ERROR: Output contains NaN values\n";
-    return false;
-  }
-
-  if (!has_nonzero) {
-    std::cerr << "  ERROR: Output is all zeros\n";
-    return false;
-  }
-
-  std::cout << "  ✓ GPT-OSS scale works correctly\n";
-  return true;
-}
-
-int main() {
-  std::cout << "Testing Expert MLP Node (2D/1D Weights, Biases, Modified SwiGLU)\n";
-  std::cout << "===============================================================\n\n";
-
-  bool test1 = test_expert_mlp_basic();
-  bool test2 = test_modified_swiglu_activation();
-  bool test3 = test_multiple_experts();
-  bool test4 = test_gpt_oss_scale();
-
-  if (test1 && test2 && test3 && test4) {
-    std::cout << "\n✓ All tests passed!\n";
-    return 0;
-  } else {
-    std::cerr << "\n✗ Some tests failed\n";
-    return 1;
-  }
+  EXPECT_FALSE(has_nan) << "Output contains NaN values";
+  EXPECT_TRUE(has_nonzero) << "Output is all zeros";
 }

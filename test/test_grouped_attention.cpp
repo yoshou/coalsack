@@ -1,5 +1,6 @@
+#include <gtest/gtest.h>
+
 #include <cmath>
-#include <iostream>
 #include <random>
 #include <vector>
 
@@ -20,9 +21,7 @@ void fill_random(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 
 }
 
 // Test basic grouped attention
-bool test_grouped_attention_basic() {
-  std::cout << "Test 1: Basic grouped attention\n";
-
+TEST(GroupedAttentionTest, Basic) {
   // Create simple setup: batch=1, seq_len=2, 4 Q heads, 2 KV heads, head_dim=4
   int64_t batch = 1;
   int64_t seq_len = 2;
@@ -50,10 +49,7 @@ bool test_grouped_attention_basic() {
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape matches query shape
-  if (output.shape() != query.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), query.shape()) << "Output shape mismatch";
 
   // Verify output is not all zeros
   const float* output_data = output.data_ptr<float>();
@@ -64,20 +60,11 @@ bool test_grouped_attention_basic() {
       break;
     }
   }
-
-  if (!has_nonzero) {
-    std::cerr << "  ERROR: Output is all zeros\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Basic grouped attention works\n";
-  return true;
+  EXPECT_TRUE(has_nonzero) << "Output is all zeros";
 }
 
 // Test causal masking
-bool test_causal_masking() {
-  std::cout << "\nTest 2: Causal masking\n";
-
+TEST(GroupedAttentionTest, CausalMasking) {
   // Create simple case where we can verify causality
   int64_t batch = 1;
   int64_t seq_len = 3;
@@ -144,20 +131,14 @@ bool test_causal_masking() {
   pos2_avg /= (num_q_heads * head_dim);
 
   // Check ordering: pos0_avg < pos1_avg < pos2_avg (due to causality)
-  if (pos0_avg >= pos1_avg || pos1_avg >= pos2_avg) {
-    std::cerr << "  ERROR: Causal ordering violated: pos0=" << pos0_avg << ", pos1=" << pos1_avg
-              << ", pos2=" << pos2_avg << "\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Causal masking works correctly\n";
-  return true;
+  EXPECT_LT(pos0_avg, pos1_avg) << "Causal ordering violated: pos0=" << pos0_avg
+                                << ", pos1=" << pos1_avg;
+  EXPECT_LT(pos1_avg, pos2_avg) << "Causal ordering violated: pos1=" << pos1_avg
+                                << ", pos2=" << pos2_avg;
 }
 
 // Test grouped heads (multiple Q heads per KV head)
-bool test_grouped_heads() {
-  std::cout << "\nTest 3: Grouped heads (8 Q heads, 2 KV heads)\n";
-
+TEST(GroupedAttentionTest, GroupedHeads) {
   int64_t batch = 2;
   int64_t seq_len = 4;
   int64_t num_q_heads = 8;
@@ -184,19 +165,11 @@ bool test_grouped_heads() {
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape
-  if (output.shape() != query.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Grouped heads handled correctly\n";
-  return true;
+  ASSERT_EQ(output.shape(), query.shape()) << "Output shape mismatch";
 }
 
 // Test GPT-OSS scale (64 Q heads, 8 KV heads)
-bool test_gpt_oss_scale() {
-  std::cout << "\nTest 4: GPT-OSS scale (64 Q heads, 8 KV heads)\n";
-
+TEST(GroupedAttentionTest, GptOssScale) {
   int64_t batch = 1;
   int64_t seq_len = 8;
   int64_t num_q_heads = 64;
@@ -223,10 +196,7 @@ bool test_gpt_oss_scale() {
   dynamic_tensor output = node.compute_test(inputs);
 
   // Verify output shape
-  if (output.shape() != query.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), query.shape()) << "Output shape mismatch";
 
   // Verify output is not all zeros or NaNs
   const float* output_data = output.data_ptr<float>();
@@ -243,34 +213,6 @@ bool test_gpt_oss_scale() {
     }
   }
 
-  if (has_nan) {
-    std::cerr << "  ERROR: Output contains NaN values\n";
-    return false;
-  }
-
-  if (!has_nonzero) {
-    std::cerr << "  ERROR: Output is all zeros\n";
-    return false;
-  }
-
-  std::cout << "  ✓ GPT-OSS scale works correctly\n";
-  return true;
-}
-
-int main() {
-  std::cout << "Testing Grouped Attention Node\n";
-  std::cout << "===============================\n\n";
-
-  bool test1 = test_grouped_attention_basic();
-  bool test2 = test_causal_masking();
-  bool test3 = test_grouped_heads();
-  bool test4 = test_gpt_oss_scale();
-
-  if (test1 && test2 && test3 && test4) {
-    std::cout << "\n✓ All tests passed!\n";
-    return 0;
-  } else {
-    std::cerr << "\n✗ Some tests failed\n";
-    return 1;
-  }
+  EXPECT_FALSE(has_nan) << "Output contains NaN values";
+  EXPECT_TRUE(has_nonzero) << "Output is all zeros";
 }

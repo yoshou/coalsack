@@ -1,5 +1,6 @@
+#include <gtest/gtest.h>
+
 #include <cmath>
-#include <iostream>
 #include <random>
 #include <vector>
 
@@ -20,9 +21,7 @@ void fill_random(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 
 }
 
 // Test basic MoE routing
-bool test_moe_router_basic() {
-  std::cout << "Test 1: Basic MoE routing\n";
-
+TEST(MoeRouterTest, Basic) {
   // Simple setup: batch=1, seq_len=2, hidden_dim=4, 8 experts, top-2
   int64_t batch = 1;
   int64_t seq_len = 2;
@@ -56,10 +55,7 @@ bool test_moe_router_basic() {
 
   // Verify output shape: [batch, seq_len, top_k, 2]
   std::vector<int64_t> expected_shape = {batch, seq_len, top_k, 2};
-  if (output.shape() != expected_shape) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), expected_shape) << "Output shape mismatch";
 
   const float* out_data = output.data_ptr<float>();
 
@@ -71,36 +67,19 @@ bool test_moe_router_basic() {
       float expert_index = out_data[idx + 0];
       float weight = out_data[idx + 1];
 
-      // Check expert index is valid
-      if (expert_index < 0 || expert_index >= num_experts) {
-        std::cerr << "  ERROR: Invalid expert index: " << expert_index << "\n";
-        return false;
-      }
-
-      // Check weight is positive
-      if (weight <= 0.0f) {
-        std::cerr << "  ERROR: Non-positive weight: " << weight << "\n";
-        return false;
-      }
+      EXPECT_GE(expert_index, 0.0f) << "Invalid expert index at [" << s << ", " << k << "]";
+      EXPECT_LT(expert_index, static_cast<float>(num_experts))
+          << "Invalid expert index at [" << s << ", " << k << "]";
+      EXPECT_GT(weight, 0.0f) << "Non-positive weight at [" << s << ", " << k << "]";
 
       weight_sum += weight;
     }
-
-    // Check weights sum to ~1
-    if (std::abs(weight_sum - 1.0f) > 1e-5f) {
-      std::cerr << "  ERROR: Weights don't sum to 1: " << weight_sum << "\n";
-      return false;
-    }
+    EXPECT_NEAR(weight_sum, 1.0f, 1e-5f) << "Weights don't sum to 1 at position " << s;
   }
-
-  std::cout << "  ✓ Basic MoE routing works\n";
-  return true;
 }
 
 // Test top-k selection correctness
-bool test_top_k_selection() {
-  std::cout << "\nTest 2: Top-k selection correctness\n";
-
+TEST(MoeRouterTest, TopKSelection) {
   // Create a controlled scenario where we know which experts should be selected
   int64_t batch = 1;
   int64_t seq_len = 1;
@@ -154,22 +133,12 @@ bool test_top_k_selection() {
   for (int64_t k = 0; k < top_k; ++k) {
     int64_t idx = k * 2;
     int expert_index = static_cast<int>(out_data[idx + 0]);
-
-    if (expert_index != expected_experts[k]) {
-      std::cerr << "  ERROR: Expected expert " << expected_experts[k] << " at position " << k
-                << ", got " << expert_index << "\n";
-      return false;
-    }
+    EXPECT_EQ(expert_index, expected_experts[k]) << "Wrong expert at position " << k;
   }
-
-  std::cout << "  ✓ Top-k selection correct\n";
-  return true;
 }
 
 // Test GPT-OSS scale (32 experts, top-4)
-bool test_gpt_oss_scale() {
-  std::cout << "\nTest 3: GPT-OSS scale (32 experts, top-4)\n";
-
+TEST(MoeRouterTest, GptOssScale) {
   int64_t batch = 2;
   int64_t seq_len = 8;
   int64_t hidden_dim = 128;
@@ -202,15 +171,11 @@ bool test_gpt_oss_scale() {
 
   // Verify output shape
   std::vector<int64_t> expected_shape = {batch, seq_len, top_k, 2};
-  if (output.shape() != expected_shape) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), expected_shape) << "Output shape mismatch";
 
   const float* out_data = output.data_ptr<float>();
 
   // Verify all positions have valid indices and normalized weights
-  bool all_valid = true;
   for (int64_t b = 0; b < batch; ++b) {
     for (int64_t s = 0; s < seq_len; ++s) {
       float weight_sum = 0.0f;
@@ -221,41 +186,24 @@ bool test_gpt_oss_scale() {
         int expert_index = static_cast<int>(out_data[idx + 0]);
         float weight = out_data[idx + 1];
 
-        if (expert_index < 0 || expert_index >= num_experts) {
-          std::cerr << "  ERROR: Invalid expert index at [" << b << ", " << s << ", " << k
-                    << "]: " << expert_index << "\n";
-          all_valid = false;
-        }
-
-        if (weight <= 0.0f || weight > 1.0f) {
-          std::cerr << "  ERROR: Invalid weight at [" << b << ", " << s << ", " << k
-                    << "]: " << weight << "\n";
-          all_valid = false;
-        }
+        EXPECT_GE(expert_index, 0)
+            << "Invalid expert index at [" << b << ", " << s << ", " << k << "]";
+        EXPECT_LT(expert_index, static_cast<int>(num_experts))
+            << "Invalid expert index at [" << b << ", " << s << ", " << k << "]";
+        EXPECT_GT(weight, 0.0f) << "Non-positive weight at [" << b << ", " << s << ", " << k << "]";
+        EXPECT_LE(weight, 1.0f) << "Weight > 1 at [" << b << ", " << s << ", " << k << "]";
 
         weight_sum += weight;
       }
 
-      if (std::abs(weight_sum - 1.0f) > 1e-4f) {
-        std::cerr << "  ERROR: Weights don't sum to 1 at [" << b << ", " << s << "]: " << weight_sum
-                  << "\n";
-        all_valid = false;
-      }
+      EXPECT_NEAR(weight_sum, 1.0f, 1e-4f)
+          << "Weights don't sum to 1 at [" << b << ", " << s << "]";
     }
   }
-
-  if (!all_valid) {
-    return false;
-  }
-
-  std::cout << "  ✓ GPT-OSS scale works correctly\n";
-  return true;
 }
 
 // Test weight normalization
-bool test_weight_normalization() {
-  std::cout << "\nTest 4: Weight normalization\n";
-
+TEST(MoeRouterTest, WeightNormalization) {
   int64_t batch = 1;
   int64_t seq_len = 3;
   int64_t hidden_dim = 8;
@@ -298,31 +246,6 @@ bool test_weight_normalization() {
       weight_sum += weight;
     }
 
-    if (std::abs(weight_sum - 1.0f) > 1e-5f) {
-      std::cerr << "  ERROR: Weights not normalized at position " << s << ": sum=" << weight_sum
-                << "\n";
-      return false;
-    }
-  }
-
-  std::cout << "  ✓ Weight normalization correct\n";
-  return true;
-}
-
-int main() {
-  std::cout << "Testing MoE Router Node\n";
-  std::cout << "=======================\n\n";
-
-  bool test1 = test_moe_router_basic();
-  bool test2 = test_top_k_selection();
-  bool test3 = test_gpt_oss_scale();
-  bool test4 = test_weight_normalization();
-
-  if (test1 && test2 && test3 && test4) {
-    std::cout << "\n✓ All tests passed!\n";
-    return 0;
-  } else {
-    std::cerr << "\n✗ Some tests failed\n";
-    return 1;
+    EXPECT_NEAR(weight_sum, 1.0f, 1e-5f) << "Weights not normalized at position " << s;
   }
 }

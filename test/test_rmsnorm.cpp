@@ -1,5 +1,6 @@
+#include <gtest/gtest.h>
+
 #include <cmath>
-#include <iostream>
 #include <random>
 #include <vector>
 
@@ -20,9 +21,7 @@ void fill_random(dynamic_tensor& tensor, float min_val = -1.0f, float max_val = 
 }
 
 // Test basic RMSNorm operation
-bool test_rmsnorm_basic() {
-  std::cout << "Test 1: Basic RMSNorm operation\n";
-
+TEST(RmsnormTest, Basic) {
   // Create input tensor [2, 4, 8]
   std::vector<int64_t> input_shape = {2, 4, 8};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -44,16 +43,12 @@ bool test_rmsnorm_basic() {
   dynamic_tensor output = node.compute_test(input, weight);
 
   // Verify output shape
-  if (output.shape() != input.shape()) {
-    std::cerr << "  ERROR: Output shape mismatch\n";
-    return false;
-  }
+  ASSERT_EQ(output.shape(), input.shape()) << "Output shape mismatch";
 
   // Verify RMS normalization
   const float* input_data = input.data_ptr<float>();
   const float* output_data = output.data_ptr<float>();
 
-  bool all_passed = true;
   int64_t hidden_dim = 8;
   int64_t outer_size = 2 * 4;
 
@@ -70,27 +65,13 @@ bool test_rmsnorm_basic() {
     for (int64_t j = 0; j < hidden_dim; ++j) {
       float expected = input_data[i * hidden_dim + j] / rms;
       float actual = output_data[i * hidden_dim + j];
-      float diff = std::abs(expected - actual);
-
-      if (diff > 1e-5f) {
-        std::cerr << "  ERROR: Mismatch at [" << i << ", " << j << "]: expected=" << expected
-                  << ", actual=" << actual << ", diff=" << diff << "\n";
-        all_passed = false;
-      }
+      EXPECT_NEAR(actual, expected, 1e-5f) << "Mismatch at [" << i << ", " << j << "]";
     }
   }
-
-  if (all_passed) {
-    std::cout << "  ✓ RMS normalization correct\n";
-  }
-
-  return all_passed;
 }
 
 // Test RMSNorm with weight scaling
-bool test_rmsnorm_with_weight() {
-  std::cout << "\nTest 2: RMSNorm with weight scaling\n";
-
+TEST(RmsnormTest, WithWeight) {
   // Create input tensor [1, 4]
   std::vector<int64_t> input_shape = {1, 4};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -128,27 +109,13 @@ bool test_rmsnorm_with_weight() {
   std::vector<float> expected = {1.0f / expected_rms * 2.0f, 2.0f / expected_rms * 0.5f,
                                  3.0f / expected_rms * 1.5f, 4.0f / expected_rms * 1.0f};
 
-  bool all_passed = true;
   for (int64_t i = 0; i < 4; ++i) {
-    float diff = std::abs(expected[i] - output_data[i]);
-    if (diff > 1e-5f) {
-      std::cerr << "  ERROR: Mismatch at [" << i << "]: expected=" << expected[i]
-                << ", actual=" << output_data[i] << ", diff=" << diff << "\n";
-      all_passed = false;
-    }
+    EXPECT_NEAR(output_data[i], expected[i], 1e-5f) << "Mismatch at [" << i << "]";
   }
-
-  if (all_passed) {
-    std::cout << "  ✓ Weight scaling correct\n";
-  }
-
-  return all_passed;
 }
 
 // Test edge case: single element
-bool test_rmsnorm_single_element() {
-  std::cout << "\nTest 3: Single element normalization\n";
-
+TEST(RmsnormTest, SingleElement) {
   // Create input tensor [1, 1]
   std::vector<int64_t> input_shape = {1, 1};
   dynamic_tensor input(dtype::float32, input_shape);
@@ -171,30 +138,5 @@ bool test_rmsnorm_single_element() {
   // Expected: 5 / sqrt(25) * 2 = 5 / 5 * 2 = 2
   const float* output_data = output.data_ptr<float>();
   float expected = 2.0f;
-  float diff = std::abs(expected - output_data[0]);
-
-  if (diff > 1e-5f) {
-    std::cerr << "  ERROR: Expected " << expected << ", got " << output_data[0] << "\n";
-    return false;
-  }
-
-  std::cout << "  ✓ Single element correct\n";
-  return true;
-}
-
-int main() {
-  std::cout << "Testing RMSNorm Node\n";
-  std::cout << "====================\n\n";
-
-  bool test1 = test_rmsnorm_basic();
-  bool test2 = test_rmsnorm_with_weight();
-  bool test3 = test_rmsnorm_single_element();
-
-  if (test1 && test2 && test3) {
-    std::cout << "\n✓ All tests passed!\n";
-    return 0;
-  } else {
-    std::cerr << "\n✗ Some tests failed\n";
-    return 1;
-  }
+  EXPECT_NEAR(output_data[0], expected, 1e-5f);
 }
