@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
   std::cout << "==============================================\n\n";
 
   std::string model_path =
-      "/workspaces/stargazer/coalsack/sample/superpoint-lightglue/data/"
+      "/workspaces/coalsack/sample/superpoint-lightglue/data/"
       "superpoint_lightglue_pipeline.onnx";
   if (argc > 1) {
     model_path = argv[1];
@@ -91,9 +91,9 @@ int main(int argc, char** argv) {
 
   // Load test images
   std::string img1_path =
-      "/workspaces/stargazer/coalsack/sample/superpoint-lightglue/data/sacre_coeur1.jpg";
+      "/workspaces/coalsack/sample/superpoint-lightglue/data/sacre_coeur1.jpg";
   std::string img2_path =
-      "/workspaces/stargazer/coalsack/sample/superpoint-lightglue/data/sacre_coeur2.jpg";
+      "/workspaces/coalsack/sample/superpoint-lightglue/data/sacre_coeur2.jpg";
 
   cv::Mat img1 = cv::imread(img1_path, cv::IMREAD_GRAYSCALE);
   cv::Mat img2 = cv::imread(img2_path, cv::IMREAD_GRAYSCALE);
