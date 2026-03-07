@@ -9,6 +9,13 @@
 
 namespace coalsack {
 
+enum class protobuf_wire_type : uint8_t {
+  varint = 0,
+  fixed64 = 1,
+  length_delimited = 2,
+  fixed32 = 5,
+};
+
 // ONNX TensorProto.DataType enum values
 enum class onnx_data_type : int32_t {
   undefined = 0,
@@ -139,33 +146,34 @@ class onnx_proto_reader {
   }
 
   // Decode (field_number, wire_type) from the next tag varint.
-  bool read_tag(int& field_number, int& wire_type) {
+  bool read_tag(int& field_number, protobuf_wire_type& wire_type) {
     if (eof()) return false;
     uint64_t tag = read_varint();
     field_number = static_cast<int>(tag >> 3);
-    wire_type = static_cast<int>(tag & 0x7);
+    wire_type = static_cast<protobuf_wire_type>(tag & 0x7);
     return true;
   }
 
   // Skip one field based on wire type.
-  void skip_field(int wire_type) {
+  void skip_field(protobuf_wire_type wire_type) {
     switch (wire_type) {
-      case 0:  // varint
+      case protobuf_wire_type::varint:
         read_varint();
         break;
-      case 1:  // 64-bit
+      case protobuf_wire_type::fixed64:
         if (pos_ + 8 > size_) throw std::runtime_error("skip 64-bit underflow");
         pos_ += 8;
         break;
-      case 2:  // length-delimited
+      case protobuf_wire_type::length_delimited:
         read_length_delimited_span();
         break;
-      case 5:  // 32-bit
+      case protobuf_wire_type::fixed32:
         if (pos_ + 4 > size_) throw std::runtime_error("skip 32-bit underflow");
         pos_ += 4;
         break;
       default:
-        throw std::runtime_error("unknown wire type: " + std::to_string(wire_type));
+        throw std::runtime_error("unknown wire type: " +
+                                 std::to_string(static_cast<int>(wire_type)));
     }
   }
 

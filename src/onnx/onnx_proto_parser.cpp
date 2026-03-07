@@ -7,6 +7,54 @@
 
 namespace coalsack {
 
+namespace {
+
+enum class tensor_proto_field : int {
+  dims = 1,
+  data_type = 2,
+  float_data = 4,
+  int32_data = 5,
+  int64_data = 7,
+  name = 8,
+  raw_data = 9,
+};
+
+enum class attribute_proto_field : int {
+  name = 1,
+  float_value = 2,
+  int_value = 3,
+  string_value = 4,
+  tensor_value = 5,
+  floats = 7,
+  ints = 8,
+  type = 20,
+};
+
+enum class node_proto_field : int {
+  input = 1,
+  output = 2,
+  name = 3,
+  op_type = 4,
+  attribute = 5,
+};
+
+enum class value_info_proto_field : int {
+  name = 1,
+};
+
+enum class graph_proto_field : int {
+  node = 1,
+  initializer = 5,
+  input = 11,
+  output = 12,
+};
+
+enum class model_proto_field : int {
+  graph = 7,
+};
+
+}  // namespace
+
 // Helper: decode packed repeated int64 values from a length-delimited blob.
 static void decode_packed_int64(const uint8_t* data, size_t size, std::vector<int64_t>& out) {
   onnx_proto_reader r(data, size);
@@ -36,56 +84,56 @@ static void decode_packed_float(const uint8_t* data, size_t size, std::vector<fl
 bool parse_onnx_tensor(const uint8_t* data, size_t size, onnx_tensor_proto& out) {
   onnx_proto_reader r(data, size);
   int field_number = 0;
-  int wire_type = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   while (r.read_tag(field_number, wire_type)) {
-    switch (field_number) {
-      case 1:  // dims (packed or unpacked int64)
-        if (wire_type == 2) {
+    switch (static_cast<tensor_proto_field>(field_number)) {
+      case tensor_proto_field::dims:
+        if (wire_type == protobuf_wire_type::length_delimited) {
           auto [ptr, len] = r.read_length_delimited_span();
           decode_packed_int64(ptr, len, out.dims);
-        } else if (wire_type == 0) {
+        } else if (wire_type == protobuf_wire_type::varint) {
           out.dims.push_back(static_cast<int64_t>(r.read_varint()));
         } else {
           r.skip_field(wire_type);
         }
         break;
-      case 2:  // data_type (varint)
+      case tensor_proto_field::data_type:
         out.data_type = static_cast<onnx_data_type>(r.read_varint());
         break;
-      case 4:  // float_data (packed or unpacked float)
-        if (wire_type == 2) {
+      case tensor_proto_field::float_data:
+        if (wire_type == protobuf_wire_type::length_delimited) {
           auto [ptr, len] = r.read_length_delimited_span();
           decode_packed_float(ptr, len, out.float_data);
-        } else if (wire_type == 5) {
+        } else if (wire_type == protobuf_wire_type::fixed32) {
           out.float_data.push_back(r.read_float32());
         } else {
           r.skip_field(wire_type);
         }
         break;
-      case 5:  // int32_data (packed or unpacked int32)
-        if (wire_type == 2) {
+      case tensor_proto_field::int32_data:
+        if (wire_type == protobuf_wire_type::length_delimited) {
           auto [ptr, len] = r.read_length_delimited_span();
           decode_packed_int32(ptr, len, out.int32_data);
-        } else if (wire_type == 0) {
+        } else if (wire_type == protobuf_wire_type::varint) {
           out.int32_data.push_back(static_cast<int32_t>(r.read_varint()));
         } else {
           r.skip_field(wire_type);
         }
         break;
-      case 7:  // int64_data (packed or unpacked int64)
-        if (wire_type == 2) {
+      case tensor_proto_field::int64_data:
+        if (wire_type == protobuf_wire_type::length_delimited) {
           auto [ptr, len] = r.read_length_delimited_span();
           decode_packed_int64(ptr, len, out.int64_data);
-        } else if (wire_type == 0) {
+        } else if (wire_type == protobuf_wire_type::varint) {
           out.int64_data.push_back(static_cast<int64_t>(r.read_varint()));
         } else {
           r.skip_field(wire_type);
         }
         break;
-      case 8:  // name
+      case tensor_proto_field::name:
         out.name = r.read_length_delimited();
         break;
-      case 9:  // raw_data
+      case tensor_proto_field::raw_data:
         out.raw_data = r.read_length_delimited();
         break;
       default:
@@ -99,49 +147,49 @@ bool parse_onnx_tensor(const uint8_t* data, size_t size, onnx_tensor_proto& out)
 bool parse_onnx_attribute(const uint8_t* data, size_t size, onnx_attribute_proto& out) {
   onnx_proto_reader r(data, size);
   int field_number = 0;
-  int wire_type = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   while (r.read_tag(field_number, wire_type)) {
-    switch (field_number) {
-      case 1:  // name
+    switch (static_cast<attribute_proto_field>(field_number)) {
+      case attribute_proto_field::name:
         out.name = r.read_length_delimited();
         break;
-      case 2:  // f (float, wire type 5 = 32-bit fixed)
+      case attribute_proto_field::float_value:
         out.f = r.read_float32();
         break;
-      case 3:  // i (int64, wire type 0 = varint)
+      case attribute_proto_field::int_value:
         out.i = static_cast<int64_t>(r.read_varint());
         break;
-      case 4:  // s (bytes/string)
+      case attribute_proto_field::string_value:
         out.s = r.read_length_delimited();
         break;
-      case 5: {  // t (TensorProto message)
+      case attribute_proto_field::tensor_value: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_tensor_proto tensor;
         parse_onnx_tensor(ptr, len, tensor);
         out.t = std::move(tensor);
         break;
       }
-      case 7:  // floats (packed or unpacked float)
-        if (wire_type == 2) {
+      case attribute_proto_field::floats:
+        if (wire_type == protobuf_wire_type::length_delimited) {
           auto [ptr, len] = r.read_length_delimited_span();
           decode_packed_float(ptr, len, out.floats);
-        } else if (wire_type == 5) {
+        } else if (wire_type == protobuf_wire_type::fixed32) {
           out.floats.push_back(r.read_float32());
         } else {
           r.skip_field(wire_type);
         }
         break;
-      case 8:  // ints (packed or unpacked int64)
-        if (wire_type == 2) {
+      case attribute_proto_field::ints:
+        if (wire_type == protobuf_wire_type::length_delimited) {
           auto [ptr, len] = r.read_length_delimited_span();
           decode_packed_int64(ptr, len, out.ints);
-        } else if (wire_type == 0) {
+        } else if (wire_type == protobuf_wire_type::varint) {
           out.ints.push_back(static_cast<int64_t>(r.read_varint()));
         } else {
           r.skip_field(wire_type);
         }
         break;
-      case 20:  // type (varint discriminant)
+      case attribute_proto_field::type:
         out.type = static_cast<int>(r.read_varint());
         break;
       default:
@@ -155,22 +203,22 @@ bool parse_onnx_attribute(const uint8_t* data, size_t size, onnx_attribute_proto
 bool parse_onnx_node(const uint8_t* data, size_t size, onnx_node_proto& out) {
   onnx_proto_reader r(data, size);
   int field_number = 0;
-  int wire_type = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   while (r.read_tag(field_number, wire_type)) {
-    switch (field_number) {
-      case 1:  // input (repeated string)
+    switch (static_cast<node_proto_field>(field_number)) {
+      case node_proto_field::input:
         out.input.push_back(r.read_length_delimited());
         break;
-      case 2:  // output (repeated string)
+      case node_proto_field::output:
         out.output.push_back(r.read_length_delimited());
         break;
-      case 3:  // name
+      case node_proto_field::name:
         out.name = r.read_length_delimited();
         break;
-      case 4:  // op_type
+      case node_proto_field::op_type:
         out.op_type = r.read_length_delimited();
         break;
-      case 5: {  // attribute (repeated AttributeProto)
+      case node_proto_field::attribute: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_attribute_proto attr;
         parse_onnx_attribute(ptr, len, attr);
@@ -188,10 +236,10 @@ bool parse_onnx_node(const uint8_t* data, size_t size, onnx_node_proto& out) {
 bool parse_onnx_value_info(const uint8_t* data, size_t size, onnx_value_info_proto& out) {
   onnx_proto_reader r(data, size);
   int field_number = 0;
-  int wire_type = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   while (r.read_tag(field_number, wire_type)) {
-    switch (field_number) {
-      case 1:  // name
+    switch (static_cast<value_info_proto_field>(field_number)) {
+      case value_info_proto_field::name:
         out.name = r.read_length_delimited();
         break;
       default:
@@ -205,31 +253,31 @@ bool parse_onnx_value_info(const uint8_t* data, size_t size, onnx_value_info_pro
 bool parse_onnx_graph(const uint8_t* data, size_t size, onnx_graph_proto& out) {
   onnx_proto_reader r(data, size);
   int field_number = 0;
-  int wire_type = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   while (r.read_tag(field_number, wire_type)) {
-    switch (field_number) {
-      case 1: {  // node (repeated NodeProto)
+    switch (static_cast<graph_proto_field>(field_number)) {
+      case graph_proto_field::node: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_node_proto node;
         parse_onnx_node(ptr, len, node);
         out.node.push_back(std::move(node));
         break;
       }
-      case 5: {  // initializer (repeated TensorProto)
+      case graph_proto_field::initializer: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_tensor_proto tensor;
         parse_onnx_tensor(ptr, len, tensor);
         out.initializer.push_back(std::move(tensor));
         break;
       }
-      case 11: {  // input (repeated ValueInfoProto)
+      case graph_proto_field::input: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_value_info_proto vi;
         parse_onnx_value_info(ptr, len, vi);
         out.input.push_back(std::move(vi));
         break;
       }
-      case 12: {  // output (repeated ValueInfoProto)
+      case graph_proto_field::output: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_value_info_proto vi;
         parse_onnx_value_info(ptr, len, vi);
@@ -247,10 +295,10 @@ bool parse_onnx_graph(const uint8_t* data, size_t size, onnx_graph_proto& out) {
 bool parse_onnx_model(const uint8_t* data, size_t size, onnx_model_proto& out) {
   onnx_proto_reader r(data, size);
   int field_number = 0;
-  int wire_type = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   while (r.read_tag(field_number, wire_type)) {
-    switch (field_number) {
-      case 7: {  // graph (GraphProto)
+    switch (static_cast<model_proto_field>(field_number)) {
+      case model_proto_field::graph: {
         auto [ptr, len] = r.read_length_delimited_span();
         onnx_graph_proto graph;
         parse_onnx_graph(ptr, len, graph);

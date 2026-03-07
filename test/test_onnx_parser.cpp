@@ -91,15 +91,17 @@ TEST(onnx_proto_reader, read_tag_basic) {
   // field 1, wire type 2 → tag = (1 << 3) | 2 = 10 = 0x0A
   uint8_t data[] = {0x0A};
   onnx_proto_reader r(data, sizeof(data));
-  int field_number = 0, wire_type = 0;
+  int field_number = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   EXPECT_TRUE(r.read_tag(field_number, wire_type));
   EXPECT_EQ(field_number, 1);
-  EXPECT_EQ(wire_type, 2);
+  EXPECT_EQ(wire_type, protobuf_wire_type::length_delimited);
 }
 
 TEST(onnx_proto_reader, read_tag_eof) {
   onnx_proto_reader r(nullptr, 0);
-  int field_number = 0, wire_type = 0;
+  int field_number = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::varint;
   EXPECT_FALSE(r.read_tag(field_number, wire_type));
 }
 
@@ -107,10 +109,11 @@ TEST(onnx_proto_reader, read_tag_large_field_number) {
   // field 20, wire type 0 → tag = (20 << 3) | 0 = 160 = 0xA0, 0x01 (varint)
   uint8_t data[] = {0xA0, 0x01};
   onnx_proto_reader r(data, sizeof(data));
-  int field_number = 0, wire_type = 0;
+  int field_number = 0;
+  protobuf_wire_type wire_type = protobuf_wire_type::length_delimited;
   EXPECT_TRUE(r.read_tag(field_number, wire_type));
   EXPECT_EQ(field_number, 20);
-  EXPECT_EQ(wire_type, 0);
+  EXPECT_EQ(wire_type, protobuf_wire_type::varint);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +126,7 @@ TEST(onnx_proto_reader, skip_varint_field) {
   encode_varint(buf, 42);
   encode_varint(buf, 99);
   onnx_proto_reader r(buf.data(), buf.size());
-  r.skip_field(0);  // skip varint
+  r.skip_field(protobuf_wire_type::varint);
   EXPECT_EQ(r.read_varint(), 99u);
 }
 
@@ -137,7 +140,7 @@ TEST(onnx_proto_reader, skip_length_delimited_field) {
   // then a varint sentinel
   encode_varint(buf, 55);
   onnx_proto_reader r(buf.data(), buf.size());
-  r.skip_field(2);
+  r.skip_field(protobuf_wire_type::length_delimited);
   EXPECT_EQ(r.read_varint(), 55u);
 }
 
@@ -145,7 +148,7 @@ TEST(onnx_proto_reader, skip_32bit_field) {
   std::vector<uint8_t> buf = {0x01, 0x02, 0x03, 0x04};
   encode_varint(buf, 77);
   onnx_proto_reader r(buf.data(), buf.size());
-  r.skip_field(5);
+  r.skip_field(protobuf_wire_type::fixed32);
   EXPECT_EQ(r.read_varint(), 77u);
 }
 
