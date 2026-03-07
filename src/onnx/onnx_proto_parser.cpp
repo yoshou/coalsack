@@ -39,29 +39,49 @@ bool parse_onnx_tensor(const uint8_t* data, size_t size, onnx_tensor_proto& out)
   int wire_type = 0;
   while (r.read_tag(field_number, wire_type)) {
     switch (field_number) {
-      case 1: {  // dims (packed int64)
-        auto [ptr, len] = r.read_length_delimited_span();
-        decode_packed_int64(ptr, len, out.dims);
+      case 1:  // dims (packed or unpacked int64)
+        if (wire_type == 2) {
+          auto [ptr, len] = r.read_length_delimited_span();
+          decode_packed_int64(ptr, len, out.dims);
+        } else if (wire_type == 0) {
+          out.dims.push_back(static_cast<int64_t>(r.read_varint()));
+        } else {
+          r.skip_field(wire_type);
+        }
         break;
-      }
       case 2:  // data_type (varint)
         out.data_type = static_cast<onnx_data_type>(r.read_varint());
         break;
-      case 4: {  // float_data (packed float)
-        auto [ptr, len] = r.read_length_delimited_span();
-        decode_packed_float(ptr, len, out.float_data);
+      case 4:  // float_data (packed or unpacked float)
+        if (wire_type == 2) {
+          auto [ptr, len] = r.read_length_delimited_span();
+          decode_packed_float(ptr, len, out.float_data);
+        } else if (wire_type == 5) {
+          out.float_data.push_back(r.read_float32());
+        } else {
+          r.skip_field(wire_type);
+        }
         break;
-      }
-      case 5: {  // int32_data (packed int32)
-        auto [ptr, len] = r.read_length_delimited_span();
-        decode_packed_int32(ptr, len, out.int32_data);
+      case 5:  // int32_data (packed or unpacked int32)
+        if (wire_type == 2) {
+          auto [ptr, len] = r.read_length_delimited_span();
+          decode_packed_int32(ptr, len, out.int32_data);
+        } else if (wire_type == 0) {
+          out.int32_data.push_back(static_cast<int32_t>(r.read_varint()));
+        } else {
+          r.skip_field(wire_type);
+        }
         break;
-      }
-      case 7: {  // int64_data (packed int64)
-        auto [ptr, len] = r.read_length_delimited_span();
-        decode_packed_int64(ptr, len, out.int64_data);
+      case 7:  // int64_data (packed or unpacked int64)
+        if (wire_type == 2) {
+          auto [ptr, len] = r.read_length_delimited_span();
+          decode_packed_int64(ptr, len, out.int64_data);
+        } else if (wire_type == 0) {
+          out.int64_data.push_back(static_cast<int64_t>(r.read_varint()));
+        } else {
+          r.skip_field(wire_type);
+        }
         break;
-      }
       case 8:  // name
         out.name = r.read_length_delimited();
         break;
@@ -101,16 +121,26 @@ bool parse_onnx_attribute(const uint8_t* data, size_t size, onnx_attribute_proto
         out.t = std::move(tensor);
         break;
       }
-      case 7: {  // floats (packed float)
-        auto [ptr, len] = r.read_length_delimited_span();
-        decode_packed_float(ptr, len, out.floats);
+      case 7:  // floats (packed or unpacked float)
+        if (wire_type == 2) {
+          auto [ptr, len] = r.read_length_delimited_span();
+          decode_packed_float(ptr, len, out.floats);
+        } else if (wire_type == 5) {
+          out.floats.push_back(r.read_float32());
+        } else {
+          r.skip_field(wire_type);
+        }
         break;
-      }
-      case 8: {  // ints (packed int64)
-        auto [ptr, len] = r.read_length_delimited_span();
-        decode_packed_int64(ptr, len, out.ints);
+      case 8:  // ints (packed or unpacked int64)
+        if (wire_type == 2) {
+          auto [ptr, len] = r.read_length_delimited_span();
+          decode_packed_int64(ptr, len, out.ints);
+        } else if (wire_type == 0) {
+          out.ints.push_back(static_cast<int64_t>(r.read_varint()));
+        } else {
+          r.skip_field(wire_type);
+        }
         break;
-      }
       case 20:  // type (varint discriminant)
         out.type = static_cast<int>(r.read_varint());
         break;
