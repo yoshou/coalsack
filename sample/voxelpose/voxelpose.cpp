@@ -925,7 +925,7 @@ class project_node : public graph_node {
       using heatmaps_list_type = std::vector<std::tuple<tensor<float, 4>, camera_data, roi_data>>;
 
       heatmaps_list_type heatmaps_and_metas;
-      tensor<float, 1> grid_center;
+      tensor<float, 1> grid_center({3});
 
       for (const auto &[name, field] : obj_msg->get_fields()) {
         if (name == "heatmaps") {

@@ -101,8 +101,9 @@ class test_add_node : public binary_op_node {
       const float* a_data = a.data_ptr<float>();
       const float* b_data = b.data_ptr<float>();
       float* result_data = result.data_ptr<float>();
+      const int64_t numel = a.numel();
 
-      for (size_t i = 0; i < a.numel(); ++i) {
+      for (int64_t i = 0; i < numel; ++i) {
         result_data[i] = a_data[i] + b_data[i];
       }
     }
@@ -262,13 +263,13 @@ TEST(FrameSyncTest, MultipleFrames) {
     }
   }
 
-  ASSERT_EQ(results.size(), 2);
+  ASSERT_EQ(results.size(), size_t{2});
 
-  EXPECT_EQ(results[0].first, 1);
+  EXPECT_EQ(results[0].first, uint64_t{1});
   float result1 = results[0].second.data_ptr<float>()[0];
   EXPECT_NEAR(result1, 11.0f, 1e-5);
 
-  EXPECT_EQ(results[1].first, 2);
+  EXPECT_EQ(results[1].first, uint64_t{2});
   float result2 = results[1].second.data_ptr<float>()[0];
   EXPECT_NEAR(result2, 22.0f, 1e-5);
 }

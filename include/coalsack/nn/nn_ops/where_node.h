@@ -46,12 +46,14 @@ class where_node : public variadic_op_node {
     T* out_data = output.data_ptr<T>();
 
     auto out_shape = output.shape();
+    const int64_t output_numel = output.numel();
 
-    for (size_t i = 0; i < output.numel(); ++i) {
-      size_t cond_idx = compute_broadcast_index(i, condition.shape(), out_shape);
-      size_t x_idx = compute_broadcast_index(i, x.shape(), out_shape);
-      size_t y_idx = compute_broadcast_index(i, y.shape(), out_shape);
-      out_data[i] = cond_data[cond_idx] ? x_data[x_idx] : y_data[y_idx];
+    for (int64_t i = 0; i < output_numel; ++i) {
+      const size_t offset = static_cast<size_t>(i);
+      size_t cond_idx = compute_broadcast_index(offset, condition.shape(), out_shape);
+      size_t x_idx = compute_broadcast_index(offset, x.shape(), out_shape);
+      size_t y_idx = compute_broadcast_index(offset, y.shape(), out_shape);
+      out_data[offset] = cond_data[cond_idx] ? x_data[x_idx] : y_data[y_idx];
     }
   }
 

@@ -53,7 +53,7 @@ class conv_node : public variadic_op_node {
     int64_t C_out_per_group = C_out / group_;
 
     for (int64_t n = 0; n < N; ++n) {
-      for (int64_t g = 0; g < static_cast<size_t>(group_); ++g) {
+      for (int64_t g = 0; g < group_; ++g) {
         for (int64_t c_out_offset = 0; c_out_offset < C_out_per_group; ++c_out_offset) {
           int64_t c_out = g * C_out_per_group + c_out_offset;
           for (int64_t h_out = 0; h_out < H_out; ++h_out) {

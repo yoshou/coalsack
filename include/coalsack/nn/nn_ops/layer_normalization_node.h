@@ -20,13 +20,14 @@ class layer_normalization_node : public variadic_op_node {
     const auto& X = inputs[0];
     const auto& scale = inputs[1];
     const auto& shape = X.shape();
-    int64_t rank = shape.size();
+    const int64_t rank = static_cast<int64_t>(shape.size());
     int64_t actual_axis = axis_ < 0 ? axis_ + rank : axis_;
+    const size_t axis_start = static_cast<size_t>(actual_axis);
 
     size_t outer_size = 1;
     for (int64_t i = 0; i < actual_axis; ++i) outer_size *= shape[i];
     size_t norm_size = 1;
-    for (int64_t i = actual_axis; i < shape.size(); ++i) norm_size *= shape[i];
+    for (size_t i = axis_start; i < shape.size(); ++i) norm_size *= static_cast<size_t>(shape[i]);
 
     dynamic_tensor output(X.get_dtype(), shape);
 
@@ -54,22 +55,22 @@ class layer_normalization_node : public variadic_op_node {
     const T* bias_data = inputs.size() > 2 ? inputs[2].data_ptr<T>() : nullptr;
     T* out_data = output.data_ptr<T>();
 
-    for (int64_t outer = 0; outer < outer_size; ++outer) {
+    for (size_t outer = 0; outer < outer_size; ++outer) {
       T mean = 0;
-      for (int64_t i = 0; i < norm_size; ++i) {
+      for (size_t i = 0; i < norm_size; ++i) {
         mean += x_data[outer * norm_size + i];
       }
       mean /= norm_size;
 
       T variance = 0;
-      for (int64_t i = 0; i < norm_size; ++i) {
+      for (size_t i = 0; i < norm_size; ++i) {
         T diff = x_data[outer * norm_size + i] - mean;
         variance += diff * diff;
       }
       variance /= norm_size;
 
       T inv_std = static_cast<T>(1) / std::sqrt(variance + static_cast<T>(epsilon_));
-      for (int64_t i = 0; i < norm_size; ++i) {
+      for (size_t i = 0; i < norm_size; ++i) {
         size_t idx = outer * norm_size + i;
         T normalized = (x_data[idx] - mean) * inv_std;
         out_data[idx] = normalized * scale_data[i];

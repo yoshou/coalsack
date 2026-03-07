@@ -287,8 +287,8 @@ inline void dequantize_block_q5_K(const uint8_t* src, float* dst, int64_t k) {
     for (int j = 0; j < 4; ++j) {
       scales[j + 4] = (scales_data[j] >> 6) | ((scales_data[j + 4] >> 6) << 2) |
                       ((scales_data[j + 8] >> (j * 2)) & 0x03) << 4;
-      mins[j + 4] = (scales_data[j + 4] >> 4) & 0x03 |
-                    ((scales_data[j + 8] >> (j * 2 + 4)) & 0x03) << 2 |
+      mins[j + 4] = ((scales_data[j + 4] >> 4) & 0x03) |
+                    (((scales_data[j + 8] >> (j * 2 + 4)) & 0x03) << 2) |
                     ((scales_data[j + 8] >> 6) << 4);
     }
 

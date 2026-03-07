@@ -1600,11 +1600,12 @@ class project_individual_node : public graph_node {
       });
 
       std::vector<std::array<float, 2>> individual_sample_grid;
-      for (size_t x = start[0]; x < end[0]; x++) {
-        for (size_t y = start[1]; y < end[1]; y++) {
-          for (size_t z = start[2]; z < end[2]; z++) {
+      for (int x = start[0]; x < end[0]; ++x) {
+        for (int y = start[1]; y < end[1]; ++y) {
+          for (int z = start[2]; z < end[2]; ++z) {
             individual_sample_grid.push_back(
-                sample_grid[z + y * fine_cube_size[2] + x * fine_cube_size[2] * fine_cube_size[1]]);
+                sample_grid[static_cast<size_t>(z) + static_cast<size_t>(y) * fine_cube_size[2] +
+                            static_cast<size_t>(x) * fine_cube_size[2] * fine_cube_size[1]]);
           }
         }
       }

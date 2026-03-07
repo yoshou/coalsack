@@ -10,7 +10,7 @@ using namespace coalsack;
 TEST(Float16Test, DtypeSupport) {
   dynamic_tensor t(dtype::float16, {10, 20});
   EXPECT_EQ(t.get_dtype(), dtype::float16);
-  EXPECT_EQ(t.bytes(), 10 * 20 * 2);
+  EXPECT_EQ(t.bytes(), size_t{10 * 20 * 2});
 }
 
 TEST(Float16Test, Fp16ToFp32Conversion) {
@@ -39,7 +39,7 @@ TEST(Float16Test, MatMulMixed_Fp32Fp32) {
   dynamic_tensor c = matmul.compute_test(a, b);
 
   EXPECT_EQ(c.get_dtype(), dtype::float32);
-  ASSERT_EQ(c.shape().size(), 2);
+  ASSERT_EQ(c.shape().size(), size_t{2});
   EXPECT_EQ(c.shape()[0], 2);
   EXPECT_EQ(c.shape()[1], 4);
 
@@ -68,7 +68,7 @@ TEST(Float16Test, MatMulMixed_Fp32Fp16) {
   dynamic_tensor c = matmul.compute_test(a, b_fp16);
 
   EXPECT_EQ(c.get_dtype(), dtype::float32);
-  ASSERT_EQ(c.shape().size(), 2);
+  ASSERT_EQ(c.shape().size(), size_t{2});
   EXPECT_EQ(c.shape()[0], 2);
   EXPECT_EQ(c.shape()[1], 4);
 
@@ -95,7 +95,7 @@ TEST(Float16Test, EmbeddingLookup_Fp16) {
   dynamic_tensor output = emb.compute_test(ids, weight_fp16);
 
   EXPECT_EQ(output.get_dtype(), dtype::float32);
-  ASSERT_EQ(output.shape().size(), 3);
+  ASSERT_EQ(output.shape().size(), size_t{3});
   EXPECT_EQ(output.shape()[0], 1);
   EXPECT_EQ(output.shape()[1], 2);
   EXPECT_EQ(output.shape()[2], 4);
@@ -132,7 +132,7 @@ TEST(Float16Test, EmbeddingLookup_Fp32) {
   dynamic_tensor output = emb.compute_test(ids, weight_fp32);
 
   EXPECT_EQ(output.get_dtype(), dtype::float32);
-  ASSERT_EQ(output.shape().size(), 3);
+  ASSERT_EQ(output.shape().size(), size_t{3});
   EXPECT_EQ(output.shape()[0], 1);
   EXPECT_EQ(output.shape()[1], 2);
   EXPECT_EQ(output.shape()[2], 4);

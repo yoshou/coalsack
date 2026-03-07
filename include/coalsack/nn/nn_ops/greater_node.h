@@ -34,11 +34,13 @@ class greater_node : public binary_op_node {
     const T* a_data = a.data_ptr<T>();
     const T* b_data = b.data_ptr<T>();
     bool* out_data = output.data_ptr<bool>();
+    const int64_t output_numel = output.numel();
 
-    for (size_t i = 0; i < output.numel(); ++i) {
-      size_t a_idx = compute_broadcast_index(i, a.shape(), output_shape);
-      size_t b_idx = compute_broadcast_index(i, b.shape(), output_shape);
-      out_data[i] = a_data[a_idx] > b_data[b_idx];
+    for (int64_t i = 0; i < output_numel; ++i) {
+      const size_t offset = static_cast<size_t>(i);
+      size_t a_idx = compute_broadcast_index(offset, a.shape(), output_shape);
+      size_t b_idx = compute_broadcast_index(offset, b.shape(), output_shape);
+      out_data[offset] = a_data[a_idx] > b_data[b_idx];
     }
   }
 

@@ -824,7 +824,7 @@ class tensor {
       drop[axes[i]] = true;
     }
 
-    typename reduced_tensor::shape_type new_tensor_shape;
+    typename reduced_tensor::shape_type new_tensor_shape{};
 
     for (size_t i = 0, j = 0; i < num_dims; i++) {
       if (drop[i] == false) {
@@ -834,7 +834,7 @@ class tensor {
     }
 
     auto new_tensor = reduced_tensor::zeros(new_tensor_shape);
-    stride_type new_tensor_assign_stride;
+    stride_type new_tensor_assign_stride{};
 
     for (size_t i = 0, j = 0; i < num_dims; i++) {
       if (drop[i] == false) {
@@ -862,7 +862,7 @@ class tensor {
       drop[axes[i]] = true;
     }
 
-    typename reduced_tensor::shape_type new_tensor_shape;
+    typename reduced_tensor::shape_type new_tensor_shape{};
 
     for (size_t i = 0, j = 0; i < num_dims; i++) {
       if (drop[i] == false) {
@@ -872,7 +872,7 @@ class tensor {
     }
 
     reduced_tensor new_tensor(new_tensor_shape);
-    stride_type new_tensor_assign_stride;
+    stride_type new_tensor_assign_stride{};
 
     // Initialize with -infinity for max operation
     std::fill_n(new_tensor.data.data(), new_tensor.get_size(),

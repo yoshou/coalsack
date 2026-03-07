@@ -137,8 +137,8 @@ TEST(TensorTest, TestConcat) {
   std::vector<tensor<float, 2>> tensors = {tensor1, tensor2, tensor3};
   auto result = tensor<float, 2>::concat<0>(tensors);
 
-  ASSERT_EQ(result.shape[0], 6);
-  ASSERT_EQ(result.shape[1], 2);
+  ASSERT_EQ(result.shape[0], 6u);
+  ASSERT_EQ(result.shape[1], 2u);
   ASSERT_EQ(result.get({0, 0}), 1);
   ASSERT_EQ(result.get({2, 0}), 5);
   ASSERT_EQ(result.get({4, 0}), 9);
@@ -157,9 +157,9 @@ TEST(TensorTest, TestStack) {
   std::vector<tensor<float, 2>> tensors = {tensor1, tensor2};
   auto result = tensor<float, 2>::stack<1>(tensors);
 
-  ASSERT_EQ(result.shape[0], 2);
-  ASSERT_EQ(result.shape[1], 2);
-  ASSERT_EQ(result.shape[2], 2);
+  ASSERT_EQ(result.shape[0], 2u);
+  ASSERT_EQ(result.shape[1], 2u);
+  ASSERT_EQ(result.shape[2], 2u);
   // stack<1> creates new dimension at position 2
   // result should concat along dim 2
   ASSERT_EQ(result.get({0, 0, 0}), 1);
@@ -199,7 +199,7 @@ TEST(TensorTest, TestSum) {
 
   auto result = tensor1.sum<1>({1});  // sum along axis 1
 
-  ASSERT_EQ(result.shape[0], 2);
+  ASSERT_EQ(result.shape[0], 2u);
   ASSERT_EQ(result.get({0}), 9);   // 1 + 3 + 5
   ASSERT_EQ(result.get({1}), 12);  // 2 + 4 + 6
 }
@@ -212,7 +212,7 @@ TEST(TensorTest, TestMax) {
 
   auto result = tensor1.max<1>({1});  // max along axis 1
 
-  ASSERT_EQ(result.shape[0], 2);
+  ASSERT_EQ(result.shape[0], 2u);
   ASSERT_EQ(result.get({0}), 5);  // max(1, 3, 5)
   ASSERT_EQ(result.get({1}), 6);  // max(2, 4, 6)
 }
@@ -224,9 +224,9 @@ TEST(TensorTest, TestMaxPool3D) {
   tensor<float, 3> tensor1({4, 4, 4}, data.data());
   auto result = tensor1.max_pool3d(2, 2, 0, 1);
 
-  ASSERT_EQ(result.shape[0], 4);
-  ASSERT_EQ(result.shape[1], 4);
-  ASSERT_EQ(result.shape[2], 4);
+  ASSERT_EQ(result.shape[0], 4u);
+  ASSERT_EQ(result.shape[1], 4u);
+  ASSERT_EQ(result.shape[2], 4u);
 
   // Check that max pooling produces larger or equal values
   ASSERT_GE(result.get({0, 0, 0}), tensor1.get({0, 0, 0}));
@@ -244,8 +244,8 @@ TEST(TensorTest, TestView) {
   // offset moves data pointer by 1*1 + 0*3 + 0*6 = 1
   // view uses stride[0]=1, stride[1]=3 from original
 
-  ASSERT_EQ(view.shape[0], 2);
-  ASSERT_EQ(view.shape[1], 2);
+  ASSERT_EQ(view.shape[0], 2u);
+  ASSERT_EQ(view.shape[1], 2u);
   ASSERT_EQ(view.get({0, 0}), 2);  // data[1 + 0*1 + 0*3] = data[1] = 2
   ASSERT_EQ(view.get({1, 1}), 6);  // data[1 + 1*1 + 1*3] = data[5] = 6
 }
@@ -256,8 +256,8 @@ TEST(TensorTest, TestSqueeze) {
 
   auto view = tensor1.squeeze<2>(0);
 
-  ASSERT_EQ(view.shape[0], 2);
-  ASSERT_EQ(view.shape[1], 2);
+  ASSERT_EQ(view.shape[0], 2u);
+  ASSERT_EQ(view.shape[1], 2u);
   ASSERT_EQ(view.get({0, 0}), 1);
   ASSERT_EQ(view.get({1, 1}), 4);
 }
@@ -268,9 +268,9 @@ TEST(TensorTest, TestUnsqueeze) {
 
   auto view = tensor1.unsqueeze<3>(1);
 
-  ASSERT_EQ(view.shape[0], 2);
-  ASSERT_EQ(view.shape[1], 1);
-  ASSERT_EQ(view.shape[2], 2);
+  ASSERT_EQ(view.shape[0], 2u);
+  ASSERT_EQ(view.shape[1], 1u);
+  ASSERT_EQ(view.shape[2], 2u);
   ASSERT_EQ(view.get({0, 0, 0}), 1);
   ASSERT_EQ(view.get({1, 0, 1}), 4);
 }
@@ -281,9 +281,9 @@ TEST(TensorTest, TestReshape) {
 
   auto result = tensor1.view().reshape<3>({1, 2, 3});
 
-  ASSERT_EQ(result.shape[0], 1);
-  ASSERT_EQ(result.shape[1], 2);
-  ASSERT_EQ(result.shape[2], 3);
+  ASSERT_EQ(result.shape[0], 1u);
+  ASSERT_EQ(result.shape[1], 2u);
+  ASSERT_EQ(result.shape[2], 3u);
   ASSERT_EQ(result.get({0, 0, 0}), 1);
   ASSERT_EQ(result.get({0, 1, 2}), 6);
 }
@@ -351,10 +351,10 @@ TEST(TensorTest, TestEmpty) {
 TEST(TensorTest, TestGetSize) {
   tensor<float, 3> tensor1({2, 3, 4});
 
-  ASSERT_EQ(tensor1.get_size(), 24);
-  ASSERT_EQ(tensor1.get_size(0), 2);
-  ASSERT_EQ(tensor1.get_size(1), 3);
-  ASSERT_EQ(tensor1.get_size(2), 4);
+  ASSERT_EQ(tensor1.get_size(), size_t{24});
+  ASSERT_EQ(tensor1.get_size(0), size_t{2});
+  ASSERT_EQ(tensor1.get_size(1), size_t{3});
+  ASSERT_EQ(tensor1.get_size(2), size_t{4});
 }
 
 TEST(TensorTest, TestCopyConstructorAndAssignment) {
@@ -418,8 +418,8 @@ TEST(TensorTest, TestContiguous) {
   // transposed should be {3, 2}
   auto contiguous = transposed.contiguous();
 
-  ASSERT_EQ(contiguous.shape[0], 3);
-  ASSERT_EQ(contiguous.shape[1], 2);
+  ASSERT_EQ(contiguous.shape[0], 3u);
+  ASSERT_EQ(contiguous.shape[1], 2u);
   ASSERT_EQ(contiguous.get({0, 0}), 1);
   ASSERT_EQ(contiguous.get({0, 1}), 2);
   ASSERT_EQ(contiguous.get({1, 0}), 3);
