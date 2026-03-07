@@ -47,7 +47,18 @@ class graph_edge {
   EDGE_TYPE edge_type;
   std::vector<std::shared_ptr<graph_message_callback>> callbacks;
 
+  void add_subscriber(std::shared_ptr<graph_message_callback> callback) {
+    if (std::find(callbacks.begin(), callbacks.end(), callback) != callbacks.end()) {
+      throw std::logic_error("The callback has been already registerd");
+    }
+    callbacks.push_back(callback);
+  }
+
+  void clear_subscribers() { callbacks.clear(); }
+
  public:
+  friend class graph_node;
+
   graph_edge(graph_node* source, EDGE_TYPE edge_type = EDGE_TYPE::DATAFLOW)
       : source(source), name(), edge_type(edge_type), callbacks() {}
 
@@ -58,15 +69,6 @@ class graph_edge {
   EDGE_TYPE get_type() const { return edge_type; }
 
   graph_node* get_source() const { return source; }
-
-  void set_callback(std::shared_ptr<graph_message_callback> callback) {
-    if (std::find(callbacks.begin(), callbacks.end(), callback) != callbacks.end()) {
-      throw std::logic_error("The callback has been already registerd");
-    }
-    callbacks.push_back(callback);
-  }
-
-  void remove_callback() { callbacks.clear(); }
 
   void send(graph_message_ptr message) {
     for (const auto& callback : callbacks) {

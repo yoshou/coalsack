@@ -72,6 +72,35 @@
 
 using namespace coalsack;
 
+class message_capture_node : public graph_node {
+  std::vector<graph_message_ptr> messages_;
+
+ public:
+  std::string get_proc_name() const override { return "message_capture_node"; }
+
+  void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+    messages_.push_back(message);
+  }
+
+  graph_message_ptr last_message() const {
+    if (messages_.empty()) {
+      return nullptr;
+    }
+    return messages_.back();
+  }
+};
+
+struct observed_output {
+  std::shared_ptr<message_capture_node> collector;
+};
+
+static observed_output observe_output(const std::shared_ptr<graph_node>& node,
+                                      const std::string& output_name = "default") {
+  observed_output observed{std::make_shared<message_capture_node>()};
+  observed.collector->set_input(node->get_output(output_name));
+  return observed;
+}
+
 static std::shared_ptr<result_message> make_result_message(
     const std::unordered_map<std::string, dynamic_tensor>& tensors, uint64_t frame_number = 1) {
   std::unordered_map<std::string, graph_message_ptr> fields;
@@ -119,12 +148,12 @@ static void run_unary_test(const std::shared_ptr<graph_node>& node, const dynami
     unary_node->set_output_name(expected_output_field);
   }
 
-  std::shared_ptr<graph_message> output_msg;
-  node->get_output()->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) { output_msg = msg; }));
+  auto observed = observe_output(node);
 
   auto input_msg = make_result_message({{"input", input}}, input_frame);
   node->process("default", input_msg);
+
+  auto output_msg = observed.collector->last_message();
 
   ASSERT_TRUE(output_msg) << "no output";
   expect_ok_result_message(output_msg);
@@ -144,12 +173,12 @@ static void run_binary_test(const std::shared_ptr<graph_node>& node, const dynam
     binary_node->set_output_name(expected_output_field);
   }
 
-  std::shared_ptr<graph_message> output_msg;
-  node->get_output()->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) { output_msg = msg; }));
+  auto observed = observe_output(node);
 
   auto input_msg = make_result_message({{input_a_name, a}, {input_b_name, b}}, input_frame);
   node->process("default", input_msg);
+
+  auto output_msg = observed.collector->last_message();
 
   ASSERT_TRUE(output_msg) << "no output";
   expect_ok_result_message(output_msg);
@@ -176,12 +205,12 @@ static void run_variadic_test(const std::shared_ptr<graph_node>& node,
     variadic_node->set_output_name(expected_output_field);
   }
 
-  std::shared_ptr<graph_message> output_msg;
-  node->get_output()->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) { output_msg = msg; }));
+  auto observed = observe_output(node);
 
   auto input_msg = make_result_message(fields, input_frame);
   node->process("default", input_msg);
+
+  auto output_msg = observed.collector->last_message();
 
   ASSERT_TRUE(output_msg) << "no output";
   expect_ok_result_message(output_msg);
@@ -195,12 +224,12 @@ static void run_graphnode_result_fields_test(
     const std::string& expected_output_field) {
   const uint64_t input_frame = 7;
 
-  std::shared_ptr<graph_message> output_msg;
-  node->get_output()->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) { output_msg = msg; }));
+  auto observed = observe_output(node);
 
   auto input_msg = make_result_message(fields, input_frame);
   node->process("default", input_msg);
+
+  auto output_msg = observed.collector->last_message();
 
   ASSERT_TRUE(output_msg) << "no output";
   expect_ok_result_message(output_msg);
@@ -323,13 +352,13 @@ TEST_F(UnaryNodeTest, SplitNode) {
   split->set_splits({1, 2});
   split->set_output_names({"/test/Split_output_0", "/test/Split_output_1"});
 
-  std::shared_ptr<graph_message> split_out;
-  split->get_output("default")->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) { split_out = msg; }));
+  auto observed = observe_output(split);
 
   auto split_input = dynamic_tensor(dtype::float32, {3}, std::vector<float>{1, 2, 3}.data());
   const uint64_t split_frame = 7;
   split->process("default", make_result_message({{"input", split_input}}, split_frame));
+
+  auto split_out = observed.collector->last_message();
 
   ASSERT_TRUE(split_out);
   expect_ok_result_message(split_out);
@@ -450,9 +479,7 @@ TEST_F(BinaryNodeTest, TopkNode) {
   topk->set_values_output_name("/test/TopK_output_0");
   topk->set_indices_output_name("/test/TopK_output_1");
 
-  std::shared_ptr<graph_message> topk_out;
-  topk->get_output("default")->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) { topk_out = msg; }));
+  auto observed = observe_output(topk);
 
   const uint64_t topk_frame = 7;
   auto topk_input = make_result_message(
@@ -461,6 +488,8 @@ TEST_F(BinaryNodeTest, TopkNode) {
        {"/test/topk_k", dynamic_tensor(dtype::int64, {1}, std::vector<int64_t>{2}.data())}},
       topk_frame);
   topk->process("default", topk_input);
+
+  auto topk_out = observed.collector->last_message();
 
   ASSERT_TRUE(topk_out);
   expect_ok_result_message(topk_out);
@@ -597,13 +626,13 @@ TEST(GraphNodeOpsTest, ConstantNode) {
       dynamic_tensor(dtype::float32, {1}, std::vector<float>{42}.data()), "test_constant_output");
 
   const uint64_t const_frame = 7;
-  std::shared_ptr<graph_message> const_output_msg;
-  constant->get_output()->set_callback(std::make_shared<graph_message_callback>(
-      [&](graph_message_ptr msg) { const_output_msg = msg; }));
+  auto observed = observe_output(constant);
 
   auto const_input = make_result_message(
       {{"dummy", dynamic_tensor(dtype::float32, {1}, std::vector<float>{0}.data())}}, const_frame);
   constant->process("default", const_input);
+
+  auto const_output_msg = observed.collector->last_message();
 
   ASSERT_TRUE(const_output_msg);
   expect_ok_result_message(const_output_msg);
@@ -618,10 +647,10 @@ TEST(ModelIoNodesTest, ModelInputNode) {
                           dynamic_tensor(dtype::float32, {1}, std::vector<float>{1}.data()));
   model_input->set_frame_number(7);
 
-  std::shared_ptr<graph_message> model_input_out;
-  model_input->get_output()->set_callback(std::make_shared<graph_message_callback>(
-      [&](graph_message_ptr msg) { model_input_out = msg; }));
+  auto observed = observe_output(model_input);
   model_input->run();
+
+  auto model_input_out = observed.collector->last_message();
 
   ASSERT_TRUE(model_input_out);
   expect_ok_result_message(model_input_out);

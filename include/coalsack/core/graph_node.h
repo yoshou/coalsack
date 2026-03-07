@@ -67,7 +67,7 @@ class graph_node {
     for (auto input : inputs) {
       std::tie(input_name, input_edge) = input;
 
-      input_edge->remove_callback();
+      input_edge->clear_subscribers();
     }
   }
 
@@ -79,7 +79,7 @@ class graph_node {
   void set_input(graph_edge_ptr input, std::string name) {
     inputs.insert(std::make_pair(name, input));
 
-    input->set_callback(std::make_shared<graph_message_callback>(
+    input->add_subscriber(std::make_shared<graph_message_callback>(
         [this, name](graph_message_ptr msg) { process(name, msg); }));
   }
 

@@ -18,6 +18,37 @@
 
 using namespace coalsack;
 
+class message_capture_node : public graph_node {
+  std::vector<graph_message_ptr> messages_;
+
+ public:
+  std::string get_proc_name() const override { return "message_capture_node"; }
+
+  void process([[maybe_unused]] std::string input_name, graph_message_ptr message) override {
+    messages_.push_back(message);
+  }
+
+  graph_message_ptr last_message() const {
+    if (messages_.empty()) {
+      return nullptr;
+    }
+    return messages_.back();
+  }
+
+  const std::vector<graph_message_ptr>& messages() const { return messages_; }
+};
+
+struct observed_output {
+  std::shared_ptr<message_capture_node> collector;
+};
+
+static observed_output observe_output(const std::shared_ptr<graph_node>& node,
+                                      const std::string& output_name = "default") {
+  observed_output observed{std::make_shared<message_capture_node>()};
+  observed.collector->set_input(node->get_output(output_name));
+  return observed;
+}
+
 class test_input_node : public graph_node {
  private:
   graph_edge_ptr output_;
@@ -110,14 +141,7 @@ TEST(FrameSyncTest, BasicResultMessageSyncNode) {
   sync_node->set_initial_ids({"input_a", "input_b"});
   proc.get_graph()->add_node(sync_node);
 
-  bool received = false;
-  std::shared_ptr<result_message> result_msg;
-
-  auto output_edge = sync_node->get_output();
-  output_edge->set_callback(std::make_shared<graph_message_callback>([&](graph_message_ptr msg) {
-    result_msg = std::dynamic_pointer_cast<result_message>(msg);
-    received = true;
-  }));
+  auto observed = observe_output(sync_node);
 
   std::vector<float> data_a(4, 1.0f);
   std::vector<float> data_b(4, 2.0f);
@@ -126,7 +150,8 @@ TEST(FrameSyncTest, BasicResultMessageSyncNode) {
 
   proc.run();
 
-  ASSERT_TRUE(received);
+  auto result_msg = std::dynamic_pointer_cast<result_message>(observed.collector->last_message());
+
   ASSERT_TRUE(result_msg);
   ASSERT_TRUE(result_msg->is_ok());
 
@@ -160,14 +185,7 @@ TEST(FrameSyncTest, BinaryOpWithSync) {
   add_node->set_input(sync_node->get_output(), "default");
   proc.get_graph()->add_node(add_node);
 
-  bool received = false;
-  std::shared_ptr<result_message> result_msg;
-
-  auto output_edge = add_node->get_output("default");
-  output_edge->set_callback(std::make_shared<graph_message_callback>([&](graph_message_ptr msg) {
-    result_msg = std::dynamic_pointer_cast<result_message>(msg);
-    received = true;
-  }));
+  auto observed = observe_output(add_node);
 
   std::vector<float> data_a = {1.0f, 2.0f, 3.0f, 4.0f};
   std::vector<float> data_b = {10.0f, 20.0f, 30.0f, 40.0f};
@@ -176,7 +194,8 @@ TEST(FrameSyncTest, BinaryOpWithSync) {
 
   proc.run();
 
-  ASSERT_TRUE(received);
+  auto result_msg = std::dynamic_pointer_cast<result_message>(observed.collector->last_message());
+
   ASSERT_TRUE(result_msg);
   ASSERT_TRUE(result_msg->is_ok());
 
@@ -217,19 +236,7 @@ TEST(FrameSyncTest, MultipleFrames) {
   add_node->set_input(sync_node->get_output(), "default");
   proc.get_graph()->add_node(add_node);
 
-  std::vector<std::pair<uint64_t, dynamic_tensor>> results;
-
-  auto output_edge = add_node->get_output("default");
-  output_edge->set_callback(std::make_shared<graph_message_callback>([&](graph_message_ptr msg) {
-    if (auto result_msg = std::dynamic_pointer_cast<result_message>(msg)) {
-      if (result_msg->is_ok()) {
-        if (auto tensor_msg =
-                std::dynamic_pointer_cast<dynamic_tensor_message>(result_msg->get_value())) {
-          results.push_back({result_msg->get_frame_number(), tensor_msg->get_tensor()});
-        }
-      }
-    }
-  }));
+  auto observed = observe_output(add_node);
 
   std::vector<float> data1_a = {1.0f};
   std::vector<float> data1_b = {10.0f};
@@ -242,6 +249,18 @@ TEST(FrameSyncTest, MultipleFrames) {
                             {"input_b", dynamic_tensor(dtype::float32, {1}, data2_b.data())}});
 
   proc.run();
+
+  std::vector<std::pair<uint64_t, dynamic_tensor>> results;
+  for (const auto& message : observed.collector->messages()) {
+    if (auto result_msg = std::dynamic_pointer_cast<result_message>(message)) {
+      if (result_msg->is_ok()) {
+        if (auto tensor_msg =
+                std::dynamic_pointer_cast<dynamic_tensor_message>(result_msg->get_value())) {
+          results.push_back({result_msg->get_frame_number(), tensor_msg->get_tensor()});
+        }
+      }
+    }
+  }
 
   ASSERT_EQ(results.size(), 2);
 
@@ -281,18 +300,13 @@ TEST(FrameSyncTest, ThreeWaySync) {
   sync_node->set_initial_ids({"field_a", "field_b", "field_c"});
   proc.get_graph()->add_node(sync_node);
 
-  bool received = false;
-  std::shared_ptr<result_message> result_msg;
-
-  auto output_edge = sync_node->get_output();
-  output_edge->set_callback(std::make_shared<graph_message_callback>([&](graph_message_ptr msg) {
-    result_msg = std::dynamic_pointer_cast<result_message>(msg);
-    received = true;
-  }));
+  auto observed = observe_output(sync_node);
 
   proc.run();
 
-  ASSERT_TRUE(received);
+  auto result_msg = std::dynamic_pointer_cast<result_message>(observed.collector->last_message());
+
+  ASSERT_TRUE(result_msg);
 
   auto field_a = result_msg->get_field("field_a");
   auto field_b = result_msg->get_field("field_b");
@@ -347,20 +361,13 @@ TEST(FrameSyncTest, MultiStageSync) {
   add_node_2->set_input(sync_node_2->get_output(), "default");
   proc.get_graph()->add_node(add_node_2);
 
-  bool received = false;
-  std::shared_ptr<result_message> result_msg;
-
-  add_node_2->get_output("default")->set_callback(
-      std::make_shared<graph_message_callback>([&](graph_message_ptr msg) {
-        if (auto res_msg = std::dynamic_pointer_cast<result_message>(msg)) {
-          result_msg = res_msg;
-          received = true;
-        }
-      }));
+  auto observed = observe_output(add_node_2);
 
   proc.run();
 
-  ASSERT_TRUE(received);
+  auto result_msg = std::dynamic_pointer_cast<result_message>(observed.collector->last_message());
+
+  ASSERT_TRUE(result_msg);
   ASSERT_TRUE(result_msg->is_ok());
 
   auto tensor_msg = std::dynamic_pointer_cast<dynamic_tensor_message>(result_msg->get_value());
@@ -419,17 +426,15 @@ TEST(FrameSyncTest, ErrorPropagation) {
   sync_node->set_initial_ids({"input_a", "input_b"});
   proc.get_graph()->add_node(sync_node);
 
-  bool error_received = false;
-  auto output_edge = sync_node->get_output();
-  output_edge->set_callback(std::make_shared<graph_message_callback>([&](graph_message_ptr msg) {
-    if (auto result_msg = std::dynamic_pointer_cast<result_message>(msg)) {
-      if (!result_msg->is_ok()) {
-        error_received = true;
-      }
-    }
-  }));
+  auto observed = observe_output(sync_node);
 
   proc.run();
+
+  bool error_received = false;
+  if (auto result_msg =
+          std::dynamic_pointer_cast<result_message>(observed.collector->last_message())) {
+    error_received = !result_msg->is_ok();
+  }
 
   ASSERT_TRUE(error_received);
 }
