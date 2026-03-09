@@ -1,0 +1,21 @@
+{
+  "model_path": [
+    "/workspaces/coalsack/models/gpt-oss-20b-GGUF/gpt-oss-20b-Q4_K_M.gguf"
+  ],
+  "draft_model_path": "/workspaces/coalsack/models/gpt-oss-20b-speculator.eagle3/eagle3-f16.gguf",
+  "n_ctx": 512,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are ChatGPT, a large language model trained by OpenAI.\n\nKnowledge cutoff: 2024-06\nCurrent date: 2026-03-01\n\nReasoning: medium\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message."
+    },
+    {
+      "role": "user",
+      "content": "The capital of France is Paris. The Eiffel Tower was built in"
+    }
+  ],
+  "max_tokens": 50,
+  "temperature": 0.0,
+  "n_draft": 8,
+  "p_min": 0.75
+}

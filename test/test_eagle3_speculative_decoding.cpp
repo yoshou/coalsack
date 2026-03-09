@@ -1,13 +1,18 @@
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "coalsack/gguf/gguf_multi_loader.h"
+#include "coalsack/llm/chat_template.h"
 #include "coalsack/llm/eagle3_speculative_decoder.h"
 #include "coalsack/llm/gpt2_tokenizer.h"
 #include "coalsack/llm/llm_engine.h"
@@ -15,6 +20,62 @@
 #include "coalsack/tensor/dynamic_tensor.h"
 
 using namespace coalsack;
+using json = nlohmann::json;
+
+static void set_log_level_from_env() {
+  const char* log_level_env = std::getenv("LOG_LEVEL");
+  if (!log_level_env) return;
+
+  std::string level_str(log_level_env);
+  if (level_str == "trace") {
+    spdlog::set_level(spdlog::level::trace);
+  } else if (level_str == "debug") {
+    spdlog::set_level(spdlog::level::debug);
+  } else if (level_str == "info") {
+    spdlog::set_level(spdlog::level::info);
+  } else if (level_str == "warn") {
+    spdlog::set_level(spdlog::level::warn);
+  } else if (level_str == "error") {
+    spdlog::set_level(spdlog::level::err);
+  }
+}
+
+static std::string build_prompt_from_messages(const json& config) {
+  if (!config.contains("messages")) {
+    throw std::runtime_error("'messages' field is required in JSON config");
+  }
+
+  chat_template tpl;
+  for (const auto& msg : config["messages"]) {
+    if (!msg.contains("role") || !msg.contains("content")) {
+      throw std::runtime_error("Each message must have 'role' and 'content' fields");
+    }
+
+    const std::string role = msg["role"];
+    const std::string content = msg["content"];
+    if (role == "system") {
+      tpl.add_system(content);
+    } else if (role == "user") {
+      tpl.add_user(content);
+    } else if (role == "assistant") {
+      tpl.add_assistant(content);
+    } else {
+      std::cerr << "WARNING: Unknown role '" << role << "' (skipped)\n";
+    }
+  }
+
+  return tpl.build_prompt();
+}
+
+static std::string read_draft_model_path(const json& config) {
+  if (config.contains("draft_model_path")) {
+    return config["draft_model_path"].get<std::string>();
+  }
+  if (config.contains("eagle3_model_path")) {
+    return config["eagle3_model_path"].get<std::string>();
+  }
+  throw std::runtime_error("'draft_model_path' field is required in JSON config");
+}
 
 // Sample a token in draft-vocab space and map it to target-vocab space.
 static uint32_t sample_draft(sampler& smp, const eagle3_speculative_decoder& eagle3,
@@ -27,60 +88,145 @@ static uint32_t sample_draft(sampler& smp, const eagle3_speculative_decoder& eag
 }
 
 int main(int argc, char** argv) {
-  spdlog::set_level(spdlog::level::info);
+  set_log_level_from_env();
 
-  if (argc < 3) {
-    std::cerr << "Usage: " << argv[0] << " <target_gguf> <eagle3_gguf>\n";
+  std::cout << "=================================\n";
+  std::cout << "GPT-OSS Eagle3 Speculative Decoding Test\n";
+  std::cout << "=================================\n\n";
+
+  const std::string json_path =
+      argc > 1 ? argv[1] : "test/eagle3_speculative_decoding_test_data.json";
+
+  std::ifstream json_file(json_path);
+  if (!json_file) {
+    std::cerr << "ERROR: Cannot open " << json_path << "\n";
     return 1;
   }
 
+  json config;
+  try {
+    json_file >> config;
+  } catch (const std::exception& e) {
+    std::cerr << "ERROR: Failed to parse JSON: " << e.what() << "\n";
+    return 1;
+  }
+
+  std::vector<std::string> model_paths;
+  std::string draft_model_path;
+  std::string prompt;
+  int64_t n_ctx = 512;
+  int max_tokens = 50;
+  float temperature = 0.0f;
+  int n_draft_max = 8;
+  float p_min = 0.0f;
+
+  try {
+    if (!config.contains("model_path")) {
+      throw std::runtime_error("'model_path' field is required in JSON config");
+    }
+    model_paths = config["model_path"].get<std::vector<std::string>>();
+    draft_model_path = read_draft_model_path(config);
+    prompt = build_prompt_from_messages(config);
+    n_ctx = config.value("n_ctx", 512);
+    max_tokens = config.value("max_tokens", 50);
+    temperature = config.value("temperature", 0.0f);
+    n_draft_max = config.value("n_draft", 8);
+    p_min = config.value("p_min", 0.0f);
+  } catch (const std::exception& e) {
+    std::cerr << "ERROR: " << e.what() << "\n";
+    return 1;
+  }
+
+  if (model_paths.empty()) {
+    std::cerr << "ERROR: 'model_path' must contain at least one file\n";
+    return 1;
+  }
+  if (n_ctx <= 0) {
+    std::cerr << "ERROR: 'n_ctx' must be positive\n";
+    return 1;
+  }
+  if (n_draft_max <= 0) {
+    std::cerr << "ERROR: 'n_draft' must be positive\n";
+    return 1;
+  }
+
+  std::cout << "Building chat prompt...\n";
+  std::cout << "  ✓ Prompt built (" << prompt.size() << " chars)\n";
+  std::cout << "\n--- Prompt ---\n" << prompt << "\n--- End of Prompt ---\n\n";
+
   eagle3_speculative_decoder::config eagle3_cfg;
-  eagle3_cfg.max_seq_len = 512;
+  eagle3_cfg.max_seq_len = n_ctx;
   eagle3_speculative_decoder eagle3(eagle3_cfg);
-  if (!eagle3.load(argv[2])) {
-    std::cerr << "FAIL: Eagle3 load failed\n";
+
+  std::cout << "Loading GGUF (" << model_paths.size() << " file(s)):\n";
+  for (const auto& path : model_paths) {
+    std::cout << "    - " << path << "\n";
+  }
+  std::cout << "Loading Eagle3 GGUF:\n";
+  std::cout << "    - " << draft_model_path << "\n";
+
+  if (!eagle3.load(draft_model_path)) {
+    std::cerr << "ERROR: Eagle3 load failed\n";
     return 1;
   }
 
   const auto& extract_layers = eagle3.get_extract_layers();
+  if (extract_layers.empty()) {
+    std::cerr << "ERROR: Eagle3 did not provide extract layers\n";
+    return 1;
+  }
 
   auto loader = std::make_shared<gguf_multi_loader>();
-  if (!loader->load({argv[1]})) {
-    std::cerr << "FAIL: Target GGUF load failed\n";
+  if (!loader->load(model_paths)) {
+    std::cerr << "ERROR: Failed to load GGUF file(s)\n";
     return 1;
   }
 
   gpt2_tokenizer tokenizer;
   if (!tokenizer.load(*loader)) {
-    std::cerr << "FAIL: Tokenizer load failed\n";
+    std::cerr << "ERROR: Failed to load tokenizer\n";
     return 1;
   }
+  const uint32_t eos_id = tokenizer.eos_token_id();
+  std::cout << "  Vocab size (tokenizer): " << tokenizer.vocab_size() << "  EOS: " << eos_id
+            << "\n";
 
   llm_engine::config engine_cfg;
-  engine_cfg.kv_cache_size = 512;
+  engine_cfg.kv_cache_size = n_ctx;
   engine_cfg.moe_cache_size_bytes = 1073741824;
   for (int l : extract_layers) engine_cfg.hidden_layer_indices.push_back(l - 1);
+  std::cout << "  KV cache size: " << engine_cfg.kv_cache_size << " tokens\n";
 
   llm_engine target(engine_cfg);
   target.load(loader);
 
-  // Prompt: "The capital of France is Paris. The Eiffel Tower was built in"
-  // (chat-template applied, 80 tokens)
-  const std::vector<uint32_t> prompt_tokens = {
-      200006, 17360,  200008, 3575,   553,   17554,  162016, 11,    261,   4410,  6439, 2359,
-      22203,  656,    7788,   17527,  558,   87447,  100594, 25,    220,   1323,  19,   12,
-      3218,   198,    6576,   3521,   25,    220,    1323,   21,    12,    3659,  12,   2290,
-      279,    30377,  289,    25,     14093, 279,    2,      13888, 18403, 25,    8450, 11,
-      49159,  11,     1721,   13,     21030, 2804,   413,    7360,  395,   1753,  3176, 13,
-      200007, 200006, 1428,   200008, 976,   9029,   328,    10128, 382,   12650, 13,   623,
-      155511, 37994,  673,    8113,   306,   200007, 200006, 173781};
+  std::cout << "  Layers: " << target.get_num_layers() << "\n";
+  std::cout << "  Hidden dim: " << target.get_hidden_dim() << "\n";
+  std::cout << "  Draft width: " << n_draft_max << "  p_min: " << p_min
+            << "  temp=" << temperature << "\n";
+  std::cout << "  ✓ Engine loaded successfully\n\n";
+
+  std::vector<uint32_t> prompt_tokens = tokenizer.encode(prompt);
+  if (tokenizer.add_bos_token()) {
+    const uint32_t bos = tokenizer.bos_token_id();
+    if (prompt_tokens.empty() || prompt_tokens.front() != bos) {
+      prompt_tokens.insert(prompt_tokens.begin(), bos);
+    }
+  }
+
+  if (prompt_tokens.empty()) {
+    std::cerr << "ERROR: Prompt tokenization produced no tokens\n";
+    return 1;
+  }
 
   const int64_t n_prompt = static_cast<int64_t>(prompt_tokens.size());
 
   target.start(prompt_tokens);
 
-  sampler target_sampler;  // greedy (temperature=0)
-  sampler draft_sampler;   // greedy (temperature=0)
+  sampler::config sampler_cfg;
+  sampler_cfg.temperature = temperature;
+  sampler target_sampler(sampler_cfg);
+  sampler draft_sampler(sampler_cfg);
 
   const auto& prompt_logits = target.get_logits();
   const uint32_t prompt_last_token =
@@ -105,13 +251,9 @@ int main(int argc, char** argv) {
   const int64_t draft_vocab = eagle3.get_draft_vocab_size();
   const int64_t target_vocab = static_cast<int64_t>(prompt_logits.size());
 
-  // === Speculative decode loop ===
-  const int N_DRAFT = 8;
-  const float p_min = 0.0f;
-  const int max_new_tokens = 50;
-
-  std::cout << tokenizer.decode({prompt_last_token});
-  std::cout.flush();
+  std::cout << "Generating (max " << max_tokens << " tokens, temp=" << temperature
+            << ")...\n";
+  std::cout << "\n--- Response ---\n" << std::flush;
 
   int64_t eagle3_pos = n_prompt;
   int64_t target_pos = n_prompt;
@@ -123,9 +265,19 @@ int main(int argc, char** argv) {
 
   int total_draft = 0;
   int total_accepted = 0;
-  int total_tokens = 0;
+  int total_generated_tokens = 0;
+  bool stop_generation = false;
 
-  while (true) {
+  if (max_tokens > 0 && prompt_last_token != eos_id) {
+    std::cout << tokenizer.decode({prompt_last_token}) << std::flush;
+    total_generated_tokens = 1;
+  } else {
+    stop_generation = true;
+  }
+
+  while (!stop_generation) {
+    if (total_generated_tokens >= max_tokens) break;
+
     // 1. Generate up to N_DRAFT tokens (d0 always generated; p_min applies to d1+)
     std::vector<int64_t> draft_ids;
     dynamic_tensor prenorm = eagle3.get_prenorm();
@@ -137,7 +289,7 @@ int main(int argc, char** argv) {
       if (p0 < p_min) goto draft_done;
     }
 
-    for (int j = 1; j < N_DRAFT && static_cast<int>(draft_ids.size()) == j; ++j) {
+    for (int j = 1; j < n_draft_max && static_cast<int>(draft_ids.size()) == j; ++j) {
       int64_t last_idx = prenorm.dim(1) - 1;
       size_t offset =
           static_cast<size_t>(last_idx) * static_cast<size_t>(eagle3_hidden_size) * sizeof(float);
@@ -176,18 +328,37 @@ int main(int argc, char** argv) {
     // 5. Commit accepted tokens + correction
     const int n_new = result.n_accepted + 1;
     total_accepted += result.n_accepted;
-    total_tokens += n_new;
 
+    std::vector<uint32_t> committed_tokens;
+    committed_tokens.reserve(static_cast<size_t>(n_new));
     for (int j = 0; j < result.n_accepted; ++j) {
-      std::cout << tokenizer.decode({static_cast<uint32_t>(draft_ids[j])});
-      std::cout.flush();
+      committed_tokens.push_back(static_cast<uint32_t>(draft_ids[j]));
     }
-    std::cout << tokenizer.decode({result.correction_token});
-    std::cout.flush();
+    committed_tokens.push_back(result.correction_token);
+
+    int eos_index = -1;
+    for (int i = 0; i < static_cast<int>(committed_tokens.size()); ++i) {
+      if (committed_tokens[static_cast<size_t>(i)] == eos_id) {
+        eos_index = i;
+        break;
+      }
+    }
+
+    const int printable_tokens = eos_index >= 0 ? eos_index : static_cast<int>(committed_tokens.size());
+    const int remaining_budget = max_tokens - total_generated_tokens;
+    const int emitted_tokens = std::min(printable_tokens, remaining_budget);
+
+    for (int i = 0; i < emitted_tokens; ++i) {
+      std::cout << tokenizer.decode({committed_tokens[static_cast<size_t>(i)]}) << std::flush;
+    }
+
+    total_generated_tokens += emitted_tokens;
+
+    if (eos_index >= 0 || total_generated_tokens >= max_tokens) {
+      break;
+    }
 
     cur_token = result.correction_token;
-
-    if (total_tokens >= max_new_tokens) break;
 
     // 6. Rollback target KV cache to committed length
     target.rollback_to(target_pos + n_new);
@@ -204,10 +375,6 @@ int main(int argc, char** argv) {
     eagle3.rollback_to(eagle3_pos);
     dynamic_tensor next_g_embd = eagle3.encode(committed_hidden, n_new);
 
-    std::vector<uint32_t> committed_tokens;
-    for (int j = 0; j < result.n_accepted; ++j)
-      committed_tokens.push_back(static_cast<uint32_t>(draft_ids[j]));
-    committed_tokens.push_back(result.correction_token);
     eagle3.decode(committed_tokens, next_g_embd, eagle3_pos);
     eagle3_pos += n_new;
 
@@ -219,13 +386,16 @@ int main(int argc, char** argv) {
   target.stop();
   eagle3.stop();
 
-  std::cout << "\n";
+  std::cout << "\n--- End of Response ---\n\n";
   const double rate = total_draft > 0
                           ? static_cast<double>(total_accepted) / static_cast<double>(total_draft)
                           : 0.0;
+  std::cout << "=================================\n";
+  std::cout << "✓ Speculative decoding test completed!\n";
+  std::cout << "=================================\n";
+  std::cout << "Total generated tokens: " << total_generated_tokens << "\n";
   std::cout << "Acceptance: " << total_accepted << "/" << total_draft << " = "
             << static_cast<int>(rate * 100.0 + 0.5) << "%\n";
-  std::cout << "Total new tokens: " << (total_tokens + 1) << " (incl. prompt_last_token)\n";
 
   return 0;
 }

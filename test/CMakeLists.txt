@@ -464,6 +464,7 @@ target_include_directories(test_eagle3_speculative_decoding PRIVATE
 
 target_link_libraries(test_eagle3_speculative_decoding
     coalsack
+    nlohmann_json::nlohmann_json
     pthread
 )
 
