@@ -1,0 +1,22 @@
+{
+  "test1": {
+    "system": "You are a helpful assistant.",
+    "user": "Hello!",
+    "expected_system": "<|start|>system<|message|>You are a helpful assistant.<|end|>",
+    "expected_user": "<|start|>user<|message|>Hello!<|end|>",
+    "expected_suffix": "<|start|>assistant<|channel|>final<|message|>"
+  },
+  "test2": {
+    "generated": "<|start|>assistant<|channel|>final<|message|>Hi there! How can I help you?<|end|>",
+    "expected_extracted": "Hi there! How can I help you?"
+  },
+  "test3": {
+    "system": "You are a friendly assistant.",
+    "user1": "Hello.",
+    "assistant1": "Hi!",
+    "user2": "How are you?",
+    "expected_system": "<|start|>system<|message|>You are a friendly assistant.<|end|>",
+    "expected_assistant": "<|start|>assistant<|message|>Hi!<|end|>",
+    "expected_message_count": 4
+  }
+}
