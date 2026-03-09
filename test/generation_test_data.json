@@ -1,0 +1,16 @@
+{
+  "model_path": ["/workspaces/coalsack/models/gpt-oss-20b-GGUF/gpt-oss-20b-Q4_K_M.gguf"],
+  "n_ctx": 4096,
+  "messages": [
+    {
+      "role": "system",
+      "content": "Please reply in short, friendly English."
+    },
+    {
+      "role": "user",
+      "content": "Good morning. Say hello in one short sentence."
+    }
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0
+}
