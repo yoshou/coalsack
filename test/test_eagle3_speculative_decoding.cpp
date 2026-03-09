@@ -1,8 +1,8 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -202,8 +202,8 @@ int main(int argc, char** argv) {
 
   std::cout << "  Layers: " << target.get_num_layers() << "\n";
   std::cout << "  Hidden dim: " << target.get_hidden_dim() << "\n";
-  std::cout << "  Draft width: " << n_draft_max << "  p_min: " << p_min
-            << "  temp=" << temperature << "\n";
+  std::cout << "  Draft width: " << n_draft_max << "  p_min: " << p_min << "  temp=" << temperature
+            << "\n";
   std::cout << "  ✓ Engine loaded successfully\n\n";
 
   std::vector<uint32_t> prompt_tokens = tokenizer.encode(prompt);
@@ -251,8 +251,7 @@ int main(int argc, char** argv) {
   const int64_t draft_vocab = eagle3.get_draft_vocab_size();
   const int64_t target_vocab = static_cast<int64_t>(prompt_logits.size());
 
-  std::cout << "Generating (max " << max_tokens << " tokens, temp=" << temperature
-            << ")...\n";
+  std::cout << "Generating (max " << max_tokens << " tokens, temp=" << temperature << ")...\n";
   std::cout << "\n--- Response ---\n" << std::flush;
 
   int64_t eagle3_pos = n_prompt;
@@ -286,23 +285,23 @@ int main(int argc, char** argv) {
       draft_ids.push_back(
           sample_draft(draft_sampler, eagle3, cur_draft_logits.data(), draft_vocab, target_vocab));
       float p0 = draft_sampler.get_top1_prob_after_topk(cur_draft_logits.data(), draft_vocab);
-      if (p0 < p_min) goto draft_done;
+      if (p0 >= p_min) {
+        for (int j = 1; j < n_draft_max && static_cast<int>(draft_ids.size()) == j; ++j) {
+          int64_t last_idx = prenorm.dim(1) - 1;
+          size_t offset = static_cast<size_t>(last_idx) * static_cast<size_t>(eagle3_hidden_size) *
+                          sizeof(float);
+          dynamic_tensor step_g_embd = prenorm.make_view({1, 1, eagle3_hidden_size}, offset);
+          eagle3.decode({static_cast<uint32_t>(draft_ids.back())}, step_g_embd, eagle3_pos + j - 1);
+          const auto& step_logits = eagle3.get_logits();
+          float pj =
+              draft_sampler.get_top1_prob_after_topk(step_logits.data_ptr<float>(), draft_vocab);
+          if (pj < p_min) break;
+          draft_ids.push_back(sample_draft(draft_sampler, eagle3, step_logits.data_ptr<float>(),
+                                           draft_vocab, target_vocab));
+          prenorm = eagle3.get_prenorm();
+        }
+      }
     }
-
-    for (int j = 1; j < n_draft_max && static_cast<int>(draft_ids.size()) == j; ++j) {
-      int64_t last_idx = prenorm.dim(1) - 1;
-      size_t offset =
-          static_cast<size_t>(last_idx) * static_cast<size_t>(eagle3_hidden_size) * sizeof(float);
-      dynamic_tensor step_g_embd = prenorm.make_view({1, 1, eagle3_hidden_size}, offset);
-      eagle3.decode({static_cast<uint32_t>(draft_ids.back())}, step_g_embd, eagle3_pos + j - 1);
-      const auto& step_logits = eagle3.get_logits();
-      float pj = draft_sampler.get_top1_prob_after_topk(step_logits.data_ptr<float>(), draft_vocab);
-      if (pj < p_min) break;
-      draft_ids.push_back(sample_draft(draft_sampler, eagle3, step_logits.data_ptr<float>(),
-                                       draft_vocab, target_vocab));
-      prenorm = eagle3.get_prenorm();
-    }
-  draft_done:
 
     const int n_draft = static_cast<int>(draft_ids.size());
     if (n_draft == 0) break;
@@ -344,7 +343,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    const int printable_tokens = eos_index >= 0 ? eos_index : static_cast<int>(committed_tokens.size());
+    const int printable_tokens =
+        eos_index >= 0 ? eos_index : static_cast<int>(committed_tokens.size());
     const int remaining_budget = max_tokens - total_generated_tokens;
     const int emitted_tokens = std::min(printable_tokens, remaining_budget);
 
