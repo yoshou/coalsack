@@ -10,10 +10,12 @@
 #include <variant>
 
 #include "coalsack/core/graph_edge.h"
+#include "coalsack/image/image.h"
 
 namespace coalsack {
 
-using property_value = std::variant<std::string, std::int64_t, double, bool>;
+using property_value =
+  std::variant<std::string, std::int64_t, double, bool, std::shared_ptr<image>>;
 
 class subgraph;
 
