@@ -1,15 +1,19 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 
 #include "coalsack/core/graph_edge.h"
 
 namespace coalsack {
+
+using property_value = std::variant<std::string, std::int64_t, double, bool>;
 
 class subgraph;
 
@@ -117,6 +121,10 @@ class graph_node {
   virtual void run() {}
 
   virtual void stop() {}
+
+  virtual std::optional<property_value> get_property([[maybe_unused]] const std::string& key) const {
+    return std::nullopt;
+  }
 };
 
 using graph_node_ptr = std::shared_ptr<graph_node>;
