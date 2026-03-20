@@ -8,14 +8,16 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
+#include <vector>
 
+#include "coalsack/camera/camera.h"
 #include "coalsack/core/graph_edge.h"
 #include "coalsack/image/image.h"
 
 namespace coalsack {
 
-using property_value =
-  std::variant<std::string, std::int64_t, double, bool, std::shared_ptr<image>>;
+using property_value = std::variant<std::string, std::int64_t, double, bool, std::shared_ptr<image>,
+                                    camera_t, mat4, std::vector<vec3>>;
 
 class subgraph;
 
@@ -124,7 +126,8 @@ class graph_node {
 
   virtual void stop() {}
 
-  virtual std::optional<property_value> get_property([[maybe_unused]] const std::string& key) const {
+  virtual std::optional<property_value> get_property(
+      [[maybe_unused]] const std::string& key) const {
     return std::nullopt;
   }
 };
