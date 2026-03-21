@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <opencv2/aruco.hpp>
 #include <opencv2/aruco/charuco.hpp>
 #include <opencv2/features2d.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -232,8 +235,110 @@ class charuco_detector_node : public graph_node {
     }
   }
 };
+class mask_generator_node : public graph_node {
+  std::string path_;
+  cv::Mat latest_frame_;
+  std::mutex frame_mutex_;
+  graph_edge_ptr output_;
+
+ public:
+  mask_generator_node() : graph_node(), output_(std::make_shared<graph_edge>(this)) {
+    set_output(output_);
+  }
+
+  virtual std::string get_proc_name() const override { return "mask_generator"; }
+
+  void set_path(const std::string &value) { path_ = value; }
+  std::string get_path() const { return path_; }
+
+  template <typename Archive>
+  void serialize(Archive &archive) {
+    archive(path_);
+  }
+
+  virtual std::optional<property_value> get_property(const std::string &key) const override {
+    if (key == "path") return path_;
+    return std::nullopt;
+  }
+
+  virtual void run() override {
+    if (!path_.empty() && std::filesystem::exists(path_)) {
+      cv::Mat mask_img = cv::imread(path_, cv::IMREAD_GRAYSCALE);
+      if (!mask_img.empty()) {
+        send_mask(mask_img);
+      }
+    }
+  }
+
+  virtual void process(std::string input_name, graph_message_ptr message) override {
+    if (input_name == "default") {
+      if (auto frame_msg = std::dynamic_pointer_cast<frame_message<image>>(message)) {
+        const auto &src_image = frame_msg->get_data();
+        const int cv_type = convert_to_cv_type(src_image.get_format());
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        latest_frame_ =
+            cv::Mat(static_cast<int>(src_image.get_height()),
+                    static_cast<int>(src_image.get_width()), cv_type,
+                    const_cast<void *>(reinterpret_cast<const void *>(src_image.get_data())),
+                    src_image.get_stride())
+                .clone();
+      }
+      return;
+    }
+    if (input_name == "generate") {
+      cv::Mat frame;
+      {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        frame = latest_frame_.clone();
+      }
+      if (frame.empty()) return;
+
+      cv::Mat mask_img;
+      cv::threshold(frame, mask_img, 128, 255, cv::THRESH_BINARY);
+      cv::morphologyEx(mask_img, mask_img, cv::MORPH_OPEN,
+                       cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2, 2)));
+      cv::dilate(mask_img, mask_img,
+                 cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(10, 10)));
+      cv::bitwise_not(mask_img, mask_img);
+
+      if (!path_.empty()) {
+        cv::imwrite(path_, mask_img);
+      }
+      send_mask(mask_img);
+      return;
+    }
+    if (input_name == "clear") {
+      if (!path_.empty() && std::filesystem::exists(path_)) {
+        std::filesystem::remove(path_);
+      }
+      int width, height;
+      {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        width = latest_frame_.empty() ? 820 : latest_frame_.cols;
+        height = latest_frame_.empty() ? 616 : latest_frame_.rows;
+      }
+      cv::Mat mask_img(height, width, CV_8UC1, cv::Scalar(255));
+      send_mask(mask_img);
+      return;
+    }
+  }
+
+ private:
+  void send_mask(const cv::Mat &mask_img) {
+    image mask(static_cast<uint32_t>(mask_img.cols), static_cast<uint32_t>(mask_img.rows), 8,
+               static_cast<uint32_t>(mask_img.step),
+               reinterpret_cast<const uint8_t *>(mask_img.data));
+    mask.set_format(image_format::Y8_UINT);
+    const auto msg = std::make_shared<image_message>();
+    msg->set_image(mask);
+    output_->send(msg);
+  }
+};
+
 }  // namespace coalsack
 
 COALSACK_REGISTER_NODE(coalsack::fast_blob_detector_node, coalsack::graph_node)
 
 COALSACK_REGISTER_NODE(coalsack::charuco_detector_node, coalsack::graph_node)
+
+COALSACK_REGISTER_NODE(coalsack::mask_generator_node, coalsack::graph_node)
