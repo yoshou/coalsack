@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <boost/asio.hpp>
 #include <chrono>
 #include <functional>
 #include <numeric>
@@ -11,8 +12,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <boost/asio.hpp>
 
 // Core
 #include "coalsack/core/graph_proc_server.h"
@@ -53,6 +52,7 @@
 #ifdef ENABLE_DEPTHAI_EXT
 #include "coalsack/ext/graph_proc_depthai.h"
 #endif
+#include "coalsack/ext/graph_proc_action.h"
 #include "coalsack/ext/graph_proc_cv_ext.h"
 #include "coalsack/ext/graph_proc_jpeg.h"
 #include "coalsack/ext/graph_proc_lz4.h"

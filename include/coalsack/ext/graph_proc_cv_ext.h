@@ -311,23 +311,19 @@ class mask_generator_node : public graph_node {
       if (!path_.empty() && std::filesystem::exists(path_)) {
         std::filesystem::remove(path_);
       }
-      int width, height;
-      {
-        std::lock_guard<std::mutex> lock(frame_mutex_);
-        width = latest_frame_.empty() ? 820 : latest_frame_.cols;
-        height = latest_frame_.empty() ? 616 : latest_frame_.rows;
-      }
-      cv::Mat mask_img(height, width, CV_8UC1, cv::Scalar(255));
-      send_mask(mask_img);
+      send_mask(cv::Mat());
       return;
     }
   }
 
  private:
   void send_mask(const cv::Mat &mask_img) {
-    image mask(static_cast<uint32_t>(mask_img.cols), static_cast<uint32_t>(mask_img.rows), 8,
-               static_cast<uint32_t>(mask_img.step),
-               reinterpret_cast<const uint8_t *>(mask_img.data));
+    image mask;
+    if (!mask_img.empty()) {
+      mask = image(static_cast<uint32_t>(mask_img.cols), static_cast<uint32_t>(mask_img.rows), 8,
+                   static_cast<uint32_t>(mask_img.step),
+                   reinterpret_cast<const uint8_t *>(mask_img.data));
+    }
     mask.set_format(image_format::Y8_UINT);
     const auto msg = std::make_shared<image_message>();
     msg->set_image(mask);

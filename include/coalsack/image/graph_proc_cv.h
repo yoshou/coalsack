@@ -357,18 +357,30 @@ class mask_node : public image_transform_node {
   virtual void transform(const image &src_image, image &dst_image) override {
     std::lock_guard lock(mask_mutex);
 
-    image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
-                       src_image.get_stride());
-    masked_image.set_format(src_image.get_format());
-
     int cv_type = convert_to_cv_type(src_image.get_format());
 
     cv::Mat src_mat((int)src_image.get_height(), (int)src_image.get_width(), cv_type,
                     (void *)src_image.get_data(), (int)src_image.get_stride());
+
+    // If mask is empty, pass through unchanged
+    if (mask.get_width() == 0 || mask.get_height() == 0) {
+      dst_image = src_image;
+      return;
+    }
+
+    image masked_image(src_image.get_width(), src_image.get_height(), src_image.get_bpp(),
+                       src_image.get_stride());
+    masked_image.set_format(src_image.get_format());
+
     cv::Mat dst_mat((int)masked_image.get_height(), (int)masked_image.get_width(), cv_type,
                     (void *)masked_image.get_data(), (int)masked_image.get_stride());
     cv::Mat mask_mat((int)mask.get_height(), (int)mask.get_width(), CV_8UC1,
                      (void *)mask.get_data(), (int)mask.get_stride());
+
+    // Resize mask if size differs from source
+    if (mask_mat.size() != src_mat.size()) {
+      cv::resize(mask_mat, mask_mat, src_mat.size(), 0, 0, cv::INTER_NEAREST);
+    }
 
     cv::bitwise_and(src_mat, mask_mat, dst_mat);
 
