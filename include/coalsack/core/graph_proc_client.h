@@ -34,9 +34,25 @@ class graph_proc_client {
     invoke_deploy(*rpc, *g);
   }
 
-  void run() {
-    initialize();
+  void initialize() {
+    std::vector<graph_node*> nodes;
+    for (auto g : graphs_) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        nodes.push_back(node.get());
+      }
+    }
 
+    topological_sort(nodes);
+
+    for (auto node : nodes) {
+      auto g = node->get_parent();
+      auto node_idx = node->get_parent()->get_node_id(node);
+      invoke_initialize_node(g, node_idx);
+    }
+  }
+
+  void run() {
     for (auto g : graphs_) {
       invoke_run_graph(g.get());
     }
@@ -46,8 +62,24 @@ class graph_proc_client {
     for (auto g : graphs_) {
       invoke_stop_graph(g.get());
     }
+  }
 
-    finalize();
+  void finalize() {
+    std::vector<graph_node*> nodes;
+    for (auto g : graphs_) {
+      for (uint32_t i = 0; i < g->get_node_count(); i++) {
+        auto node = g->get_node(i);
+        nodes.push_back(node.get());
+      }
+    }
+
+    topological_sort(nodes);
+
+    for (auto node : nodes) {
+      auto g = node->get_parent();
+      auto node_idx = node->get_parent()->get_node_id(node);
+      invoke_finalize_node(g, node_idx);
+    }
   }
 
   void process(const graph_node* node, const graph_message_ptr& message) {
@@ -71,42 +103,6 @@ class graph_proc_client {
     }
     std::reverse(result.begin(), result.end());
     nodes = result;
-  }
-
-  void initialize() {
-    std::vector<graph_node*> nodes;
-    for (auto g : graphs_) {
-      for (uint32_t i = 0; i < g->get_node_count(); i++) {
-        auto node = g->get_node(i);
-        nodes.push_back(node.get());
-      }
-    }
-
-    topological_sort(nodes);
-
-    for (auto node : nodes) {
-      auto g = node->get_parent();
-      auto node_idx = node->get_parent()->get_node_id(node);
-      invoke_initialize_node(g, node_idx);
-    }
-  }
-
-  void finalize() {
-    std::vector<graph_node*> nodes;
-    for (auto g : graphs_) {
-      for (uint32_t i = 0; i < g->get_node_count(); i++) {
-        auto node = g->get_node(i);
-        nodes.push_back(node.get());
-      }
-    }
-
-    topological_sort(nodes);
-
-    for (auto node : nodes) {
-      auto g = node->get_parent();
-      auto node_idx = node->get_parent()->get_node_id(node);
-      invoke_finalize_node(g, node_idx);
-    }
   }
 
   void invoke_deploy(rpc_client& rpc, subgraph& g) {

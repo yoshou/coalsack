@@ -33,14 +33,40 @@ class graph_proc {
 
   void deploy(const std::shared_ptr<subgraph>& g) { this->g = g; }
 
+  void initialize() {
+    std::vector<graph_node*> nodes;
+    for (uint32_t i = 0; i < g->get_node_count(); i++) {
+      auto node = g->get_node(i);
+      nodes.push_back(node.get());
+    }
+
+    topological_sort(nodes);
+
+    for (auto node : nodes) {
+      node->set_resources(resources);
+      node->initialize();
+    }
+  }
+
   void run() {
-    initialize();
-    run(g.get());
+    for (uint32_t i = 0; i < g->get_node_count(); i++) {
+      auto node = g->get_node(i);
+      node->run();
+    }
   }
 
   void stop() {
-    stop(g.get());
-    finalize();
+    for (uint32_t i = 0; i < g->get_node_count(); i++) {
+      auto node = g->get_node(i);
+      node->stop();
+    }
+  }
+
+  void finalize() {
+    for (uint32_t i = 0; i < g->get_node_count(); i++) {
+      auto node = g->get_node(i);
+      node->finalize();
+    }
   }
 
   void process(const graph_node* node, const graph_message_ptr& message) {
@@ -67,42 +93,6 @@ class graph_proc {
     }
     std::reverse(result.begin(), result.end());
     nodes = result;
-  }
-
-  void initialize() {
-    std::vector<graph_node*> nodes;
-    for (uint32_t i = 0; i < g->get_node_count(); i++) {
-      auto node = g->get_node(i);
-      nodes.push_back(node.get());
-    }
-
-    topological_sort(nodes);
-
-    for (auto node : nodes) {
-      node->set_resources(resources);
-      node->initialize();
-    }
-  }
-
-  void finalize() {
-    for (uint32_t i = 0; i < g->get_node_count(); i++) {
-      auto node = g->get_node(i);
-      node->finalize();
-    }
-  }
-
-  void run(subgraph* g) {
-    for (uint32_t i = 0; i < g->get_node_count(); i++) {
-      auto node = g->get_node(i);
-      node->run();
-    }
-  }
-
-  void stop(subgraph* g) {
-    for (uint32_t i = 0; i < g->get_node_count(); i++) {
-      auto node = g->get_node(i);
-      node->stop();
-    }
   }
 };
 
