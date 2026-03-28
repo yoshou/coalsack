@@ -458,13 +458,15 @@ class parallel_queue_node : public graph_node {
     archive(num_threads);
   }
 
-  virtual void run() override { workers.reset(new task_queue<std::function<void()>>(num_threads)); }
+  virtual void initialize() override { workers.reset(new task_queue<std::function<void()>>(num_threads)); }
 
-  virtual void stop() override { workers.reset(); }
+  virtual void finalize() override { workers.reset(); }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
     if (auto msg = std::dynamic_pointer_cast<frame_message_base>(message)) {
-      workers->push_task([this, msg]() { output->send(msg); });
+      if (workers) {
+        workers->push_task([this, msg]() { output->send(msg); });
+      }
     }
   }
 };
@@ -507,10 +509,6 @@ class frame_number_ordering_node : public graph_node {
   }
 
   virtual void process(std::string input_name, graph_message_ptr message) override {
-    if (!running) {
-      return;
-    }
-
     if (input_name == "default") {
       std::lock_guard<std::mutex> lock(mtx);
 
