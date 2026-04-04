@@ -46,9 +46,7 @@
 #ifdef ENABLE_RS_D435_EXT
 #include "coalsack/ext/graph_proc_rs_d435.h"
 #endif
-#ifdef ENABLE_LIBCAMERA_EXT
 #include "coalsack/ext/graph_proc_libcamera.h"
-#endif
 #ifdef ENABLE_DEPTHAI_EXT
 #include "coalsack/ext/graph_proc_depthai.h"
 #endif

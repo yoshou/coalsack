@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -439,13 +440,70 @@ class libcamera_capture {
     }
   }
 #else
+ private:
+  std::function<void(const libcamera_capture::buffer &)> callback_;
+  std::atomic_bool running_{false};
+  std::shared_ptr<std::thread> th_;
+  uint32_t width_{820};
+  uint32_t height_{616};
+  uint32_t fps_{30};
+  uint32_t frame_number_{0};
+
  public:
   libcamera_capture() {}
 
   void open(std::size_t camera_idx) {}
-  void configure(const stream_configuration &cfg) {}
-  void start(std::function<void(const libcamera_capture::buffer &)> frame_received) {}
-  void stop() {}
+
+  void configure(const stream_configuration &cfg) {
+    width_ = cfg.width;
+    height_ = cfg.height;
+    fps_ = cfg.fps > 0 ? cfg.fps : 30;
+  }
+
+  void start(std::function<void(const libcamera_capture::buffer &)> frame_received) {
+    callback_ = frame_received;
+    running_ = true;
+    th_.reset(new std::thread([this]() {
+      const double interval_ms = 1000.0 / fps_;
+      while (running_.load()) {
+        auto t0 = std::chrono::steady_clock::now();
+
+        cv::Mat frame(static_cast<int>(height_), static_cast<int>(width_), CV_8UC1, cv::Scalar(0));
+        // white border to distinguish each camera's image boundary
+        cv::rectangle(frame, cv::Point(0, 0),
+                      cv::Point(static_cast<int>(width_) - 1, static_cast<int>(height_) - 1),
+                      cv::Scalar(200), 2);
+        // white dots on a grid pattern, detectable by fast_blob_detector
+        for (uint32_t y = 60; y < height_; y += 120) {
+          for (uint32_t x = 60; x < width_; x += 120) {
+            cv::circle(frame, cv::Point(static_cast<int>(x), static_cast<int>(y)), 6,
+                       cv::Scalar(255), -1);
+          }
+        }
+
+        libcamera_capture::buffer buf;
+        buf.m = frame;
+        buf.frame_number = frame_number_++;
+        auto now = std::chrono::steady_clock::now();
+        buf.timestamp = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+        callback_(buf);
+
+        auto elapsed = std::chrono::steady_clock::now() - t0;
+        auto sleep_dur = std::chrono::duration<double, std::milli>(interval_ms) - elapsed;
+        if (sleep_dur.count() > 0) {
+          std::this_thread::sleep_for(sleep_dur);
+        }
+      }
+    }));
+  }
+
+  void stop() {
+    running_ = false;
+    if (th_ && th_->joinable()) {
+      th_->join();
+    }
+  }
+
   void close() {}
 
   void set_interval(double interval) {}
@@ -457,7 +515,7 @@ class libcamera_capture {
   void set_sharpness(float value) {}
   void set_auto_exposure(bool value) {}
 
-  int32_t get_framerate() const { return 0; }
+  int32_t get_framerate() const { return static_cast<int32_t>(fps_); }
 #endif
 };
 }  // namespace coalsack

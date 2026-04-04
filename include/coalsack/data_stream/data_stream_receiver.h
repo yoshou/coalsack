@@ -146,10 +146,13 @@ class data_stream_receiver {
 
  public:
   data_stream_receiver(udp::endpoint endpoint, bool enable_broadcast = false)
-      : io_context(), socket_(io_context, endpoint), running(false), mtx() {
+      : io_context(), socket_(io_context), running(false), mtx() {
+    socket_.open(endpoint.protocol());
+    socket_.set_option(boost::asio::ip::udp::socket::reuse_address(true));
     if (enable_broadcast) {
       socket_.set_option(boost::asio::ip::udp::socket::broadcast(true));
     }
+    socket_.bind(endpoint);
   }
 
   data_stream_receiver(udp::endpoint endpoint, std::string multicast_address)
