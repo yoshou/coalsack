@@ -17,6 +17,8 @@ enum class GRAPH_PROC_RPC_FUNC : uint32_t {
   STOP = 3,
   FINALIZE = 4,
   PROCESS = 5,
+  BATCH_INITIALIZE = 6,
+  BATCH_FINALIZE = 7,
 };
 
 class graph_proc {

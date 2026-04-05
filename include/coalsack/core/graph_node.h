@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <optional>
+#include <queue>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -154,6 +155,61 @@ static void dfs_postorder(graph_node* node, std::unordered_set<graph_node*>& vis
   }
 
   callback(node);
+}
+
+inline std::vector<std::vector<graph_node*>> compute_weakly_connected_components(
+    const std::vector<graph_node*>& nodes) {
+  std::unordered_set<graph_node*> node_set(nodes.begin(), nodes.end());
+  std::unordered_map<graph_node*, std::vector<graph_node*>> adjacency;
+  for (auto* node : nodes) {
+    adjacency[node];
+  }
+
+  for (auto* node : nodes) {
+    for (const auto& [input_name, input_edge] : node->get_inputs()) {
+      (void)input_name;
+      if (input_edge->get_type() != EDGE_TYPE::DATAFLOW) {
+        continue;
+      }
+
+      auto* source = input_edge->get_source();
+      if (source == nullptr || node_set.find(source) == node_set.end()) {
+        continue;
+      }
+
+      adjacency[node].push_back(source);
+      adjacency[source].push_back(node);
+    }
+  }
+
+  std::vector<std::vector<graph_node*>> components;
+  std::unordered_set<graph_node*> visited;
+  for (auto* start : nodes) {
+    if (visited.find(start) != visited.end()) {
+      continue;
+    }
+
+    std::queue<graph_node*> queue;
+    std::vector<graph_node*> component;
+    visited.insert(start);
+    queue.push(start);
+
+    while (!queue.empty()) {
+      auto* node = queue.front();
+      queue.pop();
+      component.push_back(node);
+
+      for (auto* next : adjacency[node]) {
+        if (visited.insert(next).second) {
+          queue.push(next);
+        }
+      }
+    }
+
+    components.push_back(std::move(component));
+  }
+
+  return components;
 }
 
 }  // namespace coalsack
