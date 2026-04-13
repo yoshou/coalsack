@@ -1,3 +1,6 @@
+/// @file graph_node.h
+/// @brief Base class for all processing nodes and graph topology utilities.
+/// @ingroup core_graph
 #pragma once
 
 #include <memory>
@@ -17,17 +20,20 @@
 
 namespace coalsack {
 
+/// @brief Variant type that holds any node property value.
 using property_value = std::variant<std::string, std::int64_t, double, bool, std::shared_ptr<image>,
                                     camera_t, mat4, std::vector<vec3>>;
 
 class subgraph;
 
+/// @brief Abstract base for shared, named resources injected into nodes at initialization.
 class resource_base {
  public:
   virtual std::string get_name() const = 0;
   virtual ~resource_base() = default;
 };
 
+/// @brief Container of named resource_base instances shared across nodes in a graph.
 class resource_list {
   std::unordered_map<std::string, std::shared_ptr<resource_base>> resources;
 
@@ -49,6 +55,14 @@ class resource_list {
   }
 };
 
+/// @brief Base class for all processing nodes in a coalsack graph.
+/// @details Derived classes define their input/output edges in the constructor via
+///          @c set_input() / @c set_output(), and implement @c process() to react to
+///          incoming messages.  The lifecycle methods @c initialize(), @c run(),
+///          @c stop(), and @c finalize() are called by graph_proc in topological order.
+///
+/// @par Lifecycle
+/// deploy → initialize → run → (process)* → stop → finalize
 class graph_node {
  protected:
   subgraph* g;
@@ -112,6 +126,9 @@ class graph_node {
   }
   const std::unordered_map<std::string, graph_edge_ptr>& get_inputs() const { return inputs; }
 
+  /// @brief Called by the framework when a message arrives on the named input port.
+  /// @param input_name Name of the input port that received the message.
+  /// @param message    The received message (cast to the expected derived type as needed).
   virtual void process([[maybe_unused]] std::string input_name,
                        [[maybe_unused]] graph_message_ptr message) {}
 
@@ -127,14 +144,21 @@ class graph_node {
 
   virtual void stop() {}
 
+  /// @brief Returns the value of a named property, or @c std::nullopt if not found.
   virtual std::optional<property_value> get_property(
       [[maybe_unused]] const std::string& key) const {
     return std::nullopt;
   }
 };
 
+/// @brief Shared pointer alias for graph_node.
 using graph_node_ptr = std::shared_ptr<graph_node>;
 
+/// @brief Depth-first post-order traversal of the input sub-graph rooted at @p node.
+/// @tparam T Callable with signature @c void(graph_node*).
+/// @param node    Starting node (may be @c nullptr).
+/// @param visited Set of already-visited nodes (accumulates across calls).
+/// @param callback Invoked for each node after all its DATAFLOW predecessors.
 template <typename T>
 static void dfs_postorder(graph_node* node, std::unordered_set<graph_node*>& visited, T callback) {
   if (node == nullptr) {
@@ -157,6 +181,9 @@ static void dfs_postorder(graph_node* node, std::unordered_set<graph_node*>& vis
   callback(node);
 }
 
+/// @brief Partitions @p nodes into weakly connected components of the DATAFLOW sub-graph.
+/// @param nodes All nodes to consider.
+/// @return A vector of components, each component being a vector of node pointers.
 inline std::vector<std::vector<graph_node*>> compute_weakly_connected_components(
     const std::vector<graph_node*>& nodes) {
   std::unordered_set<graph_node*> node_set(nodes.begin(), nodes.end());

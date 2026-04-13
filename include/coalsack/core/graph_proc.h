@@ -1,3 +1,6 @@
+/// @file graph_proc.h
+/// @brief Top-level graph processor that drives the node lifecycle.
+/// @ingroup core_graph
 #pragma once
 
 #include <algorithm>
@@ -10,6 +13,7 @@
 
 namespace coalsack {
 
+/// @brief RPC function codes for remote graph lifecycle control (used by graph_proc_server).
 enum class GRAPH_PROC_RPC_FUNC : uint32_t {
   DEPLOY = 0,
   INITIALIZE = 1,
@@ -21,6 +25,17 @@ enum class GRAPH_PROC_RPC_FUNC : uint32_t {
   BATCH_FINALIZE = 7,
 };
 
+/// @brief Orchestrates the full lifecycle of a deployed subgraph.
+/// @details Nodes are topologically sorted (post-order DFS) before @c initialize()
+///          so that upstream nodes are always ready before downstream ones.
+///
+/// @par Lifecycle
+/// -# @c deploy()     — replace the active subgraph
+/// -# @c initialize() — sorted initialization of all nodes
+/// -# @c run()        — starts autonomous nodes (e.g. sources)
+/// -# @c process()    — injects a message into a specific node input
+/// -# @c stop()       — signals all nodes to stop
+/// -# @c finalize()   — releases resources
 class graph_proc {
   std::shared_ptr<subgraph> g;
   std::shared_ptr<resource_list> resources;

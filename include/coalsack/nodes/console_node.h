@@ -1,3 +1,6 @@
+/// @file console_node.h
+/// @brief Node that prints text_message payloads to the console.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <iostream>
@@ -9,6 +12,18 @@
 
 namespace coalsack {
 
+/// @brief Writes the text payload of incoming @c text_message objects to an output stream.
+/// @details Defaults to @c std::cout.  Non-text_message input is silently discarded.
+///
+/// @par Inputs
+/// - @b "default" — @c text_message (other subtypes are ignored)
+///
+/// @par Outputs
+///   (none)
+///
+/// @par Properties
+///   (none — no configurable properties)
+/// @see text_message
 class console_node : public graph_node {
   std::ostream* output;
 

@@ -1,3 +1,6 @@
+/// @file fifo_node.h
+/// @brief Thread-safe FIFO queue node with bounded capacity.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <spdlog/spdlog.h>
@@ -16,6 +19,19 @@
 
 namespace coalsack {
 
+/// @brief Buffers incoming messages in a bounded deque and forwards them in FIFO order
+///        from a dedicated background thread.
+/// @details When the queue is full (@c max_size reached) older messages are dropped.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message
+///
+/// @par Outputs
+/// - @b "default" — buffered @c graph_message in FIFO order
+///
+/// @par Properties
+/// - max_size (uint32_t, default 10) — maximum number of queued messages before dropping
+/// @see passthrough_node, parallel_queue_node
 class fifo_node : public graph_node {
   graph_edge_ptr output;
   std::mutex mtx;

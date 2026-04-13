@@ -1,3 +1,6 @@
+/// @file graph_proc_cv_ext.h
+/// @brief Additional OpenCV-based detection nodes (FAST blob, ChArUco, mask generator).
+/// @ingroup ext_nodes
 #pragma once
 
 #include <algorithm>
@@ -31,6 +34,26 @@
 #endif
 
 namespace coalsack {
+/// @brief Detects blobs using a FAST-based contour detector.
+/// @details Runs a multi-threshold @c blob_detector across the input frame, applying
+///          configurable area, circularity, and distance filters before emitting
+///          the detected blob centres as a @c keypoint_frame_message.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c keypoint_frame_message
+///
+/// @par Properties
+/// - parameters.min_threshold (double, 50) — minimum threshold for blob detection
+/// - parameters.max_threshold (double, 220) — maximum threshold for blob detection
+/// - parameters.step_threshold (double, 10) — step between threshold levels
+/// - parameters.min_area (double, 25) — minimum blob area in pixels
+/// - parameters.max_area (double, 5000) — maximum blob area in pixels
+/// - parameters.min_circularity (double, 0.8) — minimum circularity (0–1)
+/// - parameters.max_circularity (double, +inf) — maximum circularity
+/// - parameters.min_dist_between_blobs (float, 10) — minimum distance between blob centres
+/// - parameters.min_repeatability (int32, 2) — minimum number of threshold levels a blob must appear in
+/// @see simple_blob_detector_node, orb_detector_node
 class fast_blob_detector_node : public graph_node {
  public:
   struct blob_detector_params {
@@ -125,6 +148,18 @@ class fast_blob_detector_node : public graph_node {
   }
 };
 
+/// @brief Detects ChArUco board corners and estimates pose.
+/// @details Configures an ArUco dictionary and @c CharucoBoard at @c initialize(), then on each
+///          frame calls @c detectBoard (OpenCV 4.7+) or @c detectMarkers + @c interpolateCornersCharuco
+///          (older OpenCV).  Detected corner positions are emitted as a @c keypoint_frame_message.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c keypoint_frame_message
+///
+/// @par Properties
+///   (none — board parameters are fixed at construction time; not exposed via serialize)
+/// @see fast_blob_detector_node, detect_circle_grid_node
 class charuco_detector_node : public graph_node {
  private:
   graph_edge_ptr output;
@@ -235,6 +270,19 @@ class charuco_detector_node : public graph_node {
     }
   }
 };
+
+/// @brief Loads a grayscale mask from disk and applies it to incoming image frames.
+/// @details At @c run() the mask image is read from @c path. Each incoming
+///          @c frame_message<image> is multiplied element-wise by the mask so that
+///          masked-out pixels are set to zero.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> with the mask applied
+/// @par Properties
+/// - path (std::string, default "") — filesystem path to the grayscale mask image (PNG/BMP/etc.)
+/// @see mask_node, image_write_node
+/// @ingroup ext_nodes
 class mask_generator_node : public graph_node {
   std::string path_;
   cv::Mat latest_frame_;

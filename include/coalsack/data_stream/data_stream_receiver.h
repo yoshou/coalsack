@@ -1,3 +1,6 @@
+/// @file data_stream_receiver.h
+/// @brief UDP and TCP packet-based stream receivers with reordering.
+/// @ingroup rpc
 #pragma once
 
 #include <spdlog/spdlog.h>
@@ -121,6 +124,7 @@ class reordering_packet_buffer {
   }
 };
 
+/// @brief Reassembles fragmented data-stream packets from a UDP receiver.
 class data_stream_receiver {
   asio::io_context io_context;
 
@@ -290,6 +294,7 @@ class data_stream_receiver {
   }
 };
 
+/// @brief TCP variant of @c data_stream_receiver.
 class data_stream_tcp_receiver {
   asio::io_context io_context;
 

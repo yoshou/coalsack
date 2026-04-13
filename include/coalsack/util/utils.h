@@ -1,3 +1,6 @@
+/// @file utils.h
+/// @brief Binary I/O helper functions.
+/// @ingroup utilities
 #pragma once
 
 #include <cstdint>

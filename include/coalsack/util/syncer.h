@@ -1,3 +1,6 @@
+/// @file syncer.h
+/// @brief Multi-stream frame synchronization based on timestamp or frame number.
+/// @ingroup utilities
 #pragma once
 
 #include <spdlog/spdlog.h>
@@ -11,6 +14,7 @@
 #include <vector>
 
 namespace coalsack {
+/// @brief Synchronization key based on approximate wall-clock timestamp (microseconds).
 class approximate_time {
   double timestamp;
   double interval;
@@ -52,6 +56,7 @@ class approximate_time {
   }
 };
 
+/// @brief Synchronization key based on exact frame number.
 class frame_number {
   int64_t number;
 
@@ -141,6 +146,11 @@ struct synced_frame_callback {
 };
 
 template <typename DataTy, typename IDTy, typename TimeTy = approximate_time>
+/// @brief Multi-stream synchronizer that collects @c graph_message_ptr items per stream and
+///        emits a callback when a temporally-aligned (or frame-number-aligned) set is complete.
+/// @tparam T          Payload type per stream (typically @c graph_message_ptr).
+/// @tparam StreamId   Stream identifier type (typically @c std::string).
+/// @tparam SyncInfo   Synchronization key type (@c approximate_time or @c frame_number).
 class stream_syncer {
  public:
   using stream_id_type = IDTy;

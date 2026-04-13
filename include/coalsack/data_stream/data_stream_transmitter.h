@@ -1,3 +1,6 @@
+/// @file data_stream_transmitter.h
+/// @brief UDP and TCP packet-based stream transmitters.
+/// @ingroup rpc
 #pragma once
 
 #include <boost/array.hpp>
@@ -14,6 +17,7 @@ namespace asio = boost::asio;
 using asio::ip::tcp;
 using asio::ip::udp;
 
+/// @brief Fragments and transmits a data stream over UDP with source identification.
 class data_stream_transmitter {
   udp::socket socket_;
   udp::endpoint remote_endpoint_;
@@ -86,6 +90,7 @@ class data_stream_transmitter {
   }
 };
 
+/// @brief TCP variant of @c data_stream_transmitter providing reliable ordered delivery.
 class data_stream_tcp_transmitter {
   tcp::socket socket_;
   tcp::endpoint remote_endpoint_;

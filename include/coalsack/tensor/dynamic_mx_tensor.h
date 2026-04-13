@@ -1,3 +1,6 @@
+/// @file dynamic_mx_tensor.h
+/// @brief MXFP4 mixed-precision tensor storage and class.
+/// @ingroup tensor
 #pragma once
 
 #include <cereal/types/vector.hpp>
@@ -10,8 +13,9 @@
 
 namespace coalsack {
 
-// Storage class for MXFP4 quantized tensors
-// MXFP4 format: 32 elements per block (17 bytes: 1 E8M0 scale + 16 packed 4-bit values)
+/// @brief Block-storage for MXFP4 quantized data.
+/// @details Each block holds 32 elements encoded as 1 E8M0 scale byte followed by
+///          16 packed nibbles (4-bit values), totalling 17 bytes per block.
 class dynamic_mx_tensor_storage {
  public:
   static constexpr size_t ELEMENTS_PER_BLOCK = 32;

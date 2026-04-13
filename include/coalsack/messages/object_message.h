@@ -1,3 +1,6 @@
+/// @file object_message.h
+/// @brief Message carrying a named map of child messages.
+/// @ingroup messages
 #pragma once
 
 #include <cereal/types/memory.hpp>
@@ -10,6 +13,11 @@
 
 namespace coalsack {
 
+/// @brief Message carrying a key-value map of named child graph_message instances.
+/// @details Values may be any @c graph_message subtype, enabling structured payloads.
+///
+/// @par Fields
+/// - fields (std::unordered_map<std::string, graph_message_ptr>) — named child messages
 class object_message : public graph_message {
   std::unordered_map<std::string, graph_message_ptr> fields;
 

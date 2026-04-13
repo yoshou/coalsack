@@ -1,3 +1,6 @@
+/// @file graph_proc_tensor.h
+/// @brief Statically-typed tensor template and frame_message wrappers for tensor data.
+/// @ingroup tensor
 #pragma once
 
 #include <algorithm>

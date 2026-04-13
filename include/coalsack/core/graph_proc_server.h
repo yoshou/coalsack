@@ -1,3 +1,6 @@
+/// @file graph_proc_server.h
+/// @brief RPC server that exposes graph lifecycle operations to remote clients.
+/// @ingroup core_graph
 #pragma once
 
 #include <spdlog/spdlog.h>
@@ -19,6 +22,9 @@
 
 namespace coalsack {
 
+/// @brief Receives serialized subgraphs from a graph_proc_client, deserializes them,
+///        and drives the full node lifecycle (deploy / initialize / run / stop / finalize)
+///        over an RPC channel.
 class graph_proc_server {
   rpc_server rpc_server_;
   std::shared_ptr<resource_list> resources_;

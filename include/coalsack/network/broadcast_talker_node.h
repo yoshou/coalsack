@@ -1,3 +1,6 @@
+/// @file broadcast_talker_node.h
+/// @brief UDP multicast/broadcast message sender node.
+/// @ingroup network_nodes
 #pragma once
 
 #include <atomic>
@@ -14,6 +17,20 @@
 
 namespace coalsack {
 
+/// @brief Serializes incoming messages and transmits them as UDP broadcast/multicast datagrams.
+/// @details A background Boost.Asio I/O thread runs the transmitter; each serialized message
+///          is length-prefixed and sent to the configured broadcast or multicast address.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message
+///
+/// @par Outputs
+///   (none)
+///
+/// @par Properties
+/// - address (std::string) — broadcast or multicast group address
+/// - port    (uint16_t)    — destination UDP port
+/// @see broadcast_listener_node, p2p_talker_node
 class broadcast_talker_node : public graph_node {
   std::shared_ptr<data_stream_transmitter> transmitter;
   boost::asio::io_context io_context;

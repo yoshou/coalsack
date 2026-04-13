@@ -1,3 +1,6 @@
+/// @file image.h
+/// @brief Raw image data container with format descriptor.
+/// @ingroup image
 #pragma once
 
 #include <algorithm>
@@ -5,6 +8,11 @@
 #include <vector>
 
 namespace coalsack {
+/// @defgroup image Image Processing
+/// @brief Image and frame types, processing nodes, and utility functions.
+/// @{
+
+/// @brief Pixel format of an image buffer.
 enum class image_format {
   ANY,
   Y8_UINT,
@@ -18,6 +26,9 @@ enum class image_format {
   UYVY,
 };
 
+/// @brief 2-D image buffer with format, dimensions, and stride metadata.
+/// @details Pixel data is stored row-major in a @c std::vector<uint8_t>.
+///          Copies perform deep copies; move semantics are supported.
 class image {
  public:
   image() : data(), width(0), height(0), bpp(0), stride(0), format(image_format::ANY) {}

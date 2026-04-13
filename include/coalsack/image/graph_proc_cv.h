@@ -1,3 +1,6 @@
+/// @file graph_proc_cv.h
+/// @brief OpenCV-based processing nodes: capture, visualization, detection, and transforms.
+/// @ingroup image
 #pragma once
 
 #include <algorithm>
@@ -26,6 +29,17 @@
 #include "coalsack/image/imgproc.h"
 
 namespace coalsack {
+/// @brief Displays incoming @c image_message frames in an OpenCV @c imshow window.
+/// @details Opens a named @c cv::namedWindow on @c run() and refreshes the display in a
+///          background thread every 1 ms via @c cv::waitKey.  The window is destroyed on @c stop().
+/// @par Inputs
+/// - @b "default" — @c image_message
+/// @par Outputs
+///   (none)
+/// @par Properties
+/// - image_name (std::string, "") — window name passed to @c cv::namedWindow and @c cv::imshow
+/// @see video_viz_node, image_write_node
+/// @ingroup image
 class image_viz_node : public graph_node {
   std::string image_name;
   std::shared_ptr<image_message> image_msg;
@@ -81,6 +95,17 @@ class image_viz_node : public graph_node {
   }
 };
 
+/// @brief Saves incoming image frames to disk using cv::imwrite.
+/// @details Calls @c cv::imwrite on each arriving @c image_message, writing the frame data
+///          to the configured output path.  The directory must exist before the node runs.
+/// @par Inputs
+/// - @b "default" — @c image_message
+/// @par Outputs
+///   (none)
+/// @par Properties
+/// - path (std::string, "") — file path (including extension) to write each image frame to
+/// @see image_viz_node, image_write_node
+/// @ingroup image
 class image_write_node : public graph_node {
   std::string path;
 
@@ -89,7 +114,7 @@ class image_write_node : public graph_node {
 
   void set_path(std::string path) { this->path = path; }
 
-  std::string get_image_name() const { return path; }
+  std::string get_path() const { return path; }
 
   virtual std::string get_proc_name() const override { return "image_write"; }
 
@@ -190,6 +215,18 @@ static int stream_format_to_cv_type(stream_format format) {
   return type;
 }
 
+/// @brief Displays video frames in an OpenCV imshow window.
+/// @details Buffers each incoming @c frame_message<image> or @c image_message and renders
+///          it via @c cv_window::imshow, which batches display updates across all windows
+///          sharing the same @c cv::waitKey event loop.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image> or @c image_message (rendered via cv::imshow)
+/// @par Outputs
+///   (none — display-only sink)
+/// @par Properties
+/// - image_name (std::string, "") — OpenCV window name passed to cv::imshow
+/// @see image_viz_node, video_capture_node
+/// @ingroup image
 class video_viz_node : public graph_node {
   std::string image_name;
 
@@ -252,6 +289,18 @@ static int convert_to_cv_type(image_format format) {
   }
 }
 
+/// @brief Base class for single-input single-output image transformation nodes (OpenCV-based).
+/// @details Derived classes implement @c transform(src, dst); this base unwraps the incoming
+///          @c frame_message, calls @c transform(), then re-wraps the result with the original
+///          profile, timestamp, and frame number before sending it on @b "default".
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> (transformed)
+/// @par Properties
+///   (none — defined by derived class)
+/// @see threshold_node, gaussian_blur_node, resize_node, mask_node, scale_node, scale_abs_node
+/// @ingroup image
 class image_transform_node : public graph_node {
   graph_edge_ptr output;
 
@@ -284,6 +333,19 @@ class image_transform_node : public graph_node {
   void serialize(Archive &archive) {}
 };
 
+/// @brief Applies a threshold operation (cv::threshold) to the input image.
+/// @details Converts the source @c frame_message<image> to an OpenCV @c cv::Mat and calls
+///          @c cv::threshold with the configured threshold, max_value, and type parameters.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> with threshold applied
+/// @par Properties
+/// - threshold (double, 0.0) — threshold value passed to cv::threshold
+/// - max_value (double, 255.0) — maximum output value
+/// - threshold_type (int, cv::THRESH_BINARY) — OpenCV threshold type constant
+/// @see image_transform_node, mask_node, gaussian_blur_node
+/// @ingroup image
 class threshold_node : public image_transform_node {
   double thresh;
   double maxval;
@@ -325,6 +387,19 @@ class threshold_node : public image_transform_node {
   }
 };
 
+/// @brief Applies a binary mask to the input image (sets masked pixels to zero).
+/// @details Accepts an optional secondary @b "mask" input port (@c image_message) to update
+///          the mask at runtime.  Uses @c cv::bitwise_and; the mask is auto-resized to the
+///          source dimensions when they differ.  If no mask has been set, the frame passes through.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image> (source)
+/// - @b "mask"    — @c image_message (optional, updates the binary mask)
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> with the mask applied
+/// @par Properties
+///   (none — the mask is supplied via the @b "mask" input or @c set_mask())
+/// @see image_transform_node, threshold_node, mask_generator_node
+/// @ingroup image
 class mask_node : public image_transform_node {
   image mask;
   std::mutex mask_mutex;
@@ -388,6 +463,20 @@ class mask_node : public image_transform_node {
   }
 };
 
+/// @brief Applies a Gaussian blur (cv::GaussianBlur) to the input image.
+/// @details Converts the source frame to a @c cv::Mat and calls @c cv::GaussianBlur using
+///          the configured kernel size and sigma values.  Kernel dimensions must be odd and positive.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> with Gaussian blur applied
+/// @par Properties
+/// - kernel_width (int, 1) — blur kernel width (must be odd and positive)
+/// - kernel_height (int, 1) — blur kernel height (must be odd and positive)
+/// - sigma_x (double, 1.0) — Gaussian standard deviation in X
+/// - sigma_y (double, 1.0) — Gaussian standard deviation in Y
+/// @see image_transform_node, resize_node, threshold_node
+/// @ingroup image
 class gaussian_blur_node : public image_transform_node {
   int kernel_width;
   int kernel_height;
@@ -436,6 +525,19 @@ class gaussian_blur_node : public image_transform_node {
   }
 };
 
+/// @brief Resizes the input image to a fixed width/height using cv::resize.
+/// @details Allocates an output buffer of the target dimensions and calls @c cv::resize with
+///          the configured interpolation method.  Width and height of 0 pass the frame through unchanged.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> resized to the configured dimensions
+/// @par Properties
+/// - width (uint32_t, 0) — output image width in pixels (0 = pass through)
+/// - height (uint32_t, 0) — output image height in pixels (0 = pass through)
+/// - interpolation_type (int, cv::INTER_LINEAR) — OpenCV interpolation flag
+/// @see image_transform_node, gaussian_blur_node
+/// @ingroup image
 class resize_node : public image_transform_node {
   std::uint32_t width;
   std::uint32_t height;
@@ -475,6 +577,18 @@ class resize_node : public image_transform_node {
   }
 };
 
+/// @brief Applies cv::convertScaleAbs with configurable alpha and beta.
+/// @details Calls @c cv::convertScaleAbs(src, dst, alpha, beta); the output is always 8-bit
+///          unsigned (CV_8U) regardless of the source depth.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> with pixel values scaled to uint8
+/// @par Properties
+/// - alpha (double, 1.0) — scale factor applied to each pixel value
+/// - beta (double, 0.0) — offset added after scaling
+/// @see image_transform_node, scale_node
+/// @ingroup image
 class scale_abs_node : public image_transform_node {
   double alpha;
   double beta;
@@ -512,6 +626,18 @@ class scale_abs_node : public image_transform_node {
   }
 };
 
+/// @brief Scales pixel values of the input image by alpha and beta.
+/// @details Performs per-pixel linear scaling: @c dst = alpha * src + beta using
+///          @c cv::Mat::convertTo, preserving the original pixel depth.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> with pixel values scaled (preserving original depth)
+/// @par Properties
+/// - alpha (double, 1.0) — scale factor applied to each pixel value
+/// - beta (double, 0.0) — offset added after scaling
+/// @see image_transform_node, scale_abs_node
+/// @ingroup image
 class scale_node : public image_transform_node {
   double alpha;
   double beta;
@@ -622,6 +748,24 @@ struct keypoint {
 
 using keypoint_frame_message = frame_message<std::vector<keypoint>>;
 
+/// @brief Detects ORB keypoints and extracts descriptors from the input image.
+/// @details Initialises a @c cv::ORB detector (configurable via @c get_detector()) and calls
+///          @c detect on each incoming frame, then wraps the keypoints in a @c keypoint_frame_message.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c keypoint_frame_message
+/// @par Properties
+/// - max_features (int, 500) — maximum number of keypoints to retain
+/// - scale_factor (double, 1.2) — pyramid scale factor
+/// - n_levels (int, 8) — number of pyramid levels
+/// - edge_threshold (int, 31) — border size where features are not detected
+/// - first_level (int, 0) — first pyramid level to use
+/// - wta_k (int, 2) — number of points in each oriented BRIEF descriptor element
+/// - patch_size (int, 31) — size of the patch used for ORB descriptor computation
+/// - fast_threshold (int, 20) — FAST threshold for keypoint detection
+/// @see simple_blob_detector_node, fast_blob_detector_node
+/// @ingroup image
 class orb_detector_node : public graph_node {
   graph_edge_ptr output;
   cv::Ptr<cv::ORB> detector;
@@ -714,6 +858,18 @@ class orb_detector_node : public graph_node {
   }
 };
 
+/// @brief Detects blob keypoints using cv::SimpleBlobDetector.
+/// @details Constructs a new @c cv::SimpleBlobDetector from the stored parameters on each
+///          incoming frame and emits detected blob positions as a @c keypoint_frame_message.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c keypoint_frame_message
+/// @par Properties
+/// - parameters (cv::SimpleBlobDetector::Params) — full blob filter parameter set;
+///   configure via @c get_parameters() / @c set_parameters()
+/// @see orb_detector_node, fast_blob_detector_node, detect_circle_grid_node
+/// @ingroup image
 class simple_blob_detector_node : public graph_node {
   graph_edge_ptr output;
   cv::SimpleBlobDetector::Params params;
@@ -829,6 +985,22 @@ struct simple_blob_detector_params {
   }
 };
 
+/// @brief Detects a circle calibration grid (cv::findCirclesGrid) in the input image.
+/// @details Builds a @c cv::SimpleBlobDetector from @c params, then calls
+///          @c cv::findCirclesGrid with the configured row/column counts and flags.
+///          Detected circle centers are emitted as a @c keypoint_frame_message.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c keypoint_frame_message with detected circle centers
+/// @par Properties
+/// - parameters (simple_blob_detector_params) — blob filter settings used for circle detection;
+///   configure via @c get_parameters() / @c set_parameters()
+/// - num_circles_per_row (int, 2) — expected number of circle columns in the grid
+/// - num_circles_per_column (int, 9) — expected number of circle rows in the grid
+/// - flags (int, CALIB_CB_ASYMMETRIC_GRID|CALIB_CB_CLUSTERING) — cv::findCirclesGrid flags
+/// @see simple_blob_detector_node, charuco_detector_node
+/// @ingroup image
 class detect_circle_grid_node : public graph_node {
   graph_edge_ptr output;
   simple_blob_detector_params params;
@@ -931,6 +1103,20 @@ class detect_circle_grid_node : public graph_node {
   }
 };
 
+/// @brief Captures frames from a camera or file via cv::VideoCapture.
+/// @details Opens device index 0 with @c cv::VideoCapture, applies any configured
+///          @c request_options (cv property id/value pairs), and emits each grabbed
+///          frame as a @c frame_message<image> timestamped from @c CAP_PROP_POS_MSEC.
+/// @par Inputs
+///   (none — autonomous source)
+/// @par Outputs
+/// - @b "default" — @c frame_message<image>
+/// @par Properties
+/// - stream (stream_type, COLOR) — stream type tag attached to the output profile
+/// - request_options (vector of (int, double)) — cv::VideoCapture property overrides;
+///   add via the @c set_option() helper before @c run()
+/// @see image_viz_node, video_viz_node
+/// @ingroup image
 class video_capture_node : public graph_node {
   std::shared_ptr<std::thread> th;
   std::atomic_bool running;

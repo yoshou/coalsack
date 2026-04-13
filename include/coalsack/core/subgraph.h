@@ -1,3 +1,6 @@
+/// @file subgraph.h
+/// @brief Composable sub-graph container and the subgraph_node wrapper.
+/// @ingroup core_graph
 #pragma once
 
 #include <algorithm>
@@ -18,6 +21,10 @@
 
 namespace coalsack {
 
+/// @brief An ordered, serializable collection of graph_node instances connected by edges.
+/// @details Nodes are stored in insertion order; edges are reconstructed from port
+///          descriptors during @c load().  @c save_to() / @c load_from() perform Cereal
+///          binary serialization for deployment over RPC.
 class subgraph {
   std::vector<graph_node_ptr> nodes;
   std::unordered_map<const graph_node*, uint32_t> node_ids;
@@ -193,6 +200,9 @@ class subgraph {
   }
 };
 
+/// @brief A graph_node that embeds a complete subgraph and exposes mapped output ports.
+/// @details Allows hierarchical graph composition.  The inner subgraph's lifecycle
+///          (initialize/run/stop/finalize) is driven by the parent graph.
 class subgraph_node : public graph_node {
   std::shared_ptr<subgraph> g;
   std::unordered_map<std::string, graph_edge_ptr> output_map;

@@ -1,3 +1,6 @@
+/// @file libcamera_capture.h
+/// @brief Low-level libcamera wrapper used by libcamera_capture_node.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <spdlog/spdlog.h>

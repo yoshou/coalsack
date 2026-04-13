@@ -1,3 +1,6 @@
+/// @file p2p_tcp_talker_node.h
+/// @brief TCP point-to-point message sender node (reliable delivery).
+/// @ingroup network_nodes
 #pragma once
 
 #include <atomic>
@@ -15,6 +18,19 @@
 
 namespace coalsack {
 
+/// @brief Serializes incoming messages via Cereal and sends them over a TCP connection.
+/// @details Provides reliable, ordered delivery compared to p2p_talker_node.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message (serialized and sent)
+///
+/// @par Outputs
+///   (none)
+///
+/// @par Properties
+/// - address (std::string) — destination IP address
+/// - port    (uint16_t)    — destination TCP port
+/// @see p2p_tcp_listener_node, p2p_talker_node
 class p2p_tcp_talker_node : public graph_node {
   graph_edge_ptr output;
   std::shared_ptr<data_stream_tcp_transmitter> transmitter;

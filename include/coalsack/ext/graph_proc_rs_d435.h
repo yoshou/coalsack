@@ -1,3 +1,6 @@
+/// @file graph_proc_rs_d435.h
+/// @brief Intel RealSense D435 multi-stream source node.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <atomic>
@@ -273,6 +276,21 @@ static stream_type convert_stream_type(rs2_stream type) {
 }
 #endif
 
+/// @brief Captures multi-stream frames from an Intel RealSense D435 device.
+/// @details Opens a RealSense pipeline with the configured stream profiles, starts a background
+///          thread, and dispatches each arriving frame by stream type (color, depth, infrared, IMU)
+///          to the named output ports.  The device is selected by serial number if specified.
+/// @par Inputs
+///   (none — autonomous camera source)
+/// @par Outputs
+/// - @b "color"    — @c frame_message<image> (BGR8 color)
+/// - @b "depth"    — @c frame_message<image> (Z16 depth)
+/// - @b "infrared" — @c frame_message<image> (Y8 IR)
+/// - @b "imu"      — @c frame_message<object_message> (accelerometer + gyro)
+/// @par Properties
+/// - serial_number (std::string, "") — device serial number; empty selects the first available device
+/// @see depthai_color_camera_node, libcamera_capture_node
+/// @ingroup ext_nodes
 class rs_d435_node : public graph_node {
   std::string serial_number;
   std::vector<std::tuple<stream_index_pair, rs2_option_type, float>> request_options;

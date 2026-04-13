@@ -1,3 +1,6 @@
+/// @file rpc_server.h
+/// @brief Asynchronous TCP RPC server.
+/// @ingroup rpc
 #pragma once
 
 // clang-format off
@@ -17,6 +20,7 @@ using asio::ip::tcp;
 
 using rpc_disconnect_func = std::function<void(uint32_t)>;
 
+/// @brief Per-connection session managing async read/write for a single RPC client.
 class session : public std::enable_shared_from_this<session> {
  public:
   session(tcp::socket socket, uint32_t session_id,
@@ -112,6 +116,7 @@ class session : public std::enable_shared_from_this<session> {
   const rpc_disconnect_func disconnect_handler;
 };
 
+/// @brief Accepts TCP connections and dispatches registered RPC handler functions.
 class rpc_server {
  public:
   rpc_server(boost::asio::io_context &io_context, std::string address, uint16_t port)

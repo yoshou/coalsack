@@ -1,3 +1,6 @@
+/// @file passthrough_node.h
+/// @brief Zero-copy relay node that forwards any incoming message unchanged.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <memory>
@@ -7,6 +10,18 @@
 
 namespace coalsack {
 
+/// @brief Relays every incoming message to the @b "default" output without modification.
+/// @details Useful for inserting monitoring points or breaking long chains.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message
+///
+/// @par Outputs
+/// - @b "default" — the same @c graph_message received on input
+///
+/// @par Properties
+///   (none — no configurable properties)
+/// @see fifo_node
 class passthrough_node : public graph_node {
   graph_edge_ptr output;
 

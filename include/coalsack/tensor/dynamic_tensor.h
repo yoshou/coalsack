@@ -1,3 +1,6 @@
+/// @file dynamic_tensor.h
+/// @brief Runtime-typed multi-dimensional tensor with zero-copy view support.
+/// @ingroup tensor
 #pragma once
 
 #include <algorithm>
@@ -11,7 +14,11 @@
 
 namespace coalsack {
 
-// Dynamic tensor data type enumeration
+/// @defgroup tensor Tensor System
+/// @brief Dynamic tensor types and their graph message wrappers.
+/// @{
+
+/// @brief Runtime element type discriminant for dynamic_tensor.
 enum class dtype {
   float32,
   float16,
@@ -64,7 +71,9 @@ inline std::string dtype_name(dtype dt) {
   }
 }
 
-// Storage class with reference counting
+/// @brief Reference-counted byte buffer backing a dynamic_tensor.
+/// @details Multiple dynamic_tensor views can share the same storage; ownership is
+///          tracked via a shared_ptr<vector<uint8_t>> internally.
 class dynamic_tensor_storage {
  private:
   std::shared_ptr<std::vector<uint8_t>> data_;
@@ -95,7 +104,13 @@ class dynamic_tensor_storage {
   long use_count() const { return data_.use_count(); }
 };
 
-// Dynamic tensor class with rank-variable shape
+/// @brief Rank-variable tensor with runtime dtype, shape, and zero-copy view semantics.
+/// @details Memory is managed through dynamic_tensor_storage (shared_ptr).  Constructing a
+///          view via @c make_view() does not copy data; both the original and the view share
+///          the same underlying buffer, distinguished only by byte_offset and shape.
+///
+/// @par Supported dtypes
+///          float32, float16, int64, int32, bool_, uint8, float64
 class dynamic_tensor {
  private:
   dtype dtype_;

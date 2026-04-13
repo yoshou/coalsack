@@ -1,3 +1,6 @@
+/// @file graph_proc_depthai.h
+/// @brief OAK-D (DepthAI) color camera source node.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <algorithm>
@@ -19,6 +22,19 @@
 #endif
 
 namespace coalsack {
+/// @brief Captures color frames from an OAK-D/DepthAI device.
+/// @details Configures a DepthAI pipeline with a @c ColorCamera node linked to an @c XLinkOut,
+///          starts the pipeline in a background thread, and emits each captured frame as
+///          @c frame_message<image> (BGR8 format).
+/// @par Inputs
+///   (none — autonomous camera source)
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> (BGR8)
+/// @par Properties
+/// - width (int, 1280) — capture width in pixels
+/// - height (int, 720) — capture height in pixels
+/// - fps (int, 30) — capture frame rate
+/// @see libcamera_capture_node, rs_d435_node
 class depthai_color_camera_node : public graph_node {
  private:
   graph_edge_ptr output;

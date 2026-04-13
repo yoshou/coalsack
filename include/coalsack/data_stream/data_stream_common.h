@@ -1,8 +1,12 @@
+/// @file data_stream_common.h
+/// @brief Shared data types for the data_stream layer.
+/// @ingroup rpc
 #pragma once
 
 #include <cstdint>
 
 namespace coalsack {
+/// @brief Identifies the origin of a packet within a data stream.
 struct source_identifier {
   int64_t stream_unique_id;
   int32_t data_id;

@@ -1,3 +1,6 @@
+/// @file image_nodes.h
+/// @brief Image processing nodes: synchronization, tiling, ordering, and more.
+/// @ingroup image
 #pragma once
 
 #include <spdlog/spdlog.h>
@@ -29,6 +32,17 @@
 
 namespace coalsack {
 
+/// @brief Periodic source node that emits a static image as a @c frame_message at a fixed rate.
+/// @details On each heartbeat tick, wraps the stored @c image in a @c frame_message<image>
+///          stamped with the current system time and sends it on @b "default".
+/// @par Inputs
+///   (none — autonomous source)
+/// @par Outputs
+/// - @b "default" — @c frame_message<image>
+/// @par Properties
+/// - interval (uint32_t, inherited) — emission period in milliseconds (see heartbeat_node)
+/// @see heartbeat_node, video_capture_node
+/// @ingroup image
 class image_heartbeat_node : public heartbeat_node {
   image img;
   graph_edge_ptr output;
@@ -91,6 +105,22 @@ struct frame_number_sync_config {
   void serialize(Archive &archive) {}
 };
 
+/// @brief Multi-stream synchronizer node that collects frames from named inputs and emits
+///        an @c object_message when all streams have a temporally-aligned set of frames.
+/// @details Collects one @c frame_message from each registered input port.  When all ports have
+///          a frame whose sync key (timestamp or frame number, depending on the Config policy)
+///          is within the tolerance window, emits an @c object_message bundling them.
+/// @ingroup image
+/// @tparam Config Synchronization policy; defaults to @c approximate_time_sync_config.
+///         Use @c frame_number_sync_config (aliased as @c frame_number_sync_node) for
+///         frame-number-based synchronization.
+/// @par Inputs
+/// - @b "{stream_name}" — @c frame_message_base (one input port per registered stream)
+/// @par Outputs
+/// - @b "default" — @c object_message with one @c frame_message per stream key
+/// @par Properties
+/// - interval (double, 0.0) — synchronization tolerance window in milliseconds
+/// @see tiling_node, frame_demux_node
 template <typename Config = approximate_time_sync_config>
 class sync_node : public graph_node {
   using sync_config = Config;
@@ -149,6 +179,19 @@ class sync_node : public graph_node {
 using approximate_time_sync_node = sync_node<approximate_time_sync_config>;
 using frame_number_sync_node = sync_node<frame_number_sync_config>;
 
+/// @brief Tiles multiple input @c frame_message<image> frames into a single composite image.
+/// @details Accumulates one @c frame_message<image> per registered column name.  When all
+///          columns have a new frame, composites them side-by-side (column-major) into a single
+///          wide image and emits it on @b "default".
+/// @par Inputs
+/// - @b "{stream_name}" — @c frame_message<image> (one per column, registered via @c add_image())
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> containing the tiled composite
+/// @par Properties
+/// - num_cols (uint32_t) — number of tile columns in the grid
+/// - num_rows (uint32_t) — number of tile rows in the grid
+/// @see sync_node, frame_demux_node
+/// @ingroup image
 class tiling_node : public graph_node {
   graph_edge_ptr output;
   std::uint32_t num_cols;
@@ -263,6 +306,17 @@ class tiling_node : public graph_node {
   }
 };
 
+/// @brief Extracts the timestamp from an incoming @c image_frame_message and emits it as a @c number_message.
+/// @details Casts each incoming message to @c image_frame_message; on success emits a
+///          @c number_message containing @c get_timestamp() in microseconds.
+/// @par Inputs
+/// - @b "default" — @c image_frame_message (non-matching types are discarded)
+/// @par Outputs
+/// - @b "default" — @c number_message containing the frame timestamp in microseconds
+/// @par Properties
+///   (none)
+/// @see frame_message, frame_number_numbering_node
+/// @ingroup image
 class timestamp_node : public graph_node {
   graph_edge_ptr output;
 
@@ -285,6 +339,17 @@ class timestamp_node : public graph_node {
   }
 };
 
+/// @brief Demultiplexes a @c frame_message<object_message> into its constituent labeled streams.
+/// @details Extracts per-key child messages from an incoming @c frame_message<object_message>
+///          and republishes each child on the named output port that matches its field key.
+/// @par Inputs
+/// - @b "default" — @c frame_message<object_message>
+/// @par Outputs
+/// - @b "<field_key>" — child @c graph_message for each field in the @c object_message
+/// @par Properties
+///   (none — output ports are registered at build time via add_output())
+/// @see sync_node, tiling_node
+/// @ingroup image
 class frame_demux_node : public graph_node {
  public:
   frame_demux_node() : graph_node() {}
@@ -335,6 +400,17 @@ class frame_demux_node : public graph_node {
   }
 };
 
+/// @brief Assigns monotonically increasing frame numbers to incoming @c frame_message_base messages.
+/// @details Maintains an internal counter incremented for each arriving message.  If the input is
+///          an @c object_message, the counter is applied to each contained @c frame_message_base field.
+/// @par Inputs
+/// - @b "default" — @c frame_message_base or @c object_message wrapping @c frame_message_base fields
+/// @par Outputs
+/// - @b "default" — the same message with frame_number set
+/// @par Properties
+///   (none)
+/// @see frame_number_ordering_node, timestamp_node
+/// @ingroup image
 class frame_number_numbering_node : public graph_node {
   uint64_t frame_number;
   graph_edge_ptr output;
@@ -433,6 +509,17 @@ class task_queue {
   size_t size() const { return tasks.size(); }
 };
 
+/// @brief Forwards frame messages through a fixed-size thread pool, enabling parallel processing.
+/// @details Distributes incoming @c frame_message_base messages across worker threads; each worker
+///          emits its result on @b "default" when complete.  Output order is not guaranteed.
+/// @par Inputs
+/// - @b "default" — @c frame_message_base
+/// @par Outputs
+/// - @b "default" — @c frame_message_base (forwarded asynchronously from worker threads)
+/// @par Properties
+/// - num_threads (uint32_t, default hardware_concurrency) — worker thread count
+/// @see frame_number_ordering_node, fifo_node
+/// @ingroup image
 class parallel_queue_node : public graph_node {
   std::unique_ptr<task_queue<std::function<void()>>> workers;
   graph_edge_ptr output;
@@ -471,6 +558,7 @@ class parallel_queue_node : public graph_node {
   }
 };
 
+/// @brief Comparator for a min-heap of frame_message_base by frame number (ascending order).
 class greater_graph_message_ptr {
  public:
   bool operator()(const graph_message_ptr &lhs, const graph_message_ptr &rhs) const {
@@ -479,6 +567,17 @@ class greater_graph_message_ptr {
   }
 };
 
+/// @brief Reorders out-of-order @c frame_message_base messages by frame number using a bounded priority queue.
+/// @details Buffers incoming frames in a min-heap keyed by frame number.  When the expected next
+///          frame number arrives, or the buffer reaches @c max_size, messages are flushed in order.
+/// @par Inputs
+/// - @b "default" — @c frame_message_base (may arrive out of order)
+/// @par Outputs
+/// - @b "default" — @c frame_message_base in frame-number order
+/// @par Properties
+/// - max_size (uint32_t, default 10) — maximum number of buffered frames before oldest is forwarded
+/// @see parallel_queue_node, frame_number_numbering_node
+/// @ingroup image
 class frame_number_ordering_node : public graph_node {
   graph_edge_ptr output;
   std::mutex mtx;

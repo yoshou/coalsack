@@ -1,3 +1,6 @@
+/// @file list_message.h
+/// @brief Message carrying an ordered list of child messages.
+/// @ingroup messages
 #pragma once
 
 #include <cstddef>
@@ -8,6 +11,10 @@
 
 namespace coalsack {
 
+/// @brief Message carrying an ordered sequence of child graph_message instances.
+///
+/// @par Fields
+/// - list (std::vector<graph_message_ptr>) — ordered child messages
 class list_message : public graph_message {
   std::vector<graph_message_ptr> list;
 

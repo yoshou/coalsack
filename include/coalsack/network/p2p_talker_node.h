@@ -1,3 +1,6 @@
+/// @file p2p_talker_node.h
+/// @brief UDP point-to-point message sender node.
+/// @ingroup network_nodes
 #pragma once
 
 #include <atomic>
@@ -15,6 +18,24 @@
 
 namespace coalsack {
 
+/// @defgroup network_nodes Network Nodes
+/// @brief Nodes for transmitting and receiving messages over UDP and TCP.
+/// @{
+
+/// @brief Serializes incoming messages via Cereal and transmits them over UDP.
+/// @details A background I/O thread runs the Boost.Asio context.  Each message is
+///          timestamped and length-prefixed before transmission.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message (serialized and sent)
+///
+/// @par Outputs
+///   (none)
+///
+/// @par Properties
+/// - address (std::string) — destination IP address
+/// - port    (uint16_t)    — destination UDP port
+/// @see p2p_listener_node, p2p_tcp_talker_node
 class p2p_talker_node : public graph_node {
   graph_edge_ptr output;
   std::shared_ptr<data_stream_transmitter> transmitter;

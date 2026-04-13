@@ -1,3 +1,6 @@
+/// @file heartbeat_node.h
+/// @brief Autonomous timer node that fires messages at a fixed interval.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <atomic>
@@ -13,6 +16,24 @@
 
 namespace coalsack {
 
+/// @defgroup utility_nodes Utility Nodes
+/// @brief General-purpose utility nodes for routing, buffering, and I/O.
+/// @{
+
+/// @brief Generates a @c graph_message on @b "default" output at a configurable interval.
+/// @details Spawns a background thread that sleeps for @c interval milliseconds between
+///          each emission.  Derived nodes (e.g. buffer_node) override @c run_impl()
+///          to execute custom periodic logic.
+///
+/// @par Inputs
+///   (none — autonomous source node)
+///
+/// @par Outputs
+/// - @b "default" — any @c graph_message (base class only in this base; overridden by derived)
+///
+/// @par Properties
+/// - interval (uint32_t, default 1000) — period in milliseconds between emissions
+/// @see buffer_node, clock_buffer_node
 class heartbeat_node : public graph_node {
   uint32_t interval;
   std::shared_ptr<std::thread> th;
@@ -54,6 +75,16 @@ class heartbeat_node : public graph_node {
   virtual void tick() {}
 };
 
+/// @brief Sends a fixed @c text_message string on @b "default" output at each heartbeat tick.
+/// @details Wraps the stored message string in a @c text_message and emits it via the output edge.
+/// @par Inputs
+///   (none — autonomous source node)
+/// @par Outputs
+/// - @b "default" — @c text_message
+/// @par Properties
+/// - interval (uint32_t, inherited) — emission period in milliseconds (see heartbeat_node)
+/// - message (std::string, "") — text payload sent on each tick
+/// @see heartbeat_node
 class text_heartbeat_node : public heartbeat_node {
   std::string message;
   graph_edge_ptr output;

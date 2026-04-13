@@ -1,3 +1,6 @@
+/// @file rpc_client.h
+/// @brief Synchronous TCP RPC client.
+/// @ingroup rpc
 #pragma once
 
 // clang-format off
@@ -14,6 +17,7 @@ namespace asio = boost::asio;
 using asio::ip::tcp;
 using asio::ip::udp;
 
+/// @brief Connects to an @c rpc_server and invokes remote procedures synchronously.
 class rpc_client {
   tcp::socket socket;
 

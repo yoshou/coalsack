@@ -1,3 +1,6 @@
+/// @file demux_node.h
+/// @brief Demultiplexer node that routes messages to named outputs based on an object_message key.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <spdlog/spdlog.h>
@@ -12,6 +15,18 @@
 
 namespace coalsack {
 
+/// @brief Routes an incoming @c object_message to the output port matching the message's field key.
+/// @details Use @c add_output() to register named output ports before deploying.
+///
+/// @par Inputs
+/// - @b "default" — @c object_message whose first field key selects the target output
+///
+/// @par Outputs
+/// - @b "{name}" — the child @c graph_message extracted from the matching field
+///
+/// @par Properties
+///   (none — output ports are registered at build time via add_output())
+/// @see mux_node
 class demux_node : public graph_node {
  public:
   demux_node() : graph_node() {}

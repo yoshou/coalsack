@@ -1,3 +1,6 @@
+/// @file clock_buffer_node.h
+/// @brief Buffer node driven by an external clock signal instead of an internal timer.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <memory>
@@ -8,6 +11,20 @@
 
 namespace coalsack {
 
+/// @brief Caches the latest incoming message and republishes it whenever a clock pulse arrives.
+/// @details Unlike buffer_node, timing is controlled by an external edge (@b "clock") rather
+///          than a dedicated thread, enabling synchronisation with upstream frame sources.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message (the payload to buffer)
+/// - @b "clock"   — any @c graph_message (triggers a re-publish of the latest buffered message)
+///
+/// @par Outputs
+/// - @b "default" — the most recently buffered @c graph_message
+///
+/// @par Properties
+///   (none — no configurable properties)
+/// @see buffer_node, heartbeat_node
 class clock_buffer_node : public graph_node {
   graph_edge_ptr output;
   graph_message_ptr message;

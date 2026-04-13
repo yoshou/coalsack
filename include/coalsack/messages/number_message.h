@@ -1,3 +1,6 @@
+/// @file number_message.h
+/// @brief Message carrying a double-precision numeric value.
+/// @ingroup messages
 #pragma once
 
 #include <string>
@@ -6,6 +9,10 @@
 
 namespace coalsack {
 
+/// @brief Message carrying a single double-precision floating-point value.
+///
+/// @par Fields
+/// - value (double, default 0.0) — the numeric payload
 class number_message : public graph_message {
   double value;
 

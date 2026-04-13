@@ -1,3 +1,6 @@
+/// @file p2p_tcp_listener_node.h
+/// @brief TCP point-to-point message receiver node (reliable delivery).
+/// @ingroup network_nodes
 #pragma once
 
 #include <cereal/archives/binary.hpp>
@@ -14,6 +17,20 @@
 
 namespace coalsack {
 
+/// @brief Listens for incoming TCP connections and deserializes each message into a @c graph_message.
+/// @details Accepts one TCP connection, reads length-prefixed frames, Cereal-deserializes each,
+///          and forwards the result on @b "default".
+///
+/// @par Inputs
+///   (none — autonomous network source)
+///
+/// @par Outputs
+/// - @b "default" — deserialized @c graph_message
+///
+/// @par Properties
+/// - address (std::string) — local bind address
+/// - port    (uint16_t)    — local TCP port to listen on
+/// @see p2p_tcp_talker_node, p2p_listener_node
 class p2p_tcp_listener_node : public graph_node {
   graph_edge_ptr output;
   std::shared_ptr<data_stream_tcp_receiver> receiver;

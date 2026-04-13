@@ -1,3 +1,6 @@
+/// @file graph_proc_jpeg.h
+/// @brief JPEG encode/decode nodes using libjpeg-turbo.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <jpeglib.h>
@@ -13,6 +16,22 @@
 #include "coalsack/image/image_nodes.h"
 
 namespace coalsack {
+/// @defgroup ext_nodes Extension Nodes
+/// @brief Hardware capture and codec nodes requiring optional external libraries.
+/// @{
+
+/// @brief Encodes input @c frame_message<image> frames to JPEG using libjpeg-turbo.
+/// @details Converts YUYV/UYVY to YCbCr and BGR to RGB as required, then uses
+///          libjpeg-turbo's in-memory compression API to produce a JPEG byte blob.
+///          Quality and subsampling use libjpeg-turbo defaults.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image> (YUYV, UYVY, BGR8, RGB8 or Y8)
+/// @par Outputs
+/// - @b "default" — @c frame_message<blob> containing the JPEG-compressed bytes
+///
+/// @par Properties
+///   (none — JPEG quality uses libjpeg-turbo defaults; not configurable at runtime)
+/// @see decode_jpeg_node, encode_lz4_node
 class encode_jpeg_node : public graph_node {
   graph_edge_ptr output;
 
@@ -143,6 +162,17 @@ class encode_jpeg_node : public graph_node {
   void serialize(Archive &archive) {}
 };
 
+/// @brief Decodes JPEG-compressed @c frame_message<blob> frames to raw images.
+/// @details Uses libjpeg-turbo's in-memory decompression API.  The output format
+///          (BGR8 or Y8) is determined by the JPEG colour space in the compressed stream.
+/// @par Inputs
+/// - @b "default" — @c frame_message<blob> containing JPEG data
+/// @par Outputs
+/// - @b "default" — @c frame_message<image> (BGR8 or Y8)
+///
+/// @par Properties
+///   (none — output format is derived from the JPEG colour space; not configurable)
+/// @see encode_jpeg_node
 class decode_jpeg_node : public graph_node {
   graph_edge_ptr output;
 

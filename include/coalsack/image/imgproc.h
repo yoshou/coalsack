@@ -1,3 +1,6 @@
+/// @file imgproc.h
+/// @brief Low-level image processing utility functions (Gaussian kernel, convolution, color conversion).
+/// @ingroup image
 #include <memory>
 #include <opencv2/imgproc.hpp>
 

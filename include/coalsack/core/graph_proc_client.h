@@ -1,3 +1,6 @@
+/// @file graph_proc_client.h
+/// @brief RPC client for deploying subgraphs to a remote graph_proc_server.
+/// @ingroup core_graph
 #pragma once
 
 #include <cassert>
@@ -20,6 +23,9 @@
 
 namespace coalsack {
 
+/// @brief Serializes subgraphs and invokes lifecycle RPC functions on a remote
+///        graph_proc_server.  Multiple graphs can be deployed to the same server
+///        session through a single client instance.
 class graph_proc_client {
   std::vector<std::shared_ptr<subgraph>> graphs_;
   std::unordered_map<subgraph*, std::shared_ptr<rpc_client>> rpcs_;

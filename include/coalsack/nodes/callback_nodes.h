@@ -1,3 +1,6 @@
+/// @file callback_nodes.h
+/// @brief Nodes that bridge the graph framework with C++ callback functions.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <cstdint>
@@ -13,6 +16,8 @@
 
 namespace coalsack {
 
+/// @brief Named resource_base holding a list of C++ callbacks invoked on message delivery.
+/// @details Register callbacks via @c add(); they are all invoked in order by @c invoke().
 class annonymous_callback_list : public resource_base {
   using callback_func = std::function<void(graph_message_ptr)>;
   std::vector<callback_func> callbacks;
@@ -29,6 +34,20 @@ class annonymous_callback_list : public resource_base {
   }
 };
 
+/// @brief Node that delivers incoming messages to registered C++ callbacks via a CHAIN edge.
+/// @details At @c initialize() it resolves an @c annonymous_callback_list resource by name
+///          (encoded in the output edge's @c subscribe_request data) and invokes it on each
+///          incoming message.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message
+///
+/// @par Outputs
+/// - @b "default" — CHAIN edge used only for subscription metadata; no data is forwarded
+///
+/// @par Properties
+///   (none — no configurable properties)
+/// @see callback_callee_node
 class callback_caller_node : public graph_node {
   graph_edge_ptr output;
   std::shared_ptr<annonymous_callback_list> callbacks;
@@ -68,6 +87,19 @@ class callback_caller_node : public graph_node {
   void serialize([[maybe_unused]] Archive& archive) {}
 };
 
+/// @brief Source node that exposes an output edge that C++ code can push messages into.
+/// @details At @c initialize() it registers an @c annonymous_callback_list resource and
+///          wires it to forward any received message to @b "default" output.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message (injected from C++ via the internal callback)
+///
+/// @par Outputs
+/// - @b "default" — the same @c graph_message forwarded to downstream nodes
+///
+/// @par Properties
+///   (none — no configurable properties)
+/// @see callback_caller_node
 class callback_callee_node : public graph_node {
   graph_edge_ptr output;
 

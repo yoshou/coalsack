@@ -1,3 +1,11 @@
+/// @file graph_proc_registry.h
+/// @brief Type registry and registration macros for nodes and messages.
+/// @ingroup core_graph
+///
+/// @par Registration Macros
+/// - @c COALSACK_REGISTER_NODE(Type, Base)    — register node type + polymorphic relation
+/// - @c COALSACK_REGISTER_MESSAGE(Type, Base) — register message type + polymorphic relation
+/// - @c COALSACK_REGISTER_NODE_TYPE(Type)     — register node without an explicit base
 #pragma once
 
 #include <cereal/archives/binary.hpp>
@@ -21,6 +29,7 @@ struct registered_type_info {
   std::string base_type;
 };
 
+/// @brief Singleton registry tracking all registered node and message types.
 class type_registry {
  public:
   static type_registry& instance() {

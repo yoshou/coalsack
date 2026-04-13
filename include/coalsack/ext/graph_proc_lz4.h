@@ -1,3 +1,6 @@
+/// @file graph_proc_lz4.h
+/// @brief LZ4 compress/decompress nodes.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <lz4.h>
@@ -18,6 +21,16 @@ struct lz4_image_header {
   image_format format;
 };
 
+/// @brief Compresses incoming @c frame_message<image> frames with LZ4.
+/// @details Prepends a 16-byte @c lz4_image_header (width, height, stride, bpp, format) to
+///          the raw pixel data, then compresses the whole block with @c LZ4_compress_default.
+/// @par Inputs
+/// - @b "default" — @c frame_message<image>
+/// @par Outputs
+/// - @b "default" — @c frame_message<blob> (LZ4 frame with header)
+/// @par Properties
+///   (none — compression level uses LZ4 defaults; not configurable at runtime)
+/// @see decode_lz4_node, encode_jpeg_node
 class encode_lz4_node : public graph_node {
   graph_edge_ptr output;
 
@@ -74,6 +87,16 @@ class encode_lz4_node : public graph_node {
   void serialize(Archive &archive) {}
 };
 
+/// @brief Decompresses LZ4-encoded @c frame_message<blob> back to @c frame_message<image>.
+/// @details Reads the 16-byte @c lz4_image_header to reconstruct the image geometry and
+///          format, then decompresses the payload with @c LZ4_decompress_safe.
+/// @par Inputs
+/// - @b "default" — @c frame_message<blob> (LZ4 frame with header)
+/// @par Outputs
+/// - @b "default" — @c frame_message<image>
+/// @par Properties
+///   (none — image format is recovered from the LZ4 frame header)
+/// @see encode_lz4_node
 class decode_lz4_node : public graph_node {
   graph_edge_ptr output;
 

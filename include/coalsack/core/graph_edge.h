@@ -1,3 +1,6 @@
+/// @file graph_edge.h
+/// @brief Directed edge connecting two graph nodes for message delivery.
+/// @ingroup core_graph
 #pragma once
 
 #include <algorithm>
@@ -13,11 +16,14 @@ namespace coalsack {
 
 class graph_node;
 
+/// @brief Specifies the semantics of a graph edge.
 enum class EDGE_TYPE {
-  DATAFLOW = 0,
-  CHAIN = 1,
+  DATAFLOW = 0, ///< Data-flow edge: message carrying the primary payload between nodes.
+  CHAIN = 1,    ///< Chain edge: ordering-only edge without data payload (for sequencing).
 };
 
+/// @brief Serializable descriptor sent from a downstream node to request an upstream
+///        subscription over an RPC channel.
 class subscribe_request {
   std::string proc_name;
   std::string msg_type;
@@ -41,6 +47,12 @@ class subscribe_request {
   }
 };
 
+/// @brief Directed edge in a processing graph that fans out messages to all subscribers.
+/// @details A graph_edge is owned by the source node and shared with zero or more
+///          downstream (target) nodes.  When the source calls @c send(), every
+///          registered callback receives the message in registration order.
+///          @c add_subscriber() and @c clear_subscribers() are private and accessible
+///          only to graph_node via the friend declaration.
 class graph_edge {
   graph_node* source;
   std::string name;
@@ -70,6 +82,8 @@ class graph_edge {
 
   graph_node* get_source() const { return source; }
 
+  /// @brief Broadcasts @p message to all registered subscriber callbacks.
+  /// @param message The message to deliver.
   void send(graph_message_ptr message) {
     for (const auto& callback : callbacks) {
       if (callback) {
@@ -81,6 +95,7 @@ class graph_edge {
   subscribe_request request;
 };
 
+/// @brief Shared pointer alias for graph_edge.
 using graph_edge_ptr = std::shared_ptr<graph_edge>;
 
 }  // namespace coalsack

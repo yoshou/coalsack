@@ -1,3 +1,6 @@
+/// @file broadcast_listener_node.h
+/// @brief UDP multicast/broadcast message receiver node.
+/// @ingroup network_nodes
 #pragma once
 
 #include <cereal/archives/binary.hpp>
@@ -11,6 +14,22 @@
 
 namespace coalsack {
 
+/// @brief Joins a multicast group (or listens on broadcast) and deserializes received datagrams.
+/// @details Runs a background Boost.Asio I/O thread that receives UDP datagrams from the
+///          configured broadcast or multicast address, Cereal-deserializes each, and forwards
+///          the result on @b "default".
+///
+/// @par Inputs
+///   (none — autonomous network source)
+///
+/// @par Outputs
+/// - @b "default" — deserialized @c graph_message
+///
+/// @par Properties
+/// - address           (std::string) — local bind address
+/// - port              (uint16_t)    — local UDP port
+/// - multicast_address (std::string) — multicast group to join (empty = broadcast only)
+/// @see broadcast_talker_node, p2p_listener_node
 class broadcast_listener_node : public graph_node {
   graph_edge_ptr output;
   std::shared_ptr<data_stream_receiver> receiver;

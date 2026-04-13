@@ -1,3 +1,6 @@
+/// @file mux_node.h
+/// @brief Multiplexer node that wraps any incoming message in an object_message labelled by port name.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <memory>
@@ -8,6 +11,20 @@
 
 namespace coalsack {
 
+/// @brief Accepts messages on any named input port and re-emits each as an @c object_message
+///        keyed by the originating port name.
+/// @details Downstream nodes can inspect @c object_message::get_field(port_name) to identify
+///          which upstream input was active.
+///
+/// @par Inputs
+/// - @b "{any}" — any @c graph_message on arbitrarily named ports
+///
+/// @par Outputs
+/// - @b "default" — @c object_message with a single field whose key is the input port name
+///
+/// @par Properties
+///   (none — no configurable properties)
+/// @see demux_node
 class mux_node : public graph_node {
   graph_edge_ptr output;
 

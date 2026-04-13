@@ -1,3 +1,6 @@
+/// @file blob_message.h
+/// @brief Message carrying an opaque binary byte buffer.
+/// @ingroup messages
 #pragma once
 
 #include <cstdint>
@@ -8,6 +11,10 @@
 
 namespace coalsack {
 
+/// @brief Message carrying a variable-length byte array (e.g. encoded image or audio).
+///
+/// @par Fields
+/// - data (std::vector<uint8_t>) — the raw byte payload
 class blob_message : public graph_message {
   std::vector<uint8_t> data;
 

@@ -1,3 +1,6 @@
+/// @file image_message.h
+/// @brief graph_message wrapper for an image.
+/// @ingroup image
 #pragma once
 
 #include <string>
@@ -6,6 +9,7 @@
 #include "coalsack/image/image.h"
 
 namespace coalsack {
+/// @brief Message carrying a single @c image payload.
 class image_message : public graph_message {
   image img;
 

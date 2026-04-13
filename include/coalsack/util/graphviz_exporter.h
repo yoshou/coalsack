@@ -1,3 +1,6 @@
+/// @file graphviz_exporter.h
+/// @brief Exports a subgraph to Graphviz DOT format or PNG.
+/// @ingroup utilities
 #pragma once
 
 #include <fstream>
@@ -9,6 +12,11 @@
 namespace coalsack {
 
 // Graphviz DOT format generator for subgraph visualization
+/// @defgroup utilities Utilities
+/// @brief Supporting utilities: graph export, stream synchronization, binary I/O.
+/// @{
+
+/// @brief Exports a @c subgraph to Graphviz DOT text or renders it to a PNG file.
 class graphviz_exporter {
  public:
   // Export subgraph to DOT format

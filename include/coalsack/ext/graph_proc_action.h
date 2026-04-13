@@ -1,3 +1,6 @@
+/// @file graph_proc_action.h
+/// @brief Action metadata annotation node.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <optional>
@@ -8,6 +11,19 @@
 
 namespace coalsack {
 
+/// @brief Pass-through annotation node that attaches action metadata (id, label, icon) to the graph edge.
+/// @details The node simply forwards every message unchanged, but its presence in the graph
+///          allows external tools to annotate the edge with a user action identifier.
+/// @par Inputs
+/// - @b "default" — any @c graph_message
+/// @par Outputs
+/// - @b "default" — the same @c graph_message forwarded unchanged
+///
+/// @par Properties
+/// - action_id (std::string, default "") — identifier for the associated user action
+/// - label (std::string, default "") — human-readable display name for the action
+/// - icon (std::string, default "") — icon identifier or path for the action
+/// @see passthrough_node
 class action_node : public graph_node {
   std::string action_id_;
   std::string label_;

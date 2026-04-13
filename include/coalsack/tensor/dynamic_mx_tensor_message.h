@@ -1,3 +1,6 @@
+/// @file dynamic_mx_tensor_message.h
+/// @brief graph_message wrapper for dynamic_mx_tensor.
+/// @ingroup tensor
 #pragma once
 
 #include "coalsack/core/graph_message.h"
@@ -6,6 +9,7 @@
 
 namespace coalsack {
 
+/// @brief Message transporting an MXFP4 mixed-precision tensor between nodes.
 class dynamic_mx_tensor_message : public graph_message {
  private:
   dynamic_mx_tensor tensor_;

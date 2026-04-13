@@ -1,3 +1,6 @@
+/// @file p2p_listener_node.h
+/// @brief UDP point-to-point message receiver node.
+/// @ingroup network_nodes
 #pragma once
 
 #include <cereal/archives/binary.hpp>
@@ -14,6 +17,20 @@
 
 namespace coalsack {
 
+/// @brief Listens for incoming UDP datagrams and deserializes each into a @c graph_message.
+/// @details Runs a background Boost.Asio I/O thread; each received datagram is length-unprefixed,
+///          Cereal-deserialized, and forwarded on @b "default".
+///
+/// @par Inputs
+///   (none — autonomous network source)
+///
+/// @par Outputs
+/// - @b "default" — deserialized @c graph_message
+///
+/// @par Properties
+/// - address (std::string) — local bind address/interface
+/// - port    (uint16_t)    — local UDP port to listen on
+/// @see p2p_talker_node, p2p_tcp_listener_node
 class p2p_listener_node : public graph_node {
   graph_edge_ptr output;
   std::shared_ptr<data_stream_receiver> receiver;

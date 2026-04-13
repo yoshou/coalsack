@@ -1,3 +1,6 @@
+/// @file graph_proc_libcamera.h
+/// @brief libcamera capture source node.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <algorithm>
@@ -19,6 +22,22 @@
 #include "coalsack/image/image_nodes.h"
 
 namespace coalsack {
+/// @brief Captures frames from a libcamera-compatible camera device.
+/// @details Creates a libcamera session, configures the requested stream type and format,
+///          and enqueues capture requests in a background thread.  Received buffers are
+///          forwarded as @c frame_message<image> with the appropriate profile attached.
+/// @par Inputs
+/// - @b "interval" — @c number_message (optional, overrides capture interval in ms)
+/// @par Outputs
+/// - @b "default" — @c frame_message<image>
+/// @par Properties
+/// - width (int, 1280) — capture width in pixels
+/// - height (int, 720) — capture height in pixels
+/// - fps (int, 30) — capture frame rate
+/// - format (image_format) — pixel format of the captured frame
+/// - stream (stream_type) — stream type identifier
+/// - emitter_enabled (bool, false) — whether the IR emitter is enabled
+/// @see depthai_color_camera_node, rs_d435_node, video_time_sync_control_node
 class libcamera_capture_node : public graph_node {
  public:
   enum class option : std::uint32_t {
@@ -285,6 +304,22 @@ class libcamera_capture_node : public graph_node {
   void set_emitter_enabled(bool value) { emitter_enabled = value; }
 };
 
+/// @brief Adjusts capture interval to synchronise a video source with an external reference timestamp.
+/// @details Implements a PI-style controller: when the difference between the current frame
+///          timestamp and @b "ref" exceeds half the nominal interval, the emitted interval is
+///          adjusted within [min_interval, max_interval] to pull the two clocks together.
+/// @par Inputs
+/// - @b "default" — @c number_message containing the current frame timestamp (ms)
+/// - @b "ref"     — @c number_message containing the reference timestamp to synchronise against
+/// @par Outputs
+/// - @b "default" — @c number_message with the corrected capture interval in milliseconds
+/// @par Properties
+/// - gain (double, 0.0) — proportional correction gain (higher = faster lock, more jitter)
+/// - interval (double, 33.3) — nominal capture interval in milliseconds (default 30 fps)
+/// - min_interval (double, 25.0) — lower bound for the adjusted interval
+/// - max_interval (double, 50.0) — upper bound for the adjusted interval
+/// @see libcamera_capture_node
+/// @ingroup ext_nodes
 class video_time_sync_control_node : public graph_node {
   graph_edge_ptr output;
   double gain;

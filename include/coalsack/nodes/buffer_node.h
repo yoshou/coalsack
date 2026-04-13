@@ -1,3 +1,6 @@
+/// @file buffer_node.h
+/// @brief Buffering node that caches the latest received message and republishes it periodically.
+/// @ingroup utility_nodes
 #pragma once
 
 #include <algorithm>
@@ -13,6 +16,19 @@
 
 namespace coalsack {
 
+/// @brief Stores the most recent incoming message and re-sends it on every heartbeat tick.
+/// @details Thread-safe via an internal mutex.  Extends heartbeat_node so the heartbeat
+///          interval controls the re-publish rate.
+///
+/// @par Inputs
+/// - @b "default" — any @c graph_message (the message to buffer)
+///
+/// @par Outputs
+/// - @b "default" — the most recently received @c graph_message
+///
+/// @par Properties
+/// - interval (uint32_t, inherited from heartbeat_node) — re-publish period in milliseconds
+/// @see heartbeat_node, clock_buffer_node
 class buffer_node : public heartbeat_node {
   graph_edge_ptr output;
   graph_message_ptr message;

@@ -1,3 +1,6 @@
+/// @file dynamic_tensor_message.h
+/// @brief graph_message wrapper for dynamic_tensor.
+/// @ingroup tensor
 #pragma once
 
 #include "coalsack/core/graph_message.h"
@@ -6,6 +9,7 @@
 
 namespace coalsack {
 
+/// @brief Message transporting a dynamic_tensor between graph nodes.
 class dynamic_tensor_message : public graph_message {
  private:
   dynamic_tensor tensor_;

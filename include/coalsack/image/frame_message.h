@@ -1,3 +1,6 @@
+/// @file frame_message.h
+/// @brief Frame message template carrying typed data with stream profile and timestamp.
+/// @ingroup image
 #pragma once
 
 #include <cereal/types/memory.hpp>
@@ -15,6 +18,7 @@
 
 namespace coalsack {
 
+/// @brief Identifies the sensor/stream type for a frame.
 enum class stream_type {
   ANY,
   DEPTH,
@@ -22,6 +26,7 @@ enum class stream_type {
   INFRARED,
 };
 
+/// @brief Pixel/sample format of a stream.
 enum class stream_format {
   ANY,
   Z16,
@@ -35,6 +40,7 @@ enum class stream_format {
   UYVY,
 };
 
+/// @brief Describes the properties of a single sensor stream (type, format, width, height, fps).
 class stream_profile {
   int index;
   stream_type type;
@@ -68,6 +74,8 @@ class stream_profile {
   }
 };
 
+/// @brief Base class for frame messages carrying timing metadata.
+/// @details Holds frame number, timestamp (microseconds), and a stream_profile.
 class frame_message_base : public graph_message {
   using time_type = double;
 
@@ -99,6 +107,14 @@ class frame_message_base : public graph_message {
   }
 };
 
+/// @brief Typed frame message wrapping data of type @c T with timing and profile metadata.
+/// @tparam T The payload type (e.g. @c image, @c blob, or a tensor type).
+///
+/// @par Fields
+/// - data       (T)              — the actual frame payload
+/// - frame_num  (uint64_t)       — monotonically increasing frame counter
+/// - timestamp  (int64_t, μs)    — capture timestamp in microseconds
+/// - profile    (stream_profile) — stream format / resolution / fps
 template <typename T>
 class frame_message : public frame_message_base {
   using data_type = T;

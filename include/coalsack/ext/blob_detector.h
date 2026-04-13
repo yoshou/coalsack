@@ -1,3 +1,6 @@
+/// @file blob_detector.h
+/// @brief Utility classes for contour-based blob detection.
+/// @ingroup ext_nodes
 #pragma once
 
 #include <algorithm>
