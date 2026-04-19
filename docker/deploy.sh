@@ -168,11 +168,18 @@ deploy_target() {
         if ! ssh "${SSH_OPTS[@]}" "${target}" -- docker --version &>/dev/null; then
             log "Docker not found. Installing..."
             ssh "${SSH_OPTS[@]}" "${target}" -- 'curl -fsSL https://get.docker.com | sudo sh'
-            ssh "${SSH_OPTS[@]}" "${target}" -- 'sudo usermod -aG docker $USER'
             ssh "${SSH_OPTS[@]}" "${target}" -- 'sudo systemctl enable --now docker'
             log "Docker installed and enabled."
         else
             log "Docker already installed: $(ssh "${SSH_OPTS[@]}" "${target}" -- docker --version)"
+        fi
+        # Ensure user is in docker group (idempotent)
+        if ! ssh "${SSH_OPTS[@]}" "${target}" -- 'id -nG | grep -qw docker'; then
+            log "Adding user to docker group..."
+            ssh "${SSH_OPTS[@]}" "${target}" -- 'sudo usermod -aG docker $USER'
+            log "User added to docker group. Reconnecting..."
+            close_master "${target}"
+            open_master "${target}"
         fi
     fi
 
@@ -182,7 +189,21 @@ deploy_target() {
 
     # 5. Load image
     log "Loading image on remote..."
-    ssh_run "${target}" "docker load -i ${REMOTE_TMP}/image-${arch_tag}.tar"
+    if [[ "${DRY_RUN}" == true ]]; then
+        log_dry "ssh ${target} -- docker load -i ${REMOTE_TMP}/image-${arch_tag}.tar"
+        local loaded_tag="${full_tag}"
+    else
+        local load_output
+        load_output="$(ssh "${SSH_OPTS[@]}" "${target}" -- "docker load -i ${REMOTE_TMP}/image-${arch_tag}.tar")"
+        echo "${load_output}"
+        # Use the tag embedded in the tar (may differ from current git HEAD)
+        local loaded_tag
+        loaded_tag="$(echo "${load_output}" | grep 'Loaded image:' | awk '{print $3}')"
+        if [[ -z "${loaded_tag}" ]]; then
+            loaded_tag="${full_tag}"
+        fi
+    fi
+    log "Loaded image tag: ${loaded_tag}"
 
     # 6. Stop and remove existing container
     log "Stopping existing container (if any)..."
@@ -197,7 +218,7 @@ deploy_target() {
             --restart unless-stopped \
             --network host \
             --privileged \
-            ${full_tag}"
+            ${loaded_tag}"
 
     # 8. Cleanup remote tar and old images
     log "Cleaning up remote tar and dangling images..."
