@@ -1,116 +1,109 @@
 ARG BASE_IMAGE=debian:bookworm
 
-#################################
-#   Librealsense Builder Stage  #
-#################################
-FROM $BASE_IMAGE as librealsense-builder
+##########################
+#   Builder Stage        #
+##########################
+FROM $BASE_IMAGE AS builder
 
-ARG LIBRS_VERSION=2.55.1
-# Make sure that we have a version number of librealsense as argument
-RUN test -n "$LIBRS_VERSION"
-
-# To avoid waiting for input during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Builder dependencies installation
-RUN apt-get update \
-    && apt-get install -qq -y --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    libssl-dev \
-    libusb-1.0-0-dev \
+# Install build tools and -dev packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential gcc g++ git cmake automake \
+    ninja-build \
+    libboost-all-dev \
+    libopencv-dev \
+    nlohmann-json3-dev \
+    libyaml-dev python3-yaml python3-ply python3-jinja2 python3-pip \
+    libgnutls28-dev \
     pkg-config \
-    libgtk-3-dev \
-    libglfw3-dev \
-    libgl1-mesa-dev \
-    libglu1-mesa-dev \    
-    curl \
-    python3 \
-    python3-dev \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Download sources
-WORKDIR /usr/src
-RUN curl https://codeload.github.com/IntelRealSense/librealsense/tar.gz/refs/tags/v$LIBRS_VERSION -o librealsense.tar.gz 
-RUN tar -zxf librealsense.tar.gz \
-    && rm librealsense.tar.gz 
-RUN ln -s /usr/src/librealsense-$LIBRS_VERSION /usr/src/librealsense
-
-# Build and install
-RUN cd /usr/src/librealsense \
-    && mkdir build && cd build \
-    && cmake \
-    -DCMAKE_C_FLAGS_RELEASE="${CMAKE_C_FLAGS_RELEASE} -s" \
-    -DCMAKE_CXX_FLAGS_RELEASE="${CMAKE_CXX_FLAGS_RELEASE} -s" \
-    -DCMAKE_INSTALL_PREFIX=/opt/librealsense \    
-    -DBUILD_GRAPHICAL_EXAMPLES=OFF \
-    -DBUILD_PYTHON_BINDINGS:bool=false \
-    -DCMAKE_BUILD_TYPE=Release ../ \
-    && make -j$(($(nproc)-1)) all \
-    && make install 
-
-##############################
-#   Coalsack Builder Stage   #
-##############################
-FROM $BASE_IMAGE
-
-# Copy binaries from builder stage
-COPY --from=librealsense-builder /opt/librealsense /usr/local/
-COPY --from=librealsense-builder /usr/src/librealsense/config/99-realsense-libusb.rules /etc/udev/rules.d/
-COPY --from=librealsense-builder /usr/src/librealsense/config/99-realsense-d4xx-mipi-dfu.rules /etc/udev/rules.d/
-ENV PYTHONPATH=$PYTHONPATH:/usr/local/lib
-
-# Install dep packages
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-    libusb-1.0-0 \
-    udev \
-    apt-transport-https \
     ca-certificates \
     curl \
-    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && \
-    apt-get install -y gcc g++ git cmake automake libboost-all-dev libopencv-dev libyaml-dev python3-yaml python3-ply \
-                       python3-jinja2 python3-pip libgnutls28-dev && \
-    apt-get -y --purge autoremove && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && \
-    apt-get install -y ninja-build && \
-    apt-get -y --purge autoremove && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install --upgrade pip --break-system-packages && pip3 install meson --break-system-packages
+RUN pip3 install --upgrade pip --break-system-packages && \
+    pip3 install meson --break-system-packages
 
 ENV CC=/usr/bin/gcc \
     CXX=/usr/bin/g++
 
-RUN git clone https://github.com/raspberrypi/libcamera.git && \
-    cd libcamera && \
-    meson build && \
-    ninja -C build install
+# Build and install libcamera
+RUN git clone https://github.com/raspberrypi/libcamera.git /tmp/libcamera && \
+    cd /tmp/libcamera && \
+    meson build --prefix=/usr/local && \
+    ninja -C build install && \
+    rm -rf /tmp/libcamera
 
-RUN git clone https://github.com/RPi-Distro/raspi-gpio.git && \
-    cd raspi-gpio && \
+# Build and install raspi-gpio
+RUN git clone https://github.com/RPi-Distro/raspi-gpio.git /tmp/raspi-gpio && \
+    cd /tmp/raspi-gpio && \
     autoreconf && \
-    ./configure && \
+    ./configure --prefix=/usr/local && \
     make && \
-    make install
+    make install && \
+    rm -rf /tmp/raspi-gpio
 
-WORKDIR /app
-
-RUN git clone https://github.com/yoshou/coalsack /app/coalsack
+# Copy coalsack source from local workspace
+COPY . /app/coalsack
 
 WORKDIR /app/coalsack/build
 
-RUN cd /app/coalsack/build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j
+RUN cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DENABLE_LIBCAMERA_EXT=ON \
+    -DENABLE_LLM_OPS=OFF \
+    && make -j$(nproc) graph_proc_server
 
-ENV LD_LIBRARY_PATH=/usr/local/lib/arm-linux-gnueabihf:$LD_LIBRARY_PATH
+##########################
+#   Runtime Stage        #
+##########################
+FROM $BASE_IMAGE
 
-CMD ["/app/coalsack/build/graph_proc_server"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime libraries only (no -dev packages)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libopencv-core4.6 \
+    libopencv-imgproc4.6 \
+    libopencv-imgcodecs4.6 \
+    libopencv-calib3d4.6 \
+    libopencv-features2d4.6 \
+    libopencv-video4.6 \
+    libopencv-highgui4.6 \
+    libopencv-videoio4.6 \
+    libopencv-contrib406 \
+    libboost-system1.74.0 \
+    libboost-filesystem1.74.0 \
+    libboost-thread1.74.0 \
+    libboost-atomic1.74.0 \
+    libboost-date-time1.74.0 \
+    libboost-regex1.74.0 \
+    libboost-chrono1.74.0 \
+    libboost-log1.74.0 \
+    libyaml-0-2 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy libcamera and raspi-gpio runtime libraries from builder
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /usr/local/share/libcamera /usr/local/share/libcamera
+COPY --from=builder /usr/local/bin/raspi-gpio /usr/local/bin/raspi-gpio
+
+# Copy the server binary
+COPY --from=builder /app/coalsack/build/graph_proc_server /app/graph_proc_server
+
+# Configure dynamic linker to find libraries in /usr/local/lib and multiarch paths
+RUN ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        aarch64) MULTIARCH="aarch64-linux-gnu" ;; \
+        armv7l)  MULTIARCH="arm-linux-gnueabihf" ;; \
+        *)       MULTIARCH="$ARCH-linux-gnu" ;; \
+    esac && \
+    echo "/usr/local/lib/${MULTIARCH}" >> /etc/ld.so.conf.d/local.conf && \
+    ldconfig
+
+EXPOSE 31400
+
+CMD ["/app/graph_proc_server"]

@@ -1,0 +1,16 @@
+# Exclude large data/model directories
+models/
+data/
+docs/
+_build/
+_doxygen/
+
+# Exclude build artifacts (Docker will build from source)
+build/
+
+# Exclude Docker-related files (not needed in build context)
+docker/output/
+
+# Git
+.git/
+.gitignore

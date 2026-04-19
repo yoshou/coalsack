@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.8)
 
 project(coalsack)
 
+option(ENABLE_LLM_OPS "Enable LLM/ONNX operations (requires x86 SIMD support)" ON)
+
 find_package(Iconv REQUIRED)
 find_package(OpenCV 4.0 REQUIRED)
 find_package(Boost REQUIRED)
@@ -27,17 +29,22 @@ endif()
 add_library(${PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc/rpc_server.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/rpc/rpc_client.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/onnx/onnx_proto_parser.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/onnx/onnx_importer.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/gguf/gguf_loader.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/gguf/gguf_multi_loader.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/gpt2_tokenizer.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/chat_template.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/llm_engine.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/moe_weight_provider.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/vision_encoder.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/llm/eagle3_speculative_decoder.cpp
 )
+
+if(ENABLE_LLM_OPS)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src/onnx/onnx_proto_parser.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/onnx/onnx_importer.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/gguf/gguf_loader.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/gguf/gguf_multi_loader.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/llm/gpt2_tokenizer.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/llm/chat_template.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/llm/llm_engine.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/llm/moe_weight_provider.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/llm/vision_encoder.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/llm/eagle3_speculative_decoder.cpp
+    )
+endif()
 
 add_dependencies(${PROJECT_NAME}
     cereal
@@ -46,9 +53,11 @@ add_dependencies(${PROJECT_NAME}
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC
-    ENABLE_ONNX_IMPORT
-)
+if(ENABLE_LLM_OPS)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+        ENABLE_ONNX_IMPORT
+    )
+endif()
 
 target_sources(${PROJECT_NAME}
     PRIVATE

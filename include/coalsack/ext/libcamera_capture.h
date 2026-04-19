@@ -166,7 +166,7 @@ class libcamera_capture {
 
     spdlog::debug("Frame duration control: {0}", frame_time);
 
-    request->controls() = controls;
+    request->controls().merge(controls);
 
     if (camera->queueRequest(request) < 0) throw std::runtime_error("failed to queue request");
   }
@@ -264,7 +264,7 @@ class libcamera_capture {
         throw std::runtime_error("Failed to add buffer to request");
       }
 
-      request->controls() = controls;
+      request->controls().merge(controls);
       requests.push_back(std::move(request));
     }
   }
